@@ -158,6 +158,9 @@ export default function ControlPanel({
   onOpenProject,
   onSaveProject,
   onExportGcode,
+  canSendToOctoprint,
+  onSendToOctoprint,
+  onSendAndRunOctoprint,
 }) {
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
   const activeTool = tools.find((tool) => tool.id === activeToolId) || tools[0];
@@ -179,6 +182,16 @@ export default function ControlPanel({
           <button type="button" className="accent" onClick={onExportGcode}>
             Export G-code
           </button>
+          {canSendToOctoprint ? (
+            <>
+              <button type="button" onClick={onSendToOctoprint}>
+                Send to OctoPrint
+              </button>
+              <button type="button" className="accent" onClick={onSendAndRunOctoprint}>
+                Send + Run Job
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 

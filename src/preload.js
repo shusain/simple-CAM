@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('electron', {
   openProject: () => ipcRenderer.invoke('project:open'),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
   exportGcode: (payload) => ipcRenderer.invoke('gcode:export', payload),
+  getOctoprintSettings: () => ipcRenderer.invoke('octoprint:getSettings'),
+  saveOctoprintSettings: (payload) => ipcRenderer.invoke('octoprint:saveSettings', payload),
+  uploadToOctoprint: (payload) => ipcRenderer.invoke('octoprint:upload', payload),
 
   onMenuNew: (callback) => {
     const handler = () => callback();
@@ -24,6 +27,11 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = () => callback();
     ipcRenderer.on('menu:exportGcode', handler);
     return () => ipcRenderer.removeListener('menu:exportGcode', handler);
+  },
+  onMenuOctoprintSettings: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('menu:octoprintSettings', handler);
+    return () => ipcRenderer.removeListener('menu:octoprintSettings', handler);
   },
   onMenuZoomIn: (callback) => {
     const handler = () => callback();

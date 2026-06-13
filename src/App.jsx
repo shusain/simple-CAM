@@ -53,6 +53,11 @@ const TOOLS = [
 
 const HISTORY_LIMIT = 200;
 const PREFERENCES_STORAGE_KEY = 'simple-cam.preferences.v1';
+const OCTOPRINT_WEB_STORAGE_KEY = 'simple-cam.octoprint.v1';
+const DEFAULT_OCTOPRINT_SETTINGS = {
+  baseUrl: '',
+  apiKey: '',
+};
 
 function newId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -217,6 +222,107 @@ function operationsChanged(a, b) {
   return JSON.stringify(a) !== JSON.stringify(b);
 }
 
+function buildGcodeFileName(projectName) {
+  const base = (projectName || 'output').replace(/\.(cam|json|gcode)$/i, '');
+  return `${base || 'output'}.gcode`;
+}
+
+function normalizeOctoprintSettings(settings) {
+  const baseRaw = typeof settings?.baseUrl === 'string' ? settings.baseUrl.trim() : '';
+  const hasScheme = /^https?:\/\//i.test(baseRaw);
+  return {
+    baseUrl: baseRaw ? (hasScheme ? baseRaw : `http://${baseRaw}`) : '',
+    apiKey: typeof settings?.apiKey === 'string' ? settings.apiKey.trim() : '',
+  };
+}
+
+function loadBrowserOctoprintSettings() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return DEFAULT_OCTOPRINT_SETTINGS;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(OCTOPRINT_WEB_STORAGE_KEY);
+    if (!raw) return DEFAULT_OCTOPRINT_SETTINGS;
+    const parsed = JSON.parse(raw);
+    return normalizeOctoprintSettings(parsed);
+  } catch {
+    return DEFAULT_OCTOPRINT_SETTINGS;
+  }
+}
+
+function saveBrowserOctoprintSettings(settings) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      OCTOPRINT_WEB_STORAGE_KEY,
+      JSON.stringify(normalizeOctoprintSettings(settings))
+    );
+  } catch {
+    // Ignore persistence errors.
+  }
+}
+
+function OctoprintSettingsModal({ isOpen, settings, onClose, onSave }) {
+  const [draft, setDraft] = useState(settings);
+
+  useEffect(() => {
+    if (isOpen) {
+      setDraft(settings);
+    }
+  }, [isOpen, settings]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h3>OctoPrint Settings</h3>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <p className="section-note" style={{ marginBottom: 12 }}>
+          Saved locally on this machine and not included in project files.
+        </p>
+
+        <label className="field-row">
+          <span>OctoPrint URL</span>
+          <input
+            type="text"
+            placeholder="http://octopi.local"
+            value={draft.baseUrl}
+            onChange={(event) => setDraft((prev) => ({ ...prev, baseUrl: event.target.value }))}
+          />
+        </label>
+
+        <label className="field-row">
+          <span>API Key</span>
+          <input
+            type="password"
+            placeholder="OctoPrint API key"
+            value={draft.apiKey}
+            onChange={(event) => setDraft((prev) => ({ ...prev, apiKey: event.target.value }))}
+          />
+        </label>
+
+        <div className="button-column" style={{ marginTop: 10 }}>
+          <button type="button" className="accent" onClick={() => onSave(draft)}>
+            Save OctoPrint Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const electron = typeof window !== 'undefined' ? window.electron : null;
   const initialState = useMemo(() => getInitialState(), []);
@@ -232,6 +338,8 @@ export default function App() {
   const [zoomRequest, setZoomRequest] = useState({ token: 0, action: 'reset' });
   const [tools, setTools] = useState(initialState.tools);
   const [activeToolId, setActiveToolId] = useState(initialState.activeToolId);
+  const [octoprintSettings, setOctoprintSettings] = useState(DEFAULT_OCTOPRINT_SETTINGS);
+  const [isOctoprintModalOpen, setIsOctoprintModalOpen] = useState(false);
 
   const operations = operationsHistory.present;
   const canUndo = operationsHistory.past.length > 0;
@@ -246,6 +354,10 @@ export default function App() {
     if (selectedIds.length !== 1) return null;
     return operations.find((op) => op.id === selectedIds[0]) || null;
   }, [operations, selectedIds]);
+
+  const hasOctoprintSettings =
+    Boolean(octoprintSettings.baseUrl && octoprintSettings.baseUrl.trim()) &&
+    Boolean(octoprintSettings.apiKey && octoprintSettings.apiKey.trim());
 
   const commitOperations = useCallback((nextOrUpdater) => {
     setOperationsHistory((previous) => {
@@ -641,9 +753,92 @@ export default function App() {
     setStatus('Exported G-code download');
   }, [electron, operations, settings, tools]);
 
+  const openOctoprintSettings = useCallback(() => {
+    setIsOctoprintModalOpen(true);
+  }, []);
+
+  const handleSaveOctoprintSettings = useCallback(
+    async (nextSettings) => {
+      const normalized = normalizeOctoprintSettings(nextSettings);
+
+      if (electron?.saveOctoprintSettings) {
+        const result = await electron.saveOctoprintSettings({ settings: normalized });
+        if (!result?.ok) {
+          setStatus(`OctoPrint settings save failed: ${result?.error || 'Unknown error'}`);
+          return;
+        }
+
+        setOctoprintSettings(normalizeOctoprintSettings(result.settings));
+        setIsOctoprintModalOpen(false);
+        setStatus('Saved OctoPrint settings');
+        return;
+      }
+
+      saveBrowserOctoprintSettings(normalized);
+      setOctoprintSettings(normalized);
+      setIsOctoprintModalOpen(false);
+      setStatus('Saved OctoPrint settings (browser mode)');
+    },
+    [electron]
+  );
+
+  const handleSendToOctoprint = useCallback(
+    async (runAfterUpload) => {
+      const gcode = generateMarlinGcode({ operations, settings, tools });
+      const fileName = buildGcodeFileName(projectName);
+
+      if (!electron?.uploadToOctoprint) {
+        setStatus('OctoPrint send is available in desktop mode only');
+        return;
+      }
+
+      const result = await electron.uploadToOctoprint({
+        gcode,
+        fileName,
+        runAfterUpload,
+      });
+
+      if (!result?.ok) {
+        setStatus(`OctoPrint send failed: ${result?.error || 'Unknown error'}`);
+        return;
+      }
+
+      setStatus(
+        runAfterUpload
+          ? `Sent and started job in OctoPrint (${fileName})`
+          : `Sent to OctoPrint (${fileName})`
+      );
+    },
+    [electron, operations, projectName, settings, tools]
+  );
+
   useEffect(() => {
     setSelectedIds((prev) => prev.filter((id) => operations.some((operation) => operation.id === id)));
   }, [operations]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOctoprintSettings() {
+      if (electron?.getOctoprintSettings) {
+        const result = await electron.getOctoprintSettings();
+        if (!cancelled && result?.ok) {
+          setOctoprintSettings(normalizeOctoprintSettings(result.settings));
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setOctoprintSettings(loadBrowserOctoprintSettings());
+      }
+    }
+
+    loadOctoprintSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [electron]);
 
   useEffect(() => {
     savePreferences({ settings, tools, activeToolId });
@@ -656,6 +851,7 @@ export default function App() {
       electron.onMenuOpen?.(handleOpen),
       electron.onMenuSave?.(handleSave),
       electron.onMenuExportGcode?.(handleExport),
+      electron.onMenuOctoprintSettings?.(openOctoprintSettings),
       electron.onMenuZoomIn?.(() => requestZoom('in')),
       electron.onMenuZoomOut?.(() => requestZoom('out')),
       electron.onMenuZoomReset?.(() => requestZoom('reset')),
@@ -664,7 +860,7 @@ export default function App() {
     return () => {
       unsubs.forEach((fn) => fn());
     };
-  }, [electron, handleExport, handleNew, handleOpen, handleSave, requestZoom]);
+  }, [electron, handleExport, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -780,6 +976,9 @@ export default function App() {
             onOpenProject={handleOpen}
             onSaveProject={handleSave}
             onExportGcode={handleExport}
+            canSendToOctoprint={hasOctoprintSettings}
+            onSendToOctoprint={() => handleSendToOctoprint(false)}
+            onSendAndRunOctoprint={() => handleSendToOctoprint(true)}
           />
         </aside>
 
@@ -821,6 +1020,13 @@ export default function App() {
           />
         </aside>
       </div>
+
+      <OctoprintSettingsModal
+        isOpen={isOctoprintModalOpen}
+        settings={octoprintSettings}
+        onClose={() => setIsOctoprintModalOpen(false)}
+        onSave={handleSaveOctoprintSettings}
+      />
 
       <footer className="statusbar">
         <span>{status}</span>

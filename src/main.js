@@ -4,6 +4,35 @@ const path = require('path');
 
 let mainWindow;
 
+function getOctoprintSettingsPath() {
+  return path.join(app.getPath('userData'), 'octoprint-settings.json');
+}
+
+function normalizeOctoprintSettings(raw) {
+  const baseUrlRaw = typeof raw?.baseUrl === 'string' ? raw.baseUrl.trim() : '';
+  const hasScheme = /^https?:\/\//i.test(baseUrlRaw);
+  return {
+    baseUrl: baseUrlRaw ? (hasScheme ? baseUrlRaw : `http://${baseUrlRaw}`) : '',
+    apiKey: typeof raw?.apiKey === 'string' ? raw.apiKey.trim() : '',
+  };
+}
+
+async function readOctoprintSettings() {
+  try {
+    const raw = await fs.readFile(getOctoprintSettingsPath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return normalizeOctoprintSettings(parsed);
+  } catch {
+    return { baseUrl: '', apiKey: '' };
+  }
+}
+
+async function writeOctoprintSettings(settings) {
+  const normalized = normalizeOctoprintSettings(settings);
+  await fs.writeFile(getOctoprintSettingsPath(), JSON.stringify(normalized, null, 2), 'utf8');
+  return normalized;
+}
+
 function sendMenuEvent(channel) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel);
@@ -35,6 +64,11 @@ function createAppMenu() {
           label: 'Export G-code',
           accelerator: 'CmdOrCtrl+E',
           click: () => sendMenuEvent('menu:exportGcode'),
+        },
+        {
+          label: 'OctoPrint Settings',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => sendMenuEvent('menu:octoprintSettings'),
         },
         { type: 'separator' },
         { role: 'quit', label: 'Exit' },
@@ -212,6 +246,99 @@ ipcMain.handle('gcode:export', async (_event, payload) => {
     return {
       canceled: false,
       error: error instanceof Error ? error.message : 'Unknown error while exporting G-code',
+    };
+  }
+});
+
+ipcMain.handle('octoprint:getSettings', async () => {
+  try {
+    const settings = await readOctoprintSettings();
+    return {
+      ok: true,
+      settings,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unable to load OctoPrint settings',
+    };
+  }
+});
+
+ipcMain.handle('octoprint:saveSettings', async (_event, payload) => {
+  try {
+    const settings = await writeOctoprintSettings(payload?.settings || {});
+    return {
+      ok: true,
+      settings,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unable to save OctoPrint settings',
+    };
+  }
+});
+
+ipcMain.handle('octoprint:upload', async (_event, payload) => {
+  try {
+    const stored = await readOctoprintSettings();
+    const baseUrl = stored.baseUrl.replace(/\/+$/, '');
+    const apiKey = stored.apiKey;
+    const gcode = typeof payload?.gcode === 'string' ? payload.gcode : '';
+    const fileName = typeof payload?.fileName === 'string' && payload.fileName.trim()
+      ? payload.fileName.trim()
+      : `simple-cam-${Date.now()}.gcode`;
+    const runAfterUpload = Boolean(payload?.runAfterUpload);
+
+    if (!baseUrl || !apiKey) {
+      return {
+        ok: false,
+        error: 'OctoPrint base URL and API key are required',
+      };
+    }
+
+    if (!gcode.trim()) {
+      return {
+        ok: false,
+        error: 'No G-code content to upload',
+      };
+    }
+
+    const form = new FormData();
+    form.append('select', 'true');
+    form.append('print', runAfterUpload ? 'true' : 'false');
+    form.append('file', new Blob([gcode], { type: 'text/plain' }), fileName);
+
+    const response = await fetch(`${baseUrl}/api/files/local`, {
+      method: 'POST',
+      headers: {
+        'X-Api-Key': apiKey,
+      },
+      body: form,
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      return {
+        ok: false,
+        error: `OctoPrint upload failed (${response.status} ${response.statusText})${
+          detail ? `: ${detail}` : ''
+        }`,
+      };
+    }
+
+    const body = await response.json();
+    return {
+      ok: true,
+      fileName,
+      runAfterUpload,
+      response: body,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unable to send file to OctoPrint',
     };
   }
 });
