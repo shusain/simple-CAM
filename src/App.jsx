@@ -566,9 +566,7 @@ export default function App() {
     }
 
     const bounds = computeBounds(selectedOperations);
-    const anchor = bounds
-      ? { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 }
-      : { x: 0, y: 0 };
+    const anchor = bounds ? { x: bounds.minX, y: bounds.minY } : { x: 0, y: 0 };
 
     const cloned = selectedOperations.map((operation) => {
       const { id, ...rest } = operation;

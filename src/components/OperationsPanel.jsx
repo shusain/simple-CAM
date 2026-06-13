@@ -336,9 +336,48 @@ export default function OperationsPanel({
                 Multi-selection active. Drag selected geometry in the canvas to move as a group, or use the
                 actions below.
               </p>
+              <h3>Linear repeat</h3>
+              <label className="field-row">
+                <span>Copies</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={repeatCount}
+                  onChange={(event) => setRepeatCount(Math.max(1, Number(event.target.value) || 1))}
+                />
+              </label>
+              <label className="field-row">
+                <span>Offset X (mm)</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={repeatOffsetX}
+                  onChange={(event) => setRepeatOffsetX(Number(event.target.value) || 0)}
+                />
+              </label>
+              <label className="field-row">
+                <span>Offset Y (mm)</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={repeatOffsetY}
+                  onChange={(event) => setRepeatOffsetY(Number(event.target.value) || 0)}
+                />
+              </label>
               <div className="button-column">
-                <button type="button" onClick={onRepeatOperation ? () => onRepeatOperation({ count: 1, offsetX: 10, offsetY: 0 }) : undefined}>
-                  Quick repeat +10mm X
+                <button
+                  type="button"
+                  className="accent"
+                  onClick={() =>
+                    onRepeatOperation({
+                      count: repeatCount,
+                      offsetX: repeatOffsetX,
+                      offsetY: repeatOffsetY,
+                    })
+                  }
+                >
+                  Repeat selected
                 </button>
                 <button type="button" className="danger" onClick={onDeleteSelection}>
                   Delete selection
