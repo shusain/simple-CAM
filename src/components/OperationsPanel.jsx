@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getSketchSegments, getSketchStartPoint } from '../utils/geometry';
 
 function formatOperationLabel(operation) {
   if (operation.type === 'drill') {
@@ -21,8 +22,7 @@ function formatOperationLabel(operation) {
   }
 
   if (operation.type === 'sketch') {
-    const pointCount = Array.isArray(operation.points) ? operation.points.length : 0;
-    const segmentCount = Math.max(0, pointCount - 1 + (operation.closed ? 1 : 0));
+    const segmentCount = getSketchSegments(operation).length + (operation.closed ? 1 : 0);
     return `Sketch ${operation.closed ? 'closed' : 'open'} (${segmentCount} segments)`;
   }
 
@@ -199,8 +199,8 @@ export default function OperationsPanel({
           {selectedOperation.type === 'sketch' ? (
             <>
               <label className="field-row">
-                <span>Points</span>
-                <input type="number" value={selectedOperation.points?.length || 0} readOnly />
+                <span>Segments</span>
+                <input type="number" value={getSketchSegments(selectedOperation).length} readOnly />
               </label>
               <label className="field-row checkbox-row">
                 <span>Closed path</span>
@@ -213,7 +213,7 @@ export default function OperationsPanel({
                       tabsEnabled: event.target.checked ? selectedOperation.tabsEnabled : false,
                     })
                   }
-                  disabled={(selectedOperation.points?.length || 0) < 3}
+                  disabled={getSketchSegments(selectedOperation).length < 2 || !getSketchStartPoint(selectedOperation)}
                 />
               </label>
               {selectedOperation.closed ? (

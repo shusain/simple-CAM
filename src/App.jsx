@@ -76,6 +76,7 @@ const TOOLS = [
   { id: 'drill', label: 'Drill' },
   { id: 'line', label: 'Cut Line' },
   { id: 'sketch', label: 'Sketch' },
+  { id: 'arc', label: 'Sketch Arc' },
   { id: 'rect', label: 'Cut Rect' },
   { id: 'circle', label: 'Cut Circle' },
 ];

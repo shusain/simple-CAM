@@ -184,12 +184,18 @@ function getTabRanges(pathPoints, operation, tool) {
     return buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter);
   }
 
+  if (operation.type === 'sketch' && operation.closed) {
+    return buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter);
+  }
+
   return [];
 }
 
 function appendPathWithTabs(lines, pathPoints, depth, liftedDepth, cutFeed, plungeFeed, tabRanges) {
   let traveled = 0;
   let rangeIndex = 0;
+  let liftedForTab = false;
+  let activeTabNumber = 0;
 
   for (let i = 1; i < pathPoints.length; i += 1) {
     const start = pathPoints[i - 1];
@@ -221,14 +227,22 @@ function appendPathWithTabs(lines, pathPoints, depth, liftedDepth, cutFeed, plun
         lines.push(`G1 X${num(tabStartPoint.x)} Y${num(tabStartPoint.y)} F${cutFeed}`);
       }
 
+      if (!liftedForTab) {
+        activeTabNumber = rangeIndex + 1;
+        lines.push(`; Tab ${activeTabNumber} start`);
+        lines.push(`G1 Z${num(liftedDepth)} F${plungeFeed}`);
+        liftedForTab = true;
+      }
+
       const tabEnd = Math.min(segmentEnd, range.end);
       const tabEndPoint = interpolatePoint(start, end, tabEnd - segmentStart);
-      lines.push(`G1 Z${num(liftedDepth)} F${plungeFeed}`);
       lines.push(`G1 X${num(tabEndPoint.x)} Y${num(tabEndPoint.y)} F${cutFeed}`);
-      lines.push(`G1 Z${num(depth)} F${plungeFeed}`);
 
       cursor = tabEnd;
       if (range.end <= segmentEnd) {
+        lines.push(`; Tab ${activeTabNumber} end`);
+        lines.push(`G1 Z${num(depth)} F${plungeFeed}`);
+        liftedForTab = false;
         rangeIndex += 1;
       } else {
         break;

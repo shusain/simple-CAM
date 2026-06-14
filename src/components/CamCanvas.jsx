@@ -104,6 +104,54 @@ function offsetOperation(operation, dx, dy) {
   return moveOperation(operation, dx, dy);
 }
 
+function getDraftSketchCurrentPoint(draft) {
+  if (!draft || draft.type !== 'sketch') {
+    return null;
+  }
+
+  const segments = draft.segments || [];
+  if (segments.length === 0) {
+    return draft.start || null;
+  }
+
+  const last = segments[segments.length - 1];
+  return { x: last.x, y: last.y };
+}
+
+function buildDraftSketchOperation(draft, includePreview = false) {
+  if (!draft || draft.type !== 'sketch' || !draft.start) {
+    return null;
+  }
+
+  const segments = [...(draft.segments || [])];
+  const currentPoint = getDraftSketchCurrentPoint(draft);
+
+  if (includePreview && currentPoint && draft.current) {
+    if (draft.pendingArcEnd) {
+      segments.push({
+        type: 'arc',
+        x: draft.pendingArcEnd.x,
+        y: draft.pendingArcEnd.y,
+        throughX: draft.current.x,
+        throughY: draft.current.y,
+      });
+    } else if (distance(currentPoint, draft.current) > 0.05) {
+      segments.push({
+        type: 'line',
+        x: draft.current.x,
+        y: draft.current.y,
+      });
+    }
+  }
+
+  return {
+    type: 'sketch',
+    start: draft.start,
+    segments,
+    closed: false,
+  };
+}
+
 function rectsOverlap(a, b) {
   return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
 }
@@ -279,27 +327,32 @@ function drawDraft(ctx, transform, draft) {
   }
 
   if (draft.type === 'sketch') {
-    const points = draft.points || [];
-    if (points.length > 0) {
+    const operation = buildDraftSketchOperation(draft, true);
+    const path = operation ? getSketchPathPoints(operation) : [];
+    if (path.length > 0) {
       ctx.beginPath();
-      const start = worldToCanvas(points[0], transform);
+      const start = worldToCanvas(path[0], transform);
       ctx.moveTo(start.x, start.y);
-      for (let i = 1; i < points.length; i += 1) {
-        const point = worldToCanvas(points[i], transform);
+      for (let i = 1; i < path.length; i += 1) {
+        const point = worldToCanvas(path[i], transform);
         ctx.lineTo(point.x, point.y);
-      }
-      if (draft.current) {
-        const current = worldToCanvas(draft.current, transform);
-        ctx.lineTo(current.x, current.y);
       }
       ctx.stroke();
 
-      points.forEach((point, index) => {
+      const draftPoints = [draft.start, ...(draft.segments || []).map((segment) => ({ x: segment.x, y: segment.y }))];
+      draftPoints.filter(Boolean).forEach((point, index) => {
         const p = worldToCanvas(point, transform);
         ctx.beginPath();
         ctx.arc(p.x, p.y, index === 0 ? 4 : 3, 0, Math.PI * 2);
         ctx.stroke();
       });
+
+      if (draft.pendingArcEnd) {
+        const p = worldToCanvas(draft.pendingArcEnd, transform);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
 
@@ -490,7 +543,7 @@ export default function CamCanvas({
   }, [settings.workHeight, settings.workWidth]);
 
   useEffect(() => {
-    if (activeTool !== 'sketch' && draft?.type === 'sketch') {
+    if (!['sketch', 'arc'].includes(activeTool) && draft?.type === 'sketch') {
       setDraft(null);
     }
   }, [activeTool, draft]);
@@ -640,11 +693,12 @@ export default function CamCanvas({
 
       if (event.key === 'Enter' && draft?.type === 'sketch') {
         event.preventDefault();
-        const points = draft.points || [];
-        if (points.length >= 2) {
+        const segments = draft.segments || [];
+        if (draft.start && segments.length >= 1) {
           const id = onAddOperation({
             type: 'sketch',
-            points,
+            start: draft.start,
+            segments,
             closed: false,
             tabsEnabled: false,
             tabCount: 2,
@@ -783,17 +837,20 @@ export default function CamCanvas({
       const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
       setDraft((current) => {
         if (!current || current.type !== 'sketch') {
-          return { type: 'sketch', points: [point], current: point };
+          return { type: 'sketch', start: point, segments: [], current: point, pendingArcEnd: null };
         }
 
-        const points = current.points || [];
-        const first = points[0];
-        const last = points[points.length - 1];
+        const currentPoint = getDraftSketchCurrentPoint(current) || current.start;
 
-        if (points.length >= 3 && distance(point, first) <= closeToleranceMm) {
+        if ((current.segments?.length || 0) >= 2 && distance(point, current.start) <= closeToleranceMm) {
+          const closingSegments =
+            currentPoint && distance(currentPoint, current.start) > 0.05
+              ? [...current.segments, { type: 'line', x: current.start.x, y: current.start.y }]
+              : current.segments;
           const id = onAddOperation({
             type: 'sketch',
-            points,
+            start: current.start,
+            segments: closingSegments,
             closed: true,
             tabsEnabled: true,
             tabCount: 2,
@@ -807,14 +864,81 @@ export default function CamCanvas({
           return null;
         }
 
-        if (distance(point, last) <= 0.05) {
+        if (currentPoint && distance(point, currentPoint) <= 0.05) {
           return current;
         }
 
         return {
           type: 'sketch',
-          points: [...points, point],
+          start: current.start,
+          segments: [...(current.segments || []), { type: 'line', x: point.x, y: point.y }],
           current: point,
+          pendingArcEnd: null,
+        };
+      });
+      return;
+    }
+
+    if (activeTool === 'arc') {
+      const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
+      setDraft((current) => {
+        if (!current || current.type !== 'sketch') {
+          return { type: 'sketch', start: point, segments: [], current: point, pendingArcEnd: null };
+        }
+
+        const currentPoint = getDraftSketchCurrentPoint(current) || current.start;
+        if (!current.pendingArcEnd) {
+          if (currentPoint && distance(point, currentPoint) <= 0.05) {
+            return current;
+          }
+
+          const targetPoint =
+            (current.segments?.length || 0) >= 2 && distance(point, current.start) <= closeToleranceMm
+              ? current.start
+              : point;
+
+          return {
+            ...current,
+            current: point,
+            pendingArcEnd: targetPoint,
+          };
+        }
+
+        const nextSegments = [
+          ...(current.segments || []),
+          {
+            type: 'arc',
+            x: current.pendingArcEnd.x,
+            y: current.pendingArcEnd.y,
+            throughX: point.x,
+            throughY: point.y,
+          },
+        ];
+
+        if (distance(current.pendingArcEnd, current.start) <= closeToleranceMm && nextSegments.length >= 2) {
+          const id = onAddOperation({
+            type: 'sketch',
+            start: current.start,
+            segments: nextSegments,
+            closed: true,
+            tabsEnabled: true,
+            tabCount: 2,
+            tabWidth: 1,
+            tabHeight: 1,
+            depth: settings.cutDepth,
+            toolId: activeToolId,
+            materialId: activeMaterialId,
+          });
+          onSelectOperation(id);
+          return null;
+        }
+
+        return {
+          type: 'sketch',
+          start: current.start,
+          segments: nextSegments,
+          current: current.pendingArcEnd,
+          pendingArcEnd: null,
         };
       });
       return;
@@ -1047,7 +1171,12 @@ export default function CamCanvas({
         <span>
           Shift + click adds selection, drag empty space for box select, Alt/middle/right drag to pan
         </span>
-        {draft?.type === 'sketch' ? <span>Sketch: click to add points, click first point to close, Enter to finish</span> : null}
+        {draft?.type === 'sketch' ? (
+          <span>
+            Sketch: line mode clicks add segments, arc mode uses end click + bulge click, click first point to
+            close, Enter to finish open
+          </span>
+        ) : null}
         {pastePreview ? <span>Paste mode: click to place copied operations (Esc to cancel)</span> : null}
       </div>
     </div>

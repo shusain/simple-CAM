@@ -69,34 +69,204 @@ export function distance(a, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-export function getSketchPoints(operation) {
-  if (operation?.type !== 'sketch' || !Array.isArray(operation.points)) {
-    return [];
+function normalizeAngle(angle) {
+  const full = Math.PI * 2;
+  let value = angle % full;
+  if (value < 0) {
+    value += full;
   }
-
-  return operation.points
-    .map((point) => ({
-      x: toNumber(point?.x, NaN),
-      y: toNumber(point?.y, NaN),
-    }))
-    .filter((point) => isFiniteNumber(point.x) && isFiniteNumber(point.y));
+  return value;
 }
 
-export function getSketchPathPoints(operation) {
-  const points = getSketchPoints(operation);
-  if (points.length === 0) {
+function pointsEqual(a, b, tolerance = 0.0001) {
+  return distance(a, b) <= tolerance;
+}
+
+function normalizeSketchPoint(point) {
+  const x = toNumber(point?.x, NaN);
+  const y = toNumber(point?.y, NaN);
+  if (!isFiniteNumber(x) || !isFiniteNumber(y)) {
+    return null;
+  }
+  return { x, y };
+}
+
+function normalizeLegacySketch(operation) {
+  const points = Array.isArray(operation?.points)
+    ? operation.points.map(normalizeSketchPoint).filter(Boolean)
+    : [];
+
+  if (points.length < 2) {
+    return null;
+  }
+
+  return {
+    start: points[0],
+    segments: points.slice(1).map((point) => ({
+      type: 'line',
+      x: point.x,
+      y: point.y,
+    })),
+  };
+}
+
+function normalizeSketchSegment(segment) {
+  if (!segment || typeof segment !== 'object') {
+    return null;
+  }
+
+  if (segment.type === 'line') {
+    const end = normalizeSketchPoint(segment);
+    return end ? { type: 'line', x: end.x, y: end.y } : null;
+  }
+
+  if (segment.type === 'arc') {
+    const end = normalizeSketchPoint(segment);
+    const through = normalizeSketchPoint({ x: segment.throughX, y: segment.throughY });
+    if (!end || !through) {
+      return null;
+    }
+
+    return {
+      type: 'arc',
+      x: end.x,
+      y: end.y,
+      throughX: through.x,
+      throughY: through.y,
+    };
+  }
+
+  return null;
+}
+
+export function getSketchStartPoint(operation) {
+  if (operation?.type !== 'sketch') {
+    return null;
+  }
+
+  const start = normalizeSketchPoint(operation.start);
+  return start || normalizeLegacySketch(operation)?.start || null;
+}
+
+export function getSketchSegments(operation) {
+  if (operation?.type !== 'sketch') {
     return [];
   }
 
-  if (operation?.closed && points.length > 2) {
-    const first = points[0];
-    const last = points[points.length - 1];
-    if (distance(first, last) > 0.0001) {
-      return [...points, { ...first }];
-    }
+  if (Array.isArray(operation.segments)) {
+    return operation.segments.map(normalizeSketchSegment).filter(Boolean);
+  }
+
+  return normalizeLegacySketch(operation)?.segments || [];
+}
+
+function computeCircleFromThreePoints(start, end, through) {
+  const ax = start.x;
+  const ay = start.y;
+  const bx = through.x;
+  const by = through.y;
+  const cx = end.x;
+  const cy = end.y;
+
+  const denominator = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(denominator) < 0.000001) {
+    return null;
+  }
+
+  const ux =
+    ((ax * ax + ay * ay) * (by - cy) +
+      (bx * bx + by * by) * (cy - ay) +
+      (cx * cx + cy * cy) * (ay - by)) /
+    denominator;
+  const uy =
+    ((ax * ax + ay * ay) * (cx - bx) +
+      (bx * bx + by * by) * (ax - cx) +
+      (cx * cx + cy * cy) * (bx - ax)) /
+    denominator;
+
+  return {
+    center: { x: ux, y: uy },
+    radius: distance({ x: ux, y: uy }, start),
+  };
+}
+
+function isAngleOnCounterClockwiseSweep(startAngle, viaAngle, endAngle) {
+  const start = normalizeAngle(startAngle);
+  const via = normalizeAngle(viaAngle);
+  const end = normalizeAngle(endAngle);
+  const viaDelta = normalizeAngle(via - start);
+  const endDelta = normalizeAngle(end - start);
+  return viaDelta <= endDelta + 0.000001;
+}
+
+function flattenArcSegment(start, segment, circleSegments = 48) {
+  const end = { x: segment.x, y: segment.y };
+  const through = { x: segment.throughX, y: segment.throughY };
+  const circle = computeCircleFromThreePoints(start, end, through);
+
+  if (!circle || circle.radius <= 0.000001) {
+    return [end];
+  }
+
+  const startAngle = Math.atan2(start.y - circle.center.y, start.x - circle.center.x);
+  const endAngle = Math.atan2(end.y - circle.center.y, end.x - circle.center.x);
+  const throughAngle = Math.atan2(through.y - circle.center.y, through.x - circle.center.x);
+  const counterClockwise = isAngleOnCounterClockwiseSweep(startAngle, throughAngle, endAngle);
+  const rawSpan = counterClockwise
+    ? normalizeAngle(endAngle - startAngle)
+    : normalizeAngle(startAngle - endAngle);
+  const steps = Math.max(6, Math.ceil((circleSegments * rawSpan) / (Math.PI * 2)));
+  const points = [];
+
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    const theta = counterClockwise ? startAngle + rawSpan * t : startAngle - rawSpan * t;
+    points.push({
+      x: circle.center.x + Math.cos(theta) * circle.radius,
+      y: circle.center.y + Math.sin(theta) * circle.radius,
+    });
+  }
+
+  if (!pointsEqual(points[points.length - 1], end)) {
+    points.push(end);
   }
 
   return points;
+}
+
+export function getSketchPathPoints(operation, circleSegments = 48) {
+  const start = getSketchStartPoint(operation);
+  const segments = getSketchSegments(operation);
+  if (!start) {
+    return [];
+  }
+  if (segments.length === 0) {
+    return [{ ...start }];
+  }
+
+  const path = [{ ...start }];
+  let current = start;
+
+  segments.forEach((segment) => {
+    if (segment.type === 'line') {
+      const end = { x: segment.x, y: segment.y };
+      path.push(end);
+      current = end;
+      return;
+    }
+
+    if (segment.type === 'arc') {
+      const points = flattenArcSegment(current, segment, circleSegments);
+      points.forEach((point) => path.push(point));
+      current = { x: segment.x, y: segment.y };
+    }
+  });
+
+  if (operation?.closed && path.length > 2 && !pointsEqual(path[path.length - 1], start)) {
+    path.push({ ...start });
+  }
+
+  return path;
 }
 
 export function getOperationBounds(operation) {
@@ -135,16 +305,16 @@ export function getOperationBounds(operation) {
   }
 
   if (operation.type === 'sketch') {
-    const points = getSketchPoints(operation);
-    if (points.length === 0) return null;
-    return points.reduce(
+    const path = getSketchPathPoints(operation);
+    if (path.length === 0) return null;
+    return path.reduce(
       (acc, point) => ({
         minX: Math.min(acc.minX, point.x),
         minY: Math.min(acc.minY, point.y),
         maxX: Math.max(acc.maxX, point.x),
         maxY: Math.max(acc.maxY, point.y),
       }),
-      { minX: points[0].x, minY: points[0].y, maxX: points[0].x, maxY: points[0].y }
+      { minX: path[0].x, minY: path[0].y, maxX: path[0].x, maxY: path[0].y }
     );
   }
 
@@ -273,12 +443,25 @@ export function moveOperation(operation, dx, dy) {
   }
 
   if (operation.type === 'sketch') {
+    const start = getSketchStartPoint(operation);
     return {
       ...operation,
-      points: getSketchPoints(operation).map((point) => ({
-        x: point.x + dx,
-        y: point.y + dy,
-      })),
+      start: start ? { x: start.x + dx, y: start.y + dy } : operation.start,
+      segments: getSketchSegments(operation).map((segment) =>
+        segment.type === 'arc'
+          ? {
+              ...segment,
+              x: segment.x + dx,
+              y: segment.y + dy,
+              throughX: segment.throughX + dx,
+              throughY: segment.throughY + dy,
+            }
+          : {
+              ...segment,
+              x: segment.x + dx,
+              y: segment.y + dy,
+            }
+      ),
     };
   }
 
@@ -376,22 +559,19 @@ export function sanitizeOperation(raw) {
   }
 
   if (raw.type === 'sketch') {
-    const points = Array.isArray(raw.points)
-      ? raw.points
-          .map((point) => ({
-            x: toNumber(point?.x, NaN),
-            y: toNumber(point?.y, NaN),
-          }))
-          .filter((point) => isFiniteNumber(point.x) && isFiniteNumber(point.y))
-      : [];
+    const start = normalizeSketchPoint(raw.start) || normalizeLegacySketch(raw)?.start;
+    const segments = Array.isArray(raw.segments)
+      ? raw.segments.map(normalizeSketchSegment).filter(Boolean)
+      : normalizeLegacySketch(raw)?.segments || [];
 
-    if (points.length < 2) return null;
+    if (!start || segments.length < 1) return null;
 
     return {
       id: raw.id,
       type: 'sketch',
-      points,
-      closed: Boolean(raw.closed) && points.length > 2,
+      start,
+      segments,
+      closed: Boolean(raw.closed) && segments.length > 1,
       depth: toNumber(raw.depth, undefined),
       toolId: sanitizeToolId(raw.toolId),
       materialId: sanitizeMaterialId(raw.materialId),
