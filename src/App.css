@@ -184,6 +184,20 @@ textarea {
   padding: 7px 10px;
 }
 
+.section-block > button:hover {
+  border-color: #64748b;
+}
+
+.section-block > button.accent {
+  border-color: #0ea5e9;
+  color: #bae6fd;
+}
+
+.section-block > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .button-column button,
 .operation-editor button {
   border: 1px solid #334155;
@@ -450,4 +464,3 @@ textarea {
     grid-template-columns: 1fr 92px;
   }
 }
-

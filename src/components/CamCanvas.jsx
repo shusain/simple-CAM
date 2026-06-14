@@ -411,6 +411,8 @@ export default function CamCanvas({
   onAddOperation,
   onMoveOperations,
   activeToolId,
+  activeMaterialId,
+  defaultDrillDepth,
   zoomRequest,
   pastePreview,
   onPlacePaste,
@@ -734,8 +736,9 @@ export default function CamCanvas({
         type: 'drill',
         x: point.x,
         y: point.y,
-        depth: settings.drillDepth,
+        depth: defaultDrillDepth,
         toolId: activeToolId,
+        materialId: activeMaterialId,
       });
       onSelectOperation(id);
       return;
@@ -819,6 +822,7 @@ export default function CamCanvas({
         y2: draft.current.y,
         depth: settings.cutDepth,
         toolId: activeToolId,
+        materialId: activeMaterialId,
       });
       onSelectOperation(id);
     }
@@ -838,8 +842,13 @@ export default function CamCanvas({
           width: rect.width,
           height: rect.height,
           cornerRadius: 0,
+          tabsEnabled: true,
+          tabCount: 2,
+          tabWidth: 1,
+          tabHeight: 1,
           depth: settings.cutDepth,
           toolId: activeToolId,
+          materialId: activeMaterialId,
         });
         onSelectOperation(id);
       }
@@ -853,8 +862,13 @@ export default function CamCanvas({
           x: draft.start.x,
           y: draft.start.y,
           radius,
+          tabsEnabled: true,
+          tabCount: 2,
+          tabWidth: 1,
+          tabHeight: 1,
           depth: settings.cutDepth,
           toolId: activeToolId,
+          materialId: activeMaterialId,
         });
         onSelectOperation(id);
       }
@@ -956,4 +970,3 @@ export default function CamCanvas({
     </div>
   );
 }
-

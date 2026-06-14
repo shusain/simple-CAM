@@ -7,9 +7,12 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function sanitizeToolId(value) {
-  return typeof value === 'string' && value.trim() ? value : undefined;
+function toOptionalPositiveNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
 }
+
+import { sanitizeMaterialId, sanitizeToolId } from './tooling';
 
 export function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -198,6 +201,7 @@ export function sanitizeOperation(raw) {
       y,
       depth: toNumber(raw.depth, undefined),
       toolId: sanitizeToolId(raw.toolId),
+      materialId: sanitizeMaterialId(raw.materialId),
     };
   }
 
@@ -217,6 +221,7 @@ export function sanitizeOperation(raw) {
       y2,
       depth: toNumber(raw.depth, undefined),
       toolId: sanitizeToolId(raw.toolId),
+      materialId: sanitizeMaterialId(raw.materialId),
     };
   }
 
@@ -239,6 +244,11 @@ export function sanitizeOperation(raw) {
       cornerRadius,
       depth: toNumber(raw.depth, undefined),
       toolId: sanitizeToolId(raw.toolId),
+      materialId: sanitizeMaterialId(raw.materialId),
+      tabsEnabled: Boolean(raw.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(raw.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(raw.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(raw.tabHeight) ?? 1,
     };
   }
 
@@ -256,9 +266,13 @@ export function sanitizeOperation(raw) {
       radius: Math.max(0.1, Math.abs(radius)),
       depth: toNumber(raw.depth, undefined),
       toolId: sanitizeToolId(raw.toolId),
+      materialId: sanitizeMaterialId(raw.materialId),
+      tabsEnabled: Boolean(raw.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(raw.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(raw.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(raw.tabHeight) ?? 1,
     };
   }
 
   return null;
 }
-

@@ -28,6 +28,11 @@ function getToolName(toolId, tools) {
   return tool ? `${tool.name} (Ø${tool.diameter}mm)` : 'Unassigned tool';
 }
 
+function getMaterialName(materialId, materials) {
+  const material = materials.find((item) => item.id === materialId);
+  return material ? material.name : 'Unassigned material';
+}
+
 function DepthEditor({ value, onChange }) {
   return (
     <label className="field-row">
@@ -46,6 +51,7 @@ export default function OperationsPanel({
   operations,
   selectedOperation,
   selectedOperationIds,
+  materials,
   tools,
   onSelectOperation,
   onUpdateOperation,
@@ -89,6 +95,20 @@ export default function OperationsPanel({
               {tools.map((tool) => (
                 <option key={tool.id} value={tool.id}>
                   {tool.name} (Ø{tool.diameter}mm)
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field-row">
+            <span>Material</span>
+            <select
+              value={selectedOperation.materialId || ''}
+              onChange={(event) => onUpdateOperation(selectedOperation.id, { materialId: event.target.value })}
+            >
+              {materials.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.name}
                 </option>
               ))}
             </select>
@@ -232,6 +252,62 @@ export default function OperationsPanel({
                   }}
                 />
               </label>
+              <label className="field-row checkbox-row">
+                <span>Retaining tabs</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedOperation.tabsEnabled)}
+                  onChange={(event) =>
+                    onUpdateOperation(selectedOperation.id, { tabsEnabled: event.target.checked })
+                  }
+                />
+              </label>
+              {selectedOperation.tabsEnabled ? (
+                <>
+                  <label className="field-row">
+                    <span>Tab count</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={selectedOperation.tabCount ?? 2}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          tabCount: Math.max(1, Math.round(Number(event.target.value) || 1)),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>Tab width</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={selectedOperation.tabWidth ?? 1}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          tabWidth: Math.max(0.1, Number(event.target.value) || 0.1),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>Tab height</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={selectedOperation.tabHeight ?? 1}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          tabHeight: Math.max(0.1, Number(event.target.value) || 0.1),
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -273,6 +349,62 @@ export default function OperationsPanel({
                   }
                 />
               </label>
+              <label className="field-row checkbox-row">
+                <span>Retaining tabs</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedOperation.tabsEnabled)}
+                  onChange={(event) =>
+                    onUpdateOperation(selectedOperation.id, { tabsEnabled: event.target.checked })
+                  }
+                />
+              </label>
+              {selectedOperation.tabsEnabled ? (
+                <>
+                  <label className="field-row">
+                    <span>Tab count</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={selectedOperation.tabCount ?? 2}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          tabCount: Math.max(1, Math.round(Number(event.target.value) || 1)),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>Tab width</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={selectedOperation.tabWidth ?? 1}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          tabWidth: Math.max(0.1, Number(event.target.value) || 0.1),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>Tab height</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={selectedOperation.tabHeight ?? 1}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          tabHeight: Math.max(0.1, Number(event.target.value) || 0.1),
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -415,6 +547,7 @@ export default function OperationsPanel({
                     <span className="operation-type">{operation.type.toUpperCase()}</span>
                     <span>{formatOperationLabel(operation)}</span>
                     <span className="operation-tool">{getToolName(operation.toolId, tools)}</span>
+                    <span className="operation-tool">{getMaterialName(operation.materialId, materials)}</span>
                   </button>
                   <div className="operation-order-controls">
                     <button
@@ -443,4 +576,3 @@ export default function OperationsPanel({
     </div>
   );
 }
-

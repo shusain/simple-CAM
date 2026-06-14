@@ -8,8 +8,9 @@ This app lets you:
 
 - Draw CAM operations on a 2D work area (drill, line, rectangle, circle)
 - Manage operation order and per-operation tool assignment
+- Assign materials per operation and apply a material across the whole job
 - Configure machine settings (safe Z, feed rates, depth settings, spindle options)
-- Configure tool library values (diameter and feed overrides)
+- Configure tool library values (diameter plus per-material feed and stepdown presets)
 - Export Marlin-compatible G-code
 - Save/open project files (`.cam.json`)
 
@@ -73,12 +74,11 @@ npm start
 
 ## Project save/load and local preferences
 
-- Project files include operations plus machine/tool configuration data.
-- App preferences also persist machine settings + tool setup between launches.
+- Project files include operations plus machine/tool/material configuration data.
+- App preferences also persist machine settings + tool/material setup between launches.
 
 ## Repository notes
 
 - Build output is generated into `dist/`
 - Dependency directory is `node_modules/`
 - These are ignored via [`.gitignore`](.gitignore)
-

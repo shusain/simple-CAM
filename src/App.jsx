@@ -4,6 +4,12 @@ import ControlPanel from './components/ControlPanel';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
 import { sanitizeOperation } from './utils/geometry';
+import {
+  normalizeMaterial,
+  normalizeTool,
+  resolveMaterialId,
+  resolveToolPreset,
+} from './utils/tooling';
 import './App.css';
 
 const DEFAULT_SETTINGS = {
@@ -11,7 +17,9 @@ const DEFAULT_SETTINGS = {
   workHeight: 200,
   gridSize: 5,
   snapEnabled: true,
+  activeMaterialId: 'material-generic',
   safeZ: 5,
+  startEndZ: 15,
   drillDepth: -3,
   peckDepth: 1,
   cutDepth: -2,
@@ -32,6 +40,15 @@ const DEFAULT_TOOLS = [
     rapidFeedRate: 2400,
     cutFeedRate: 600,
     plungeFeedRate: 220,
+    materialProfiles: {
+      'material-generic': {
+        rapidFeedRate: 2400,
+        cutFeedRate: 600,
+        plungeFeedRate: 220,
+        drillDepth: -3,
+        cutDepthPerPass: 1,
+      },
+    },
   },
   {
     id: 'tool-1-8-drill',
@@ -40,8 +57,19 @@ const DEFAULT_TOOLS = [
     rapidFeedRate: 1800,
     cutFeedRate: 350,
     plungeFeedRate: 180,
+    materialProfiles: {
+      'material-generic': {
+        rapidFeedRate: 1800,
+        cutFeedRate: 350,
+        plungeFeedRate: 180,
+        drillDepth: -3,
+        cutDepthPerPass: 1,
+      },
+    },
   },
 ];
+
+const DEFAULT_MATERIALS = [{ id: 'material-generic', name: 'Generic' }];
 
 const TOOLS = [
   { id: 'select', label: 'Select' },
@@ -98,17 +126,6 @@ function offsetOperation(operation, dx, dy) {
   return operation;
 }
 
-function normalizeTool(tool, fallbackId) {
-  return {
-    id: tool?.id || fallbackId,
-    name: tool?.name || 'Tool',
-    diameter: Number.isFinite(tool?.diameter) ? tool.diameter : 3,
-    rapidFeedRate: Number.isFinite(tool?.rapidFeedRate) ? tool.rapidFeedRate : 2400,
-    cutFeedRate: Number.isFinite(tool?.cutFeedRate) ? tool.cutFeedRate : 600,
-    plungeFeedRate: Number.isFinite(tool?.plungeFeedRate) ? tool.plungeFeedRate : 220,
-  };
-}
-
 function loadPreferences() {
   if (typeof window === 'undefined' || !window.localStorage) {
     return null;
@@ -138,7 +155,14 @@ function savePreferences(preferences) {
 
 function getInitialState() {
   const stored = loadPreferences();
+  const materialsRaw =
+    Array.isArray(stored?.materials) && stored.materials.length > 0 ? stored.materials : DEFAULT_MATERIALS;
+  const materials = materialsRaw.map((material, index) =>
+    normalizeMaterial(material, `material-${index}`)
+  );
+
   const settings = { ...DEFAULT_SETTINGS, ...(stored?.settings || {}) };
+  settings.activeMaterialId = resolveMaterialId(materials, settings.activeMaterialId, DEFAULT_SETTINGS.activeMaterialId);
 
   const toolsRaw = Array.isArray(stored?.tools) && stored.tools.length > 0 ? stored.tools : DEFAULT_TOOLS;
   const tools = toolsRaw.map((tool, index) => normalizeTool(tool, `tool-${index}`));
@@ -150,6 +174,7 @@ function getInitialState() {
 
   return {
     settings,
+    materials,
     tools,
     activeToolId,
   };
@@ -328,6 +353,7 @@ export default function App() {
   const initialState = useMemo(() => getInitialState(), []);
 
   const [settings, setSettings] = useState(initialState.settings);
+  const [materials, setMaterials] = useState(initialState.materials);
   const [activeTool, setActiveTool] = useState('select');
   const [operationsHistory, setOperationsHistory] = useState({ past: [], present: [], future: [] });
   const [selectedIds, setSelectedIds] = useState([]);
@@ -348,6 +374,17 @@ export default function App() {
   const selectedOperations = useMemo(
     () => operations.filter((op) => selectedIds.includes(op.id)),
     [operations, selectedIds]
+  );
+  const activeMaterialId = resolveMaterialId(
+    materials,
+    settings.activeMaterialId,
+    DEFAULT_SETTINGS.activeMaterialId
+  );
+  const activeMaterial = materials.find((material) => material.id === activeMaterialId) || materials[0] || null;
+  const activeToolDefinition = tools.find((tool) => tool.id === activeToolId) || tools[0] || null;
+  const activeToolPreset = useMemo(
+    () => resolveToolPreset(activeToolDefinition, activeMaterialId, settings),
+    [activeMaterialId, activeToolDefinition, settings]
   );
 
   const selectedOperation = useMemo(() => {
@@ -429,13 +466,18 @@ export default function App() {
   const addOperation = useCallback(
     (operation) => {
       const selectedToolId = operation.toolId || activeToolId || tools[0]?.id || null;
+      const selectedMaterialId = resolveMaterialId(
+        materials,
+        operation.materialId,
+        activeMaterialId
+      );
       const id = newId();
-      const nextOperation = { ...operation, toolId: selectedToolId, id };
+      const nextOperation = { ...operation, toolId: selectedToolId, materialId: selectedMaterialId, id };
       commitOperations((prev) => [...prev, nextOperation]);
       setSelectedIds([id]);
       return id;
     },
-    [activeToolId, commitOperations, tools]
+    [activeMaterialId, activeToolId, commitOperations, materials, tools]
   );
 
   const updateOperation = useCallback(
@@ -444,6 +486,88 @@ export default function App() {
     },
     [commitOperations]
   );
+
+  const applyDepthSettingsToAll = useCallback(() => {
+    if (operations.length === 0) {
+      return;
+    }
+
+    commitOperations((prev) =>
+      prev.map((operation) => ({
+        ...operation,
+        depth: operation.type === 'drill' ? settings.drillDepth : settings.cutDepth,
+      }))
+    );
+    setStatus(`Applied current depth settings to ${operations.length} operation(s)`);
+  }, [commitOperations, operations.length, settings.cutDepth, settings.drillDepth]);
+
+  const addMaterial = useCallback(() => {
+    const id = newId();
+    setMaterials((prev) => [...prev, { id, name: `Material ${prev.length + 1}` }]);
+    setSettings((prev) => ({ ...prev, activeMaterialId: id }));
+  }, []);
+
+  const updateMaterial = useCallback((materialId, updates) => {
+    setMaterials((prev) =>
+      prev.map((material) => (material.id === materialId ? { ...material, ...updates } : material))
+    );
+  }, []);
+
+  const deleteMaterial = useCallback(
+    (materialId) => {
+      if (materials.length <= 1) return;
+      const fallback = materials.find((material) => material.id !== materialId);
+      if (!fallback) return;
+
+      setMaterials((prev) => prev.filter((material) => material.id !== materialId));
+      setSettings((prev) => ({
+        ...prev,
+        activeMaterialId: prev.activeMaterialId === materialId ? fallback.id : prev.activeMaterialId,
+      }));
+      commitOperations((prev) =>
+        prev.map((operation) =>
+          operation.materialId === materialId ? { ...operation, materialId: fallback.id } : operation
+        )
+      );
+    },
+    [commitOperations, materials]
+  );
+
+  const updateToolMaterialProfile = useCallback((toolId, materialId, updates) => {
+    setTools((prev) =>
+      prev.map((tool) => {
+        if (tool.id !== toolId) {
+          return tool;
+        }
+
+        const currentProfile = tool.materialProfiles?.[materialId] || {};
+        return {
+          ...tool,
+          materialProfiles: {
+            ...(tool.materialProfiles || {}),
+            [materialId]: {
+              ...currentProfile,
+              ...updates,
+            },
+          },
+        };
+      })
+    );
+  }, []);
+
+  const applyMaterialToAll = useCallback(() => {
+    if (operations.length === 0) {
+      return;
+    }
+
+    commitOperations((prev) =>
+      prev.map((operation) => ({
+        ...operation,
+        materialId: activeMaterialId,
+      }))
+    );
+    setStatus(`Applied ${activeMaterial?.name || 'material'} to ${operations.length} operation(s)`);
+  }, [activeMaterial?.name, activeMaterialId, commitOperations, operations.length]);
 
   const moveSelectedOperations = useCallback(
     ({ ids, sourceOperations, dx, dy }) => {
@@ -603,6 +727,7 @@ export default function App() {
         ...offsetOperation(operation, dx, dy),
         id: newId(),
         toolId: operation.toolId || activeToolId,
+        materialId: resolveMaterialId(materials, operation.materialId, activeMaterialId),
       }));
 
       commitOperations((prev) => [...prev, ...pasted]);
@@ -610,7 +735,7 @@ export default function App() {
       setPastePreview(null);
       setStatus(`Placed ${pasted.length} pasted operation(s)`);
     },
-    [activeToolId, commitOperations, pastePreview]
+    [activeMaterialId, activeToolId, commitOperations, materials, pastePreview]
   );
 
   const undo = useCallback(() => {
@@ -672,6 +797,17 @@ export default function App() {
       loadedSettings.cutDepthPerPass = Math.max(0.1, Math.abs(loadedSettings.cutDepth || 1));
     }
 
+    const loadedMaterialsRaw =
+      Array.isArray(loaded.materials) && loaded.materials.length > 0 ? loaded.materials : DEFAULT_MATERIALS;
+    const loadedMaterials = loadedMaterialsRaw.map((material, index) =>
+      normalizeMaterial(material, `material-${index}`)
+    );
+    loadedSettings.activeMaterialId = resolveMaterialId(
+      loadedMaterials,
+      loadedSettings.activeMaterialId,
+      DEFAULT_SETTINGS.activeMaterialId
+    );
+
     const loadedToolsRaw = Array.isArray(loaded.tools) && loaded.tools.length > 0 ? loaded.tools : DEFAULT_TOOLS;
     const loadedTools = loadedToolsRaw.map((tool, index) => normalizeTool(tool, `tool-${index}`));
     const loadedActiveToolId =
@@ -690,10 +826,16 @@ export default function App() {
               item.toolId && loadedTools.some((tool) => tool.id === item.toolId)
                 ? item.toolId
                 : loadedActiveToolId,
+            materialId: resolveMaterialId(
+              loadedMaterials,
+              item.materialId,
+              loadedSettings.activeMaterialId
+            ),
           }))
       : [];
 
     setSettings(loadedSettings);
+    setMaterials(loadedMaterials);
     setTools(loadedTools);
     setActiveToolId(loadedActiveToolId);
     setOperationsDirect(loadedOperations);
@@ -713,7 +855,7 @@ export default function App() {
 
     const result = await electron.saveProject({
       suggestedName: projectName,
-      project: { version: 1, settings, tools, activeToolId, operations },
+      project: { version: 1, settings, materials, tools, activeToolId, operations },
     });
 
     if (!result || result.canceled) return;
@@ -725,7 +867,7 @@ export default function App() {
     const filename = fileNameFromPath(result.filePath);
     if (filename) setProjectName(filename);
     setStatus(`Saved ${filename || projectName}`);
-  }, [activeToolId, electron, operations, projectName, settings, tools]);
+  }, [activeToolId, electron, materials, operations, projectName, settings, tools]);
 
   const handleExport = useCallback(async () => {
     const gcode = generateMarlinGcode({ operations, settings, tools });
@@ -815,6 +957,14 @@ export default function App() {
   }, [operations]);
 
   useEffect(() => {
+    if (settings.activeMaterialId === activeMaterialId) {
+      return;
+    }
+
+    setSettings((prev) => ({ ...prev, activeMaterialId }));
+  }, [activeMaterialId, settings.activeMaterialId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadOctoprintSettings() {
@@ -839,8 +989,8 @@ export default function App() {
   }, [electron]);
 
   useEffect(() => {
-    savePreferences({ settings, tools, activeToolId });
-  }, [activeToolId, settings, tools]);
+    savePreferences({ settings, materials, tools, activeToolId });
+  }, [activeToolId, materials, settings, tools]);
 
   useEffect(() => {
     if (!electron) return undefined;
@@ -964,11 +1114,20 @@ export default function App() {
           <ControlPanel
             settings={settings}
             onSettingsChange={(updates) => setSettings((prev) => ({ ...prev, ...updates }))}
+            materials={materials}
             tools={tools}
             activeToolId={activeToolId}
+            activeMaterialId={activeMaterialId}
             onSelectTool={setActiveToolId}
+            onSelectMaterial={(materialId) =>
+              setSettings((prev) => ({ ...prev, activeMaterialId: materialId }))
+            }
+            onAddMaterial={addMaterial}
+            onUpdateMaterial={updateMaterial}
+            onDeleteMaterial={deleteMaterial}
             onAddTool={addTool}
             onUpdateTool={updateTool}
+            onUpdateToolMaterialProfile={updateToolMaterialProfile}
             onDeleteTool={deleteTool}
             onNewProject={handleNew}
             onOpenProject={handleOpen}
@@ -977,6 +1136,9 @@ export default function App() {
             canSendToOctoprint={hasOctoprintSettings}
             onSendToOctoprint={() => handleSendToOctoprint(false)}
             onSendAndRunOctoprint={() => handleSendToOctoprint(true)}
+            operationCount={operations.length}
+            onApplyDepthSettingsToAll={applyDepthSettingsToAll}
+            onApplyMaterialToAll={applyMaterialToAll}
           />
         </aside>
 
@@ -991,6 +1153,8 @@ export default function App() {
             onAddOperation={addOperation}
             onMoveOperations={moveSelectedOperations}
             activeToolId={activeToolId}
+            activeMaterialId={activeMaterialId}
+            defaultDrillDepth={activeToolPreset.drillDepth}
             zoomRequest={zoomRequest}
             pastePreview={pastePreview}
             onPlacePaste={placePastedOperations}
@@ -1002,6 +1166,7 @@ export default function App() {
             operations={operations}
             selectedOperation={selectedOperation}
             selectedOperationIds={selectedIds}
+            materials={materials}
             tools={tools}
             onSelectOperation={handleSelectOperation}
             onUpdateOperation={updateOperation}
@@ -1036,4 +1201,3 @@ export default function App() {
     </div>
   );
 }
-
