@@ -1,3 +1,4 @@
+import { getSketchPathPoints } from './geometry';
 import { resolveToolPreset } from './tooling';
 
 function num(value, digits = 3) {
@@ -561,6 +562,20 @@ function appendCircleCut(lines, operation, settings, tool, useStartEndClearance 
   appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
 }
 
+function appendSketchCut(lines, operation, settings, tool, useStartEndClearance = false) {
+  if (tool) {
+    lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
+  }
+
+  const path = getSketchPathPoints(operation);
+  if (path.length < 2) {
+    return;
+  }
+
+  lines.push(`; Cut sketch ${operation.closed ? 'closed' : 'open'} path (${Math.max(1, path.length - 1)} segments)`);
+  appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
+}
+
 export function generateMarlinGcode({ operations, settings, tools }) {
   const lines = [];
   addHeader(lines, settings, operations.length);
@@ -604,6 +619,14 @@ export function generateMarlinGcode({ operations, settings, tools }) {
 
     if (operation.type === 'circle') {
       appendCircleCut(lines, operation, settings, tool, useStartEndClearance);
+      previousTool = tool;
+      previousToolKey = toolKey;
+      useStartEndClearance = false;
+      return;
+    }
+
+    if (operation.type === 'sketch') {
+      appendSketchCut(lines, operation, settings, tool, useStartEndClearance);
       previousTool = tool;
       previousToolKey = toolKey;
       useStartEndClearance = false;

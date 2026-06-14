@@ -3,7 +3,7 @@ import CamCanvas from './components/CamCanvas';
 import ControlPanel from './components/ControlPanel';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
-import { sanitizeOperation } from './utils/geometry';
+import { getOperationBounds, moveOperation, sanitizeOperation } from './utils/geometry';
 import {
   normalizeMaterial,
   normalizeTool,
@@ -75,6 +75,7 @@ const TOOLS = [
   { id: 'select', label: 'Select' },
   { id: 'drill', label: 'Drill' },
   { id: 'line', label: 'Cut Line' },
+  { id: 'sketch', label: 'Sketch' },
   { id: 'rect', label: 'Cut Rect' },
   { id: 'circle', label: 'Cut Circle' },
 ];
@@ -101,31 +102,8 @@ function fileNameFromPath(filePath) {
 }
 
 function offsetOperation(operation, dx, dy) {
-  if (operation.type === 'drill') {
-    return { ...operation, x: operation.x + dx, y: operation.y + dy };
-  }
-
-  if (operation.type === 'line') {
-    return {
-      ...operation,
-      x1: operation.x1 + dx,
-      y1: operation.y1 + dy,
-      x2: operation.x2 + dx,
-      y2: operation.y2 + dy,
-    };
-  }
-
-  if (operation.type === 'rect') {
-    return { ...operation, x: operation.x + dx, y: operation.y + dy };
-  }
-
-  if (operation.type === 'circle') {
-    return { ...operation, x: operation.x + dx, y: operation.y + dy };
-  }
-
-  return operation;
+  return moveOperation(operation, dx, dy);
 }
-
 function loadPreferences() {
   if (typeof window === 'undefined' || !window.localStorage) {
     return null;
@@ -180,47 +158,8 @@ function getInitialState() {
   };
 }
 
-function operationBounds(operation) {
-  if (operation.type === 'drill') {
-    return { minX: operation.x, minY: operation.y, maxX: operation.x, maxY: operation.y };
-  }
-
-  if (operation.type === 'line') {
-    return {
-      minX: Math.min(operation.x1, operation.x2),
-      minY: Math.min(operation.y1, operation.y2),
-      maxX: Math.max(operation.x1, operation.x2),
-      maxY: Math.max(operation.y1, operation.y2),
-    };
-  }
-
-  if (operation.type === 'rect') {
-    const x1 = operation.x;
-    const y1 = operation.y;
-    const x2 = operation.x + operation.width;
-    const y2 = operation.y + operation.height;
-    return {
-      minX: Math.min(x1, x2),
-      minY: Math.min(y1, y2),
-      maxX: Math.max(x1, x2),
-      maxY: Math.max(y1, y2),
-    };
-  }
-
-  if (operation.type === 'circle') {
-    return {
-      minX: operation.x - operation.radius,
-      minY: operation.y - operation.radius,
-      maxX: operation.x + operation.radius,
-      maxY: operation.y + operation.radius,
-    };
-  }
-
-  return null;
-}
-
 function computeBounds(operations) {
-  const items = operations.map(operationBounds).filter(Boolean);
+  const items = operations.map(getOperationBounds).filter(Boolean);
   if (items.length === 0) return null;
 
   return items.reduce(

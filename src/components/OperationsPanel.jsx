@@ -20,6 +20,12 @@ function formatOperationLabel(operation) {
     return `Circle R${operation.radius.toFixed(2)} @ X${operation.x.toFixed(1)} Y${operation.y.toFixed(1)}`;
   }
 
+  if (operation.type === 'sketch') {
+    const pointCount = Array.isArray(operation.points) ? operation.points.length : 0;
+    const segmentCount = Math.max(0, pointCount - 1 + (operation.closed ? 1 : 0));
+    return `Sketch ${operation.closed ? 'closed' : 'open'} (${segmentCount} segments)`;
+  }
+
   return operation.type;
 }
 
@@ -187,6 +193,89 @@ export default function OperationsPanel({
                   }
                 />
               </label>
+            </>
+          ) : null}
+
+          {selectedOperation.type === 'sketch' ? (
+            <>
+              <label className="field-row">
+                <span>Points</span>
+                <input type="number" value={selectedOperation.points?.length || 0} readOnly />
+              </label>
+              <label className="field-row checkbox-row">
+                <span>Closed path</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedOperation.closed)}
+                  onChange={(event) =>
+                    onUpdateOperation(selectedOperation.id, {
+                      closed: event.target.checked,
+                      tabsEnabled: event.target.checked ? selectedOperation.tabsEnabled : false,
+                    })
+                  }
+                  disabled={(selectedOperation.points?.length || 0) < 3}
+                />
+              </label>
+              {selectedOperation.closed ? (
+                <>
+                  <label className="field-row checkbox-row">
+                    <span>Retaining tabs</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedOperation.tabsEnabled)}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, { tabsEnabled: event.target.checked })
+                      }
+                    />
+                  </label>
+                  {selectedOperation.tabsEnabled ? (
+                    <>
+                      <label className="field-row">
+                        <span>Tab count</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={selectedOperation.tabCount ?? 2}
+                          onChange={(event) =>
+                            onUpdateOperation(selectedOperation.id, {
+                              tabCount: Math.max(1, Math.round(Number(event.target.value) || 1)),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field-row">
+                        <span>Tab width</span>
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={selectedOperation.tabWidth ?? 1}
+                          onChange={(event) =>
+                            onUpdateOperation(selectedOperation.id, {
+                              tabWidth: Math.max(0.1, Number(event.target.value) || 0.1),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field-row">
+                        <span>Tab height</span>
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={selectedOperation.tabHeight ?? 1}
+                          onChange={(event) =>
+                            onUpdateOperation(selectedOperation.id, {
+                              tabHeight: Math.max(0.1, Number(event.target.value) || 0.1),
+                            })
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
 

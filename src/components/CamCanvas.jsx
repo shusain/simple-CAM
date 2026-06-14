@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { clamp, distance, hitTestOperation, normalizeRect, snapPoint } from '../utils/geometry';
+import {
+  clamp,
+  distance,
+  getOperationBounds,
+  getSketchPathPoints,
+  hitTestOperation,
+  moveOperation,
+  normalizeRect,
+  snapPoint,
+} from '../utils/geometry';
 
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 14;
@@ -92,62 +101,7 @@ function defocusActiveEditor() {
 }
 
 function offsetOperation(operation, dx, dy) {
-  if (operation.type === 'drill') {
-    return { ...operation, x: operation.x + dx, y: operation.y + dy };
-  }
-
-  if (operation.type === 'line') {
-    return {
-      ...operation,
-      x1: operation.x1 + dx,
-      y1: operation.y1 + dy,
-      x2: operation.x2 + dx,
-      y2: operation.y2 + dy,
-    };
-  }
-
-  if (operation.type === 'rect' || operation.type === 'circle') {
-    return { ...operation, x: operation.x + dx, y: operation.y + dy };
-  }
-
-  return operation;
-}
-
-function operationBounds(operation) {
-  if (operation.type === 'drill') {
-    return { minX: operation.x, minY: operation.y, maxX: operation.x, maxY: operation.y };
-  }
-
-  if (operation.type === 'line') {
-    return {
-      minX: Math.min(operation.x1, operation.x2),
-      minY: Math.min(operation.y1, operation.y2),
-      maxX: Math.max(operation.x1, operation.x2),
-      maxY: Math.max(operation.y1, operation.y2),
-    };
-  }
-
-  if (operation.type === 'rect') {
-    const x2 = operation.x + operation.width;
-    const y2 = operation.y + operation.height;
-    return {
-      minX: Math.min(operation.x, x2),
-      minY: Math.min(operation.y, y2),
-      maxX: Math.max(operation.x, x2),
-      maxY: Math.max(operation.y, y2),
-    };
-  }
-
-  if (operation.type === 'circle') {
-    return {
-      minX: operation.x - operation.radius,
-      minY: operation.y - operation.radius,
-      maxX: operation.x + operation.radius,
-      maxY: operation.y + operation.radius,
-    };
-  }
-
-  return null;
+  return moveOperation(operation, dx, dy);
 }
 
 function rectsOverlap(a, b) {
@@ -271,6 +225,20 @@ function drawOperation(ctx, transform, operation, options = {}) {
     ctx.stroke();
   }
 
+  if (operation.type === 'sketch') {
+    const path = getSketchPathPoints(operation);
+    if (path.length >= 2) {
+      ctx.beginPath();
+      const start = worldToCanvas(path[0], transform);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < path.length; i += 1) {
+        const point = worldToCanvas(path[i], transform);
+        ctx.lineTo(point.x, point.y);
+      }
+      ctx.stroke();
+    }
+  }
+
   ctx.restore();
 }
 
@@ -308,6 +276,31 @@ function drawDraft(ctx, transform, draft) {
     ctx.beginPath();
     ctx.arc(center.x, center.y, radiusMm * transform.scale, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  if (draft.type === 'sketch') {
+    const points = draft.points || [];
+    if (points.length > 0) {
+      ctx.beginPath();
+      const start = worldToCanvas(points[0], transform);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < points.length; i += 1) {
+        const point = worldToCanvas(points[i], transform);
+        ctx.lineTo(point.x, point.y);
+      }
+      if (draft.current) {
+        const current = worldToCanvas(draft.current, transform);
+        ctx.lineTo(current.x, current.y);
+      }
+      ctx.stroke();
+
+      points.forEach((point, index) => {
+        const p = worldToCanvas(point, transform);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, index === 0 ? 4 : 3, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+    }
   }
 
   ctx.restore();
@@ -379,6 +372,20 @@ function drawMiniMap(ctx, transform, operations) {
       const center = toMap({ x: operation.x, y: operation.y });
       ctx.beginPath();
       ctx.arc(center.x, center.y, operation.radius * scale, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    }
+
+    if (operation.type === 'sketch') {
+      const path = getSketchPathPoints(operation);
+      if (path.length < 2) return;
+      ctx.beginPath();
+      const start = toMap(path[0]);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < path.length; i += 1) {
+        const point = toMap(path[i]);
+        ctx.lineTo(point.x, point.y);
+      }
       ctx.stroke();
     }
   });
@@ -481,6 +488,12 @@ export default function CamCanvas({
       },
     });
   }, [settings.workHeight, settings.workWidth]);
+
+  useEffect(() => {
+    if (activeTool !== 'sketch' && draft?.type === 'sketch') {
+      setDraft(null);
+    }
+  }, [activeTool, draft]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -622,12 +635,34 @@ export default function CamCanvas({
         interactionRef.current.mode = null;
         setDraft(null);
         setSelectBox(null);
+        return;
+      }
+
+      if (event.key === 'Enter' && draft?.type === 'sketch') {
+        event.preventDefault();
+        const points = draft.points || [];
+        if (points.length >= 2) {
+          const id = onAddOperation({
+            type: 'sketch',
+            points,
+            closed: false,
+            tabsEnabled: false,
+            tabCount: 2,
+            tabWidth: 1,
+            tabHeight: 1,
+            depth: settings.cutDepth,
+            toolId: activeToolId,
+            materialId: activeMaterialId,
+          });
+          onSelectOperation(id);
+        }
+        setDraft(null);
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [activeMaterialId, activeToolId, draft, onAddOperation, onSelectOperation, settings.cutDepth]);
 
   function getPointerPoint(event, snap = true) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -744,6 +779,47 @@ export default function CamCanvas({
       return;
     }
 
+    if (activeTool === 'sketch') {
+      const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
+      setDraft((current) => {
+        if (!current || current.type !== 'sketch') {
+          return { type: 'sketch', points: [point], current: point };
+        }
+
+        const points = current.points || [];
+        const first = points[0];
+        const last = points[points.length - 1];
+
+        if (points.length >= 3 && distance(point, first) <= closeToleranceMm) {
+          const id = onAddOperation({
+            type: 'sketch',
+            points,
+            closed: true,
+            tabsEnabled: true,
+            tabCount: 2,
+            tabWidth: 1,
+            tabHeight: 1,
+            depth: settings.cutDepth,
+            toolId: activeToolId,
+            materialId: activeMaterialId,
+          });
+          onSelectOperation(id);
+          return null;
+        }
+
+        if (distance(point, last) <= 0.05) {
+          return current;
+        }
+
+        return {
+          type: 'sketch',
+          points: [...points, point],
+          current: point,
+        };
+      });
+      return;
+    }
+
     if (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle') {
       interactionRef.current = {
         mode: 'draw',
@@ -764,6 +840,10 @@ export default function CamCanvas({
     const point = getPointerPoint(event, true);
     setPointerMm(point);
     const interaction = interactionRef.current;
+
+    if (draft?.type === 'sketch') {
+      setDraft((current) => (current?.type === 'sketch' ? { ...current, current: point } : current));
+    }
 
     if (!interaction.mode) return;
 
@@ -895,7 +975,7 @@ export default function CamCanvas({
 
     const ids = operations
       .filter((operation) => {
-        const bounds = operationBounds(operation);
+        const bounds = getOperationBounds(operation);
         return bounds ? rectsOverlap(bounds, selectionRect) : false;
       })
       .map((operation) => operation.id);
@@ -923,7 +1003,9 @@ export default function CamCanvas({
       additive: false,
     };
 
-    setDraft(null);
+    if (draft?.type !== 'sketch') {
+      setDraft(null);
+    }
     setSelectBox(null);
 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -965,6 +1047,7 @@ export default function CamCanvas({
         <span>
           Shift + click adds selection, drag empty space for box select, Alt/middle/right drag to pan
         </span>
+        {draft?.type === 'sketch' ? <span>Sketch: click to add points, click first point to close, Enter to finish</span> : null}
         {pastePreview ? <span>Paste mode: click to place copied operations (Esc to cancel)</span> : null}
       </div>
     </div>

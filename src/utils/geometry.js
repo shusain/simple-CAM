@@ -69,6 +69,88 @@ export function distance(a, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+export function getSketchPoints(operation) {
+  if (operation?.type !== 'sketch' || !Array.isArray(operation.points)) {
+    return [];
+  }
+
+  return operation.points
+    .map((point) => ({
+      x: toNumber(point?.x, NaN),
+      y: toNumber(point?.y, NaN),
+    }))
+    .filter((point) => isFiniteNumber(point.x) && isFiniteNumber(point.y));
+}
+
+export function getSketchPathPoints(operation) {
+  const points = getSketchPoints(operation);
+  if (points.length === 0) {
+    return [];
+  }
+
+  if (operation?.closed && points.length > 2) {
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (distance(first, last) > 0.0001) {
+      return [...points, { ...first }];
+    }
+  }
+
+  return points;
+}
+
+export function getOperationBounds(operation) {
+  if (!operation) return null;
+
+  if (operation.type === 'drill') {
+    return { minX: operation.x, minY: operation.y, maxX: operation.x, maxY: operation.y };
+  }
+
+  if (operation.type === 'line') {
+    return {
+      minX: Math.min(operation.x1, operation.x2),
+      minY: Math.min(operation.y1, operation.y2),
+      maxX: Math.max(operation.x1, operation.x2),
+      maxY: Math.max(operation.y1, operation.y2),
+    };
+  }
+
+  if (operation.type === 'rect') {
+    const rect = normalizeRect(operation.x, operation.y, operation.width, operation.height);
+    return {
+      minX: rect.x,
+      minY: rect.y,
+      maxX: rect.x + rect.width,
+      maxY: rect.y + rect.height,
+    };
+  }
+
+  if (operation.type === 'circle') {
+    return {
+      minX: operation.x - operation.radius,
+      minY: operation.y - operation.radius,
+      maxX: operation.x + operation.radius,
+      maxY: operation.y + operation.radius,
+    };
+  }
+
+  if (operation.type === 'sketch') {
+    const points = getSketchPoints(operation);
+    if (points.length === 0) return null;
+    return points.reduce(
+      (acc, point) => ({
+        minX: Math.min(acc.minX, point.x),
+        minY: Math.min(acc.minY, point.y),
+        maxX: Math.max(acc.maxX, point.x),
+        maxY: Math.max(acc.maxY, point.y),
+      }),
+      { minX: points[0].x, minY: points[0].y, maxX: points[0].x, maxY: points[0].y }
+    );
+  }
+
+  return null;
+}
+
 export function pointToSegmentDistance(point, a, b) {
   const ax = a.x;
   const ay = a.y;
@@ -145,6 +227,15 @@ export function hitTestOperation(operation, point, tolerance = 2) {
     return Math.abs(d - operation.radius) <= tolerance || d < operation.radius;
   }
 
+  if (operation.type === 'sketch') {
+    const path = getSketchPathPoints(operation);
+    for (let i = 1; i < path.length; i += 1) {
+      if (pointToSegmentDistance(point, path[i - 1], path[i]) <= tolerance) {
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 
@@ -178,6 +269,16 @@ export function moveOperation(operation, dx, dy) {
       ...operation,
       x: operation.x + dx,
       y: operation.y + dy,
+    };
+  }
+
+  if (operation.type === 'sketch') {
+    return {
+      ...operation,
+      points: getSketchPoints(operation).map((point) => ({
+        x: point.x + dx,
+        y: point.y + dy,
+      })),
     };
   }
 
@@ -264,6 +365,33 @@ export function sanitizeOperation(raw) {
       x,
       y,
       radius: Math.max(0.1, Math.abs(radius)),
+      depth: toNumber(raw.depth, undefined),
+      toolId: sanitizeToolId(raw.toolId),
+      materialId: sanitizeMaterialId(raw.materialId),
+      tabsEnabled: Boolean(raw.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(raw.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(raw.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(raw.tabHeight) ?? 1,
+    };
+  }
+
+  if (raw.type === 'sketch') {
+    const points = Array.isArray(raw.points)
+      ? raw.points
+          .map((point) => ({
+            x: toNumber(point?.x, NaN),
+            y: toNumber(point?.y, NaN),
+          }))
+          .filter((point) => isFiniteNumber(point.x) && isFiniteNumber(point.y))
+      : [];
+
+    if (points.length < 2) return null;
+
+    return {
+      id: raw.id,
+      type: 'sketch',
+      points,
+      closed: Boolean(raw.closed) && points.length > 2,
       depth: toNumber(raw.depth, undefined),
       toolId: sanitizeToolId(raw.toolId),
       materialId: sanitizeMaterialId(raw.materialId),
