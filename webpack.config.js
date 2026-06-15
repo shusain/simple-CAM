@@ -42,6 +42,10 @@ module.exports = {
       filename: 'index.html',
     }),
   ],
+  performance: {
+    maxAssetSize: 512000,
+    maxEntrypointSize: 512000,
+  },
   devServer: {
     port: 3000,
     hot: true,

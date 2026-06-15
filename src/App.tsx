@@ -1,16 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import CamCanvas from './components/CamCanvas';
 import ControlPanel from './components/ControlPanel';
+import OctoprintSettingsModal from './components/OctoprintSettingsModal';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
-import { getOperationBounds, isClosedSketchPath, moveOperation, sanitizeOperation } from './utils/geometry';
-import {
-  normalizeMaterial,
-  normalizeTool,
-  resolveMaterialId,
-} from './utils/tooling';
+import { getOperationBounds, isClosedSketchPath, moveOperation } from './utils/geometry';
+import { resolveMaterialId } from './utils/tooling';
 import type {
-  CamProjectFile,
   HistoryState,
   MachineSettings,
   Material,
@@ -23,327 +19,39 @@ import type {
   SketchEditState,
 } from './types';
 import type { ElectronBridge } from './types/electron';
+import {
+  DEFAULT_OCTOPRINT_SETTINGS,
+  DEFAULT_SETTINGS,
+  DEFAULT_TOOLS,
+  HISTORY_LIMIT,
+  TOOLS,
+  type ActiveTool,
+} from './app/defaults';
+import {
+  buildGcodeFileName,
+  computeBounds,
+  fileNameFromPath,
+  getInitialState,
+  isEditableElement,
+  loadBrowserOctoprintSettings,
+  newId,
+  normalizeOctoprintSettings,
+  offsetOperation,
+  operationsChanged,
+  saveBrowserOctoprintSettings,
+  savePreferences,
+} from './app/helpers';
+import { buildProjectFile, hydrateProjectFile } from './app/project';
+import type {
+  InitialState,
+  MoveSelectedOperationsArgs,
+  OperationBounds,
+  OperationsUpdater,
+  OperationUpdates,
+  RepeatArgs,
+  SelectOptions,
+} from './app/types';
 import './App.css';
-
-const DEFAULT_SETTINGS: MachineSettings = {
-  workWidth: 300,
-  workHeight: 200,
-  gridSize: 5,
-  snapEnabled: true,
-  activeMaterialId: 'material-generic',
-  safeZ: 5,
-  startEndZ: 15,
-  drillDepth: -3,
-  cutDepth: -2,
-  rapidFeedRate: 2400,
-  cutFeedRate: 600,
-  plungeFeedRate: 220,
-  spindleOn: false,
-  spindleSpeed: 10000,
-  circleSegments: 48,
-};
-
-const DEFAULT_TOOLS: Tool[] = [
-  {
-    id: 'tool-3.175mm-endmill',
-    name: 'Endmill 3.175mm',
-    diameter: 3.175,
-    rapidFeedRate: 2400,
-    cutFeedRate: 600,
-    plungeFeedRate: 220,
-    materialProfiles: {
-      'material-generic': {
-        cutFeedRate: 600,
-        plungeFeedRate: 220,
-        drillDepthPerPass: 1,
-        cutDepthPerPass: 1,
-      },
-    },
-  },
-  {
-    id: 'tool-1-8-drill',
-    name: 'Drill 3.175mm',
-    diameter: 3.175,
-    rapidFeedRate: 1800,
-    cutFeedRate: 350,
-    plungeFeedRate: 180,
-    materialProfiles: {
-      'material-generic': {
-        cutFeedRate: 350,
-        plungeFeedRate: 180,
-        drillDepthPerPass: 1,
-        cutDepthPerPass: 1,
-      },
-    },
-  },
-];
-
-const DEFAULT_MATERIALS: Material[] = [{ id: 'material-generic', name: 'Generic' }];
-
-const TOOLS = [
-  { id: 'select', label: 'Select' },
-  { id: 'drill', label: 'Drill' },
-  { id: 'line', label: 'Cut Line' },
-  { id: 'sketch', label: 'Poly-Line' },
-  { id: 'arc', label: 'Poly-Arc' },
-  { id: 'rect', label: 'Cut Rect' },
-  { id: 'circle', label: 'Cut Circle' },
-] as const;
-
-type ActiveTool = (typeof TOOLS)[number]['id'];
-
-interface PreferencesData {
-  settings?: Partial<MachineSettings>;
-  materials?: Material[];
-  tools?: Tool[];
-  activeToolId?: string;
-}
-
-interface InitialState {
-  settings: MachineSettings;
-  materials: Material[];
-  tools: Tool[];
-  activeToolId: string;
-}
-
-interface OctoprintSettingsModalProps {
-  isOpen: boolean;
-  settings: OctoprintSettings;
-  onClose: () => void;
-  onSave: (settings: OctoprintSettings) => void;
-}
-
-interface SelectOptions {
-  additive?: boolean;
-  toggle?: boolean;
-}
-
-interface RepeatArgs {
-  count: number;
-  offsetX: number;
-  offsetY: number;
-}
-
-interface MoveSelectedOperationsArgs {
-  ids: string[];
-  sourceOperations: Operation[];
-  dx: number;
-  dy: number;
-}
-
-type OperationsUpdater = Operation[] | ((current: Operation[]) => Operation[]);
-type OperationUpdates = Partial<Operation>;
-type OperationBounds = NonNullable<ReturnType<typeof getOperationBounds>>;
-
-const HISTORY_LIMIT = 200;
-const PREFERENCES_STORAGE_KEY = 'simple-cam.preferences.v1';
-const OCTOPRINT_WEB_STORAGE_KEY = 'simple-cam.octoprint.v1';
-const DEFAULT_OCTOPRINT_SETTINGS: OctoprintSettings = {
-  baseUrl: '',
-  apiKey: '',
-};
-
-function newId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-}
-
-function fileNameFromPath(filePath?: string): string | null {
-  if (!filePath) return null;
-  const parts = filePath.split(/[/\\]/);
-  return parts[parts.length - 1] || null;
-}
-
-function offsetOperation(operation: Operation, dx: number, dy: number): Operation {
-  return moveOperation(operation, dx, dy) as Operation;
-}
-
-function loadPreferences(): PreferencesData | null {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as PreferencesData) : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePreferences(preferences: PreferencesData): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
-  } catch {
-    // Ignore persistence errors.
-  }
-}
-
-function getInitialState(): InitialState {
-  const stored = loadPreferences();
-  const materialsRaw =
-    Array.isArray(stored?.materials) && stored.materials.length > 0 ? stored.materials : DEFAULT_MATERIALS;
-  const materials = materialsRaw.map((material, index) =>
-    normalizeMaterial(material, `material-${index}`)
-  );
-
-  const settings: MachineSettings = { ...DEFAULT_SETTINGS, ...(stored?.settings || {}) };
-  settings.activeMaterialId =
-    resolveMaterialId(materials, settings.activeMaterialId, DEFAULT_SETTINGS.activeMaterialId) ||
-    DEFAULT_SETTINGS.activeMaterialId;
-
-  const toolsRaw = Array.isArray(stored?.tools) && stored.tools.length > 0 ? stored.tools : DEFAULT_TOOLS;
-  const tools = toolsRaw.map((tool, index) => normalizeTool(tool, `tool-${index}`));
-
-  const activeToolId =
-    stored?.activeToolId && tools.some((tool) => tool.id === stored.activeToolId)
-      ? stored.activeToolId
-      : tools[0].id;
-
-  return {
-    settings,
-    materials,
-    tools,
-    activeToolId,
-  };
-}
-
-function computeBounds(operations: Operation[]): OperationBounds | null {
-  const items = operations.map(getOperationBounds).filter(Boolean) as OperationBounds[];
-  if (items.length === 0) return null;
-
-  return items.reduce(
-    (acc, item) => ({
-      minX: Math.min(acc.minX, item.minX),
-      minY: Math.min(acc.minY, item.minY),
-      maxX: Math.max(acc.maxX, item.maxX),
-      maxY: Math.max(acc.maxY, item.maxY),
-    }),
-    items[0]
-  );
-}
-
-function isEditableElement(target: EventTarget | null): boolean {
-  if (!target || !(target instanceof HTMLElement)) return false;
-  const tag = target.tagName?.toLowerCase();
-  return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
-}
-
-function operationsChanged(a: Operation[], b: Operation[]): boolean {
-  if (a === b) return false;
-  if (!Array.isArray(a) || !Array.isArray(b)) return true;
-  if (a.length !== b.length) return true;
-  return JSON.stringify(a) !== JSON.stringify(b);
-}
-
-function buildGcodeFileName(projectName: string): string {
-  const base = (projectName || 'output').replace(/\.(cam|json|gcode)$/i, '');
-  return `${base || 'output'}.gcode`;
-}
-
-function normalizeOctoprintSettings(settings: Partial<OctoprintSettings> | null | undefined): OctoprintSettings {
-  const baseRaw = typeof settings?.baseUrl === 'string' ? settings.baseUrl.trim() : '';
-  const hasScheme = /^https?:\/\//i.test(baseRaw);
-  return {
-    baseUrl: baseRaw ? (hasScheme ? baseRaw : `http://${baseRaw}`) : '',
-    apiKey: typeof settings?.apiKey === 'string' ? settings.apiKey.trim() : '',
-  };
-}
-
-function loadBrowserOctoprintSettings(): OctoprintSettings {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return DEFAULT_OCTOPRINT_SETTINGS;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(OCTOPRINT_WEB_STORAGE_KEY);
-    if (!raw) return DEFAULT_OCTOPRINT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<OctoprintSettings>;
-    return normalizeOctoprintSettings(parsed);
-  } catch {
-    return DEFAULT_OCTOPRINT_SETTINGS;
-  }
-}
-
-function saveBrowserOctoprintSettings(settings: Partial<OctoprintSettings>): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(
-      OCTOPRINT_WEB_STORAGE_KEY,
-      JSON.stringify(normalizeOctoprintSettings(settings))
-    );
-  } catch {
-    // Ignore persistence errors.
-  }
-}
-
-function OctoprintSettingsModal({ isOpen, settings, onClose, onSave }: OctoprintSettingsModalProps): React.JSX.Element | null {
-  const [draft, setDraft] = useState<OctoprintSettings>(settings);
-
-  useEffect(() => {
-    if (isOpen) {
-      setDraft(settings);
-    }
-  }, [isOpen, settings]);
-
-  if (!isOpen) {
-    return null;
-  }
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <h3>OctoPrint Settings</h3>
-          <button type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-
-        <p className="section-note" style={{ marginBottom: 12 }}>
-          Saved locally on this machine and not included in project files.
-        </p>
-
-        <label className="field-row">
-          <span>OctoPrint URL</span>
-          <input
-            type="text"
-            placeholder="http://octopi.local"
-            value={draft.baseUrl}
-            onChange={(event) => setDraft((prev) => ({ ...prev, baseUrl: event.target.value }))}
-          />
-        </label>
-
-        <label className="field-row">
-          <span>API Key</span>
-          <input
-            type="password"
-            placeholder="OctoPrint API key"
-            value={draft.apiKey}
-            onChange={(event) => setDraft((prev) => ({ ...prev, apiKey: event.target.value }))}
-          />
-        </label>
-
-        <div className="button-column" style={{ marginTop: 10 }}>
-          <button type="button" className="accent" onClick={() => onSave(draft)}>
-            Save OctoPrint Settings
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function App(): React.JSX.Element {
   const electron: ElectronBridge | null = typeof window !== 'undefined' ? window.electron || null : null;
@@ -756,7 +464,7 @@ export default function App(): React.JSX.Element {
       return;
     }
 
-    const bounds = computeBounds(selectedOperations);
+    const bounds = computeBounds(selectedOperations, getOperationBounds);
     const anchor = bounds ? { x: bounds.minX, y: bounds.minY } : { x: 0, y: 0 };
 
     const cloned = selectedOperations.map((operation) => ({ ...operation }));
@@ -855,59 +563,19 @@ export default function App(): React.JSX.Element {
       return;
     }
 
-    const loadedSettings: MachineSettings = { ...DEFAULT_SETTINGS, ...(loaded.settings || {}) };
+    const hydrated = hydrateProjectFile(loaded, newId);
 
-    const loadedMaterialsRaw: Material[] =
-      Array.isArray(loaded.materials) && loaded.materials.length > 0 ? loaded.materials : DEFAULT_MATERIALS;
-    const loadedMaterials = loadedMaterialsRaw.map((material, index) =>
-      normalizeMaterial(material, `material-${index}`)
-    );
-    loadedSettings.activeMaterialId =
-      resolveMaterialId(
-        loadedMaterials,
-        loadedSettings.activeMaterialId,
-        DEFAULT_SETTINGS.activeMaterialId
-      ) || DEFAULT_SETTINGS.activeMaterialId;
-
-    const loadedToolsRaw: Tool[] = Array.isArray(loaded.tools) && loaded.tools.length > 0 ? loaded.tools : DEFAULT_TOOLS;
-    const loadedTools = loadedToolsRaw.map((tool, index) => normalizeTool(tool, `tool-${index}`));
-    const loadedActiveToolId =
-      loaded.activeToolId && loadedTools.some((tool) => tool.id === loaded.activeToolId)
-        ? loaded.activeToolId
-        : loadedTools[0].id;
-
-    const loadedOperationsSource: Operation[] = Array.isArray(loaded.operations) ? loaded.operations : [];
-    const loadedOperations: Operation[] = loadedOperationsSource.length > 0
-      ? loadedOperationsSource
-          .map((item) => sanitizeOperation(item))
-          .filter((item): item is Operation => Boolean(item))
-          .map((item) => ({
-            ...item,
-            id: item.id || newId(),
-            toolId:
-              item.toolId && loadedTools.some((tool) => tool.id === item.toolId)
-                ? item.toolId
-                : loadedActiveToolId,
-            materialId:
-              resolveMaterialId(
-                loadedMaterials,
-                item.materialId,
-                loadedSettings.activeMaterialId
-              ) || undefined,
-          }))
-      : [];
-
-    setSettings(loadedSettings);
-    setMaterials(loadedMaterials);
-    setTools(loadedTools);
-    setActiveToolId(loadedActiveToolId);
-    setOperationsDirect(loadedOperations);
+    setSettings(hydrated.settings);
+    setMaterials(hydrated.materials);
+    setTools(hydrated.tools);
+    setActiveToolId(hydrated.activeToolId);
+    setOperationsDirect(hydrated.operations);
     setSelectedIds([]);
     setClipboard(null);
     setPastePreview(null);
     const filename = fileNameFromPath(result.filePath);
     if (filename) setProjectName(filename);
-    setStatus(`Opened ${loadedOperations.length} operation(s)`);
+    setStatus(`Opened ${hydrated.operations.length} operation(s)`);
   }, [electron, setOperationsDirect]);
 
   const handleSave = useCallback(async () => {
@@ -916,7 +584,7 @@ export default function App(): React.JSX.Element {
       return;
     }
 
-    const project: CamProjectFile = { version: 1, settings, materials, tools, activeToolId, operations };
+    const project = buildProjectFile({ settings, materials, tools, activeToolId, operations });
     const result = await electron.saveProject({
       suggestedName: projectName,
       project,
