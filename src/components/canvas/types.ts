@@ -13,6 +13,7 @@ import type {
   LineOperation,
   RectOperation,
 } from '../../types';
+import type { ToolpathPreview } from '../../utils/toolpathPreview';
 
 export type CanvasTool = 'select' | 'drill' | 'line' | 'sketch' | 'arc' | 'rect' | 'circle';
 
@@ -110,4 +111,6 @@ export interface CamCanvasProps {
   sketchEdit: SketchEditState;
   onUpdateOperation: (id: string, updates: Partial<Operation>) => void;
   onSelectSketchSegment: (segmentIndex: number | null) => void;
+  showToolpathPreview: boolean;
+  toolpathPreview: ToolpathPreview | null;
 }
