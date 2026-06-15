@@ -2,6 +2,14 @@
 
 Simple desktop CAM sketcher for MPCNC / Marlin workflows, built with Electron + React.
 
+## Safety disclaimer
+
+This project is a work in progress. Use it at your own risk.
+
+Generating or running G-code on a CNC machine, router, mill, or similar equipment always carries risk, including machine damage, tool breakage, fire risk, and bodily harm or injury. You are responsible for validating machine setup, work offsets, tool selection, feeds/speeds, clearances, hold-downs, travel limits, and the final generated toolpath before running a job.
+
+I am doing what I can to test and validate the generated output, but machine behavior also depends on controller configuration, firmware behavior, hardware setup, calibration, and other conditions outside the scope of this app. Dry-run new jobs, stay with the machine while it is running, and be prepared to stop the machine immediately if something looks wrong.
+
 ## Overview
 
 This app lets you:
