@@ -89,7 +89,15 @@ Tagged GitHub releases are built automatically by GitHub Actions.
 - Use `vX.Y.Z-beta.N` tags for beta releases
 - Use `vX.Y.Z` tags for stable releases once the app is ready
 
-Alpha and beta tags are published as GitHub pre-releases automatically. Stable tags publish a normal GitHub release with zipped `dist/` and `dist-electron/` artifacts plus a `SHA256SUMS.txt` manifest.
+Alpha and beta tags are published as GitHub pre-releases automatically. Stable tags publish a normal GitHub release with packaged desktop artifacts plus a `SHA256SUMS.txt` manifest.
+
+Current release packaging targets:
+
+- Windows: NSIS installer (`.exe`)
+- macOS: disk image (`.dmg`)
+- Linux: AppImage
+
+These builds are currently unsigned, so Windows Defender, macOS Gatekeeper, or similar trust prompts may still appear until code signing and notarization are added.
 
 ## Launch (production mode)
 
@@ -117,6 +125,7 @@ npm start
 
 - Build output is generated into `dist/`
 - Electron build output is generated into `dist-electron/`
+- Packaged desktop release output is generated into `release/`
 - Test coverage output is generated into `coverage/`
 - Dependency directory is `node_modules/`
 - These are ignored via [`.gitignore`](.gitignore)

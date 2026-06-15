@@ -16,8 +16,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and Publish Release
+  verify:
+    name: Verify Release Candidate
     runs-on: ubuntu-latest
 
     steps:
@@ -39,26 +39,75 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
-      - name: Build application
-        run: npm run build
+  package:
+    name: Package ${{ matrix.label }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            script: npm run dist:linux
+            artifact_glob: release/*.AppImage
+          - os: windows-latest
+            label: Windows
+            script: npm run dist:win
+            artifact_glob: release/*.exe
+          - os: macos-latest
+            label: macOS
+            script: npm run dist:mac
+            artifact_glob: release/*.dmg
 
-      - name: Prepare release archives
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package application
+        run: ${{ matrix.script }}
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.label }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-artifacts
+
+      - name: Prepare release checksums
         id: package_release
         shell: bash
         run: |
           set -euo pipefail
           TAG_NAME="${GITHUB_REF_NAME}"
-          VERSION="${TAG_NAME#v}"
           RELEASE_DIR="release-artifacts"
-          mkdir -p "${RELEASE_DIR}"
-
-          zip -r "${RELEASE_DIR}/simple-cam-${VERSION}-renderer-dist.zip" dist
-          zip -r "${RELEASE_DIR}/simple-cam-${VERSION}-electron-dist.zip" dist-electron
-
-          (
-            cd "${RELEASE_DIR}"
-            sha256sum ./*.zip > SHA256SUMS.txt
-          )
+          cd "${RELEASE_DIR}"
+          sha256sum * > SHA256SUMS.txt
 
           if [[ "${TAG_NAME}" =~ -(alpha|beta|rc)(\.[0-9]+)?$ ]]; then
             echo "prerelease=true" >> "${GITHUB_OUTPUT}"
@@ -79,6 +128,7 @@ jobs:
           prerelease: ${{ steps.package_release.outputs.prerelease }}
           generate_release_notes: true
           files: |
-            release-artifacts/simple-cam-*-renderer-dist.zip
-            release-artifacts/simple-cam-*-electron-dist.zip
+            release-artifacts/*.AppImage
+            release-artifacts/*.exe
+            release-artifacts/*.dmg
             release-artifacts/SHA256SUMS.txt

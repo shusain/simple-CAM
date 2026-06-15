@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 coverage/
+release/
 
 # Logs
 npm-debug.log*

@@ -1,0 +1,25 @@
+appId: com.shusain.simplecam
+productName: Simple CAM
+asar: true
+
+directories:
+  output: release
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+
+win:
+  target:
+    - nsis
+
+linux:
+  category: Utility
+  target:
+    - AppImage
