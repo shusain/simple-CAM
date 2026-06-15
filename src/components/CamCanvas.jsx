@@ -4,6 +4,8 @@ import {
   distance,
   getOperationBounds,
   getSketchPathPoints,
+  getSketchSubpaths,
+  getSketchSegments,
   hitTestOperation,
   moveOperation,
   normalizeRect,
@@ -12,6 +14,7 @@ import {
 
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 14;
+const HANDLE_POINT_TOLERANCE = 0.0001;
 
 function buildBaseViewport(containerWidth, containerHeight, workWidth, workHeight) {
   const width = Math.max(200, containerWidth || 200);
@@ -111,15 +114,15 @@ function getDraftSketchCurrentPoint(draft) {
 
   const segments = draft.segments || [];
   if (segments.length === 0) {
-    return draft.start || null;
+    return draft.startPoint || null;
   }
 
   const last = segments[segments.length - 1];
-  return { x: last.x, y: last.y };
+  return { x: last.x2, y: last.y2 };
 }
 
 function buildDraftSketchOperation(draft, includePreview = false) {
-  if (!draft || draft.type !== 'sketch' || !draft.start) {
+  if (!draft || draft.type !== 'sketch' || !draft.startPoint) {
     return null;
   }
 
@@ -130,25 +133,209 @@ function buildDraftSketchOperation(draft, includePreview = false) {
     if (draft.pendingArcEnd) {
       segments.push({
         type: 'arc',
-        x: draft.pendingArcEnd.x,
-        y: draft.pendingArcEnd.y,
+        x1: currentPoint.x,
+        y1: currentPoint.y,
+        x2: draft.pendingArcEnd.x,
+        y2: draft.pendingArcEnd.y,
         throughX: draft.current.x,
         throughY: draft.current.y,
       });
     } else if (distance(currentPoint, draft.current) > 0.05) {
       segments.push({
         type: 'line',
-        x: draft.current.x,
-        y: draft.current.y,
+        x1: currentPoint.x,
+        y1: currentPoint.y,
+        x2: draft.current.x,
+        y2: draft.current.y,
       });
     }
   }
 
   return {
     type: 'sketch',
-    start: draft.start,
     segments,
     closed: false,
+  };
+}
+
+function buildStandaloneSegment(startPoint, endPoint, type = 'line', throughPoint = null) {
+  if (type === 'arc' && throughPoint) {
+    return {
+      type: 'arc',
+      x1: startPoint.x,
+      y1: startPoint.y,
+      x2: endPoint.x,
+      y2: endPoint.y,
+      throughX: throughPoint.x,
+      throughY: throughPoint.y,
+    };
+  }
+
+  return {
+    type: 'line',
+    x1: startPoint.x,
+    y1: startPoint.y,
+    x2: endPoint.x,
+    y2: endPoint.y,
+  };
+}
+
+function getSketchSegmentOperations(operation) {
+  const segments = getSketchSegments(operation);
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const items = [];
+  segments.forEach((segment, index) => {
+    const segmentOperation = {
+      type: 'sketch',
+      segments: [segment],
+      closed: false,
+    };
+    items.push({
+      index,
+      segment,
+      start: { x: segment.x1, y: segment.y1 },
+      operation: segmentOperation,
+    });
+  });
+  return items;
+}
+
+function getSketchHandles(operation) {
+  const handles = [];
+
+  getSketchSegments(operation).forEach((segment, index) => {
+    handles.push({
+      kind: 'start',
+      segmentIndex: index,
+      point: { x: segment.x1, y: segment.y1 },
+    });
+    handles.push({
+      kind: 'end',
+      segmentIndex: index,
+      point: { x: segment.x2, y: segment.y2 },
+    });
+    if (segment.type === 'arc') {
+      handles.push({
+        kind: 'through',
+        segmentIndex: index,
+        point: { x: segment.throughX, y: segment.throughY },
+      });
+    }
+  });
+
+  return handles;
+}
+
+function getSketchHandleDisplayMap(handles, scale) {
+  const groups = new Map();
+  const displayMap = new Map();
+  const ringRadiusMm = Math.max(0.8, 10 / Math.max(scale || 1, 0.0001));
+
+  handles.forEach((handle, index) => {
+    const key = `${handle.point.x.toFixed(4)}:${handle.point.y.toFixed(4)}`;
+    const group = groups.get(key) || [];
+    group.push({ handle, index });
+    groups.set(key, group);
+  });
+
+  groups.forEach((group) => {
+    if (group.length === 1) {
+      displayMap.set(group[0].handle, group[0].handle.point);
+      return;
+    }
+
+    group.forEach(({ handle }, index) => {
+      const angle = (Math.PI * 2 * index) / group.length - Math.PI / 2;
+      displayMap.set(handle, {
+        x: handle.point.x + Math.cos(angle) * ringRadiusMm,
+        y: handle.point.y + Math.sin(angle) * ringRadiusMm,
+      });
+    });
+  });
+
+  return displayMap;
+}
+
+function sketchPointsEqual(a, b, tolerance = HANDLE_POINT_TOLERANCE) {
+  return distance(a, b) <= tolerance;
+}
+
+function findSketchHandleHit(operation, point, tolerance, scale) {
+  const handles = getSketchHandles(operation);
+  const displayMap = getSketchHandleDisplayMap(handles, scale);
+  return handles.find((handle) => distance(point, displayMap.get(handle) || handle.point) <= tolerance) || null;
+}
+
+function findSketchSegmentHit(operation, point, tolerance) {
+  const items = getSketchSegmentOperations(operation);
+  for (const item of items) {
+    if (hitTestOperation(item.operation, point, tolerance)) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function getCurrentHandlePoint(operation, handle) {
+  if (!handle || operation?.type !== 'sketch' || !Number.isInteger(handle.segmentIndex)) {
+    return handle?.point || null;
+  }
+
+  const segments = getSketchSegments(operation);
+  const segment = segments[handle.segmentIndex];
+  if (!segment) {
+    return handle.point || null;
+  }
+
+  if (handle.kind === 'start') {
+    return { x: segment.x1, y: segment.y1 };
+  }
+
+  if (handle.kind === 'end') {
+    return { x: segment.x2, y: segment.y2 };
+  }
+
+  if (handle.kind === 'through' && segment.type === 'arc') {
+    return { x: segment.throughX, y: segment.throughY };
+  }
+
+  return handle.point || null;
+}
+
+function updateSketchHandle(operation, handle, point) {
+  if (!handle) {
+    return operation;
+  }
+
+  const sourcePoint = getCurrentHandlePoint(operation, handle);
+  if (!sourcePoint) {
+    return operation;
+  }
+
+  const segments = getSketchSegments(operation).map((segment, index) => {
+    let nextSegment = segment;
+
+    if (handle.kind === 'through' && index === handle.segmentIndex && segment.type === 'arc') {
+      return { ...segment, throughX: point.x, throughY: point.y };
+    }
+
+    if (sketchPointsEqual({ x: segment.x1, y: segment.y1 }, sourcePoint)) {
+      nextSegment = { ...nextSegment, x1: point.x, y1: point.y };
+    }
+
+    if (sketchPointsEqual({ x: segment.x2, y: segment.y2 }, sourcePoint)) {
+      nextSegment = { ...nextSegment, x2: point.x, y2: point.y };
+    }
+
+    return nextSegment;
+  });
+
+  return {
+    ...operation,
+    segments,
   };
 }
 
@@ -274,8 +461,9 @@ function drawOperation(ctx, transform, operation, options = {}) {
   }
 
   if (operation.type === 'sketch') {
-    const path = getSketchPathPoints(operation);
-    if (path.length >= 2) {
+    const subpaths = getSketchSubpaths(operation);
+    subpaths.forEach((path) => {
+      if (path.length < 2) return;
       ctx.beginPath();
       const start = worldToCanvas(path[0], transform);
       ctx.moveTo(start.x, start.y);
@@ -284,7 +472,7 @@ function drawOperation(ctx, transform, operation, options = {}) {
         ctx.lineTo(point.x, point.y);
       }
       ctx.stroke();
-    }
+    });
   }
 
   ctx.restore();
@@ -339,7 +527,17 @@ function drawDraft(ctx, transform, draft) {
       }
       ctx.stroke();
 
-      const draftPoints = [draft.start, ...(draft.segments || []).map((segment) => ({ x: segment.x, y: segment.y }))];
+      const draftPoints = [
+        draft.startPoint,
+        ...(draft.segments || []).flatMap((segment) =>
+          segment.type === 'arc'
+            ? [
+                { x: segment.x2, y: segment.y2 },
+                { x: segment.throughX, y: segment.throughY },
+              ]
+            : [{ x: segment.x2, y: segment.y2 }]
+        ),
+      ];
       draftPoints.filter(Boolean).forEach((point, index) => {
         const p = worldToCanvas(point, transform);
         ctx.beginPath();
@@ -353,6 +551,107 @@ function drawDraft(ctx, transform, draft) {
         ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
         ctx.stroke();
       }
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawSketchEditOverlay(ctx, transform, operation, selectedSegmentIndex, pointerMm, activeTool, arcInsertDraft) {
+  if (!operation) return;
+
+  const selectedItem = Number.isInteger(selectedSegmentIndex)
+    ? getSketchSegmentOperations(operation).find((item) => item.index === selectedSegmentIndex) || null
+    : null;
+
+  if (selectedItem) {
+    const path = getSketchPathPoints(selectedItem.operation);
+    if (path.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      const start = worldToCanvas(path[0], transform);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < path.length; i += 1) {
+        const point = worldToCanvas(path[i], transform);
+        ctx.lineTo(point.x, point.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  const handles = getSketchHandles(operation);
+  const handleDisplayMap = getSketchHandleDisplayMap(handles, transform.scale);
+  ctx.save();
+  handles.forEach((handle) => {
+    const point = worldToCanvas(handleDisplayMap.get(handle) || handle.point, transform);
+    ctx.beginPath();
+    ctx.fillStyle =
+      handle.kind === 'through' ? '#c084fc' : handle.kind === 'start' ? '#38bdf8' : '#f8fafc';
+    ctx.strokeStyle = '#020617';
+    ctx.lineWidth = 1.5;
+    ctx.arc(point.x, point.y, handle.kind === 'start' ? 6 : 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  if (activeTool === 'sketch' && arcInsertDraft?.startPoint) {
+    const preview = [arcInsertDraft.startPoint, pointerMm];
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    const startCanvas = worldToCanvas(preview[0], transform);
+    const endCanvas = worldToCanvas(preview[1], transform);
+    ctx.moveTo(startCanvas.x, startCanvas.y);
+    ctx.lineTo(endCanvas.x, endCanvas.y);
+    ctx.stroke();
+  }
+
+  if (activeTool === 'arc' && arcInsertDraft?.startPoint) {
+    const start = arcInsertDraft.startPoint;
+    if (arcInsertDraft?.endPoint) {
+      const operationPreview = {
+        type: 'sketch',
+        segments: [
+          {
+            type: 'arc',
+            x1: start.x,
+            y1: start.y,
+            x2: arcInsertDraft.endPoint.x,
+            y2: arcInsertDraft.endPoint.y,
+            throughX: pointerMm.x,
+            throughY: pointerMm.y,
+          },
+        ],
+      };
+      const path = getSketchPathPoints(operationPreview);
+      if (path.length >= 2) {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        const startCanvas = worldToCanvas(path[0], transform);
+        ctx.moveTo(startCanvas.x, startCanvas.y);
+        for (let i = 1; i < path.length; i += 1) {
+          const point = worldToCanvas(path[i], transform);
+          ctx.lineTo(point.x, point.y);
+        }
+        ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      const startCanvas = worldToCanvas(start, transform);
+      const endCanvas = worldToCanvas(pointerMm, transform);
+      ctx.moveTo(startCanvas.x, startCanvas.y);
+      ctx.lineTo(endCanvas.x, endCanvas.y);
+      ctx.stroke();
     }
   }
 
@@ -430,16 +729,18 @@ function drawMiniMap(ctx, transform, operations) {
     }
 
     if (operation.type === 'sketch') {
-      const path = getSketchPathPoints(operation);
-      if (path.length < 2) return;
-      ctx.beginPath();
-      const start = toMap(path[0]);
-      ctx.moveTo(start.x, start.y);
-      for (let i = 1; i < path.length; i += 1) {
-        const point = toMap(path[i]);
-        ctx.lineTo(point.x, point.y);
-      }
-      ctx.stroke();
+      const subpaths = getSketchSubpaths(operation);
+      subpaths.forEach((path) => {
+        if (path.length < 2) return;
+        ctx.beginPath();
+        const start = toMap(path[0]);
+        ctx.moveTo(start.x, start.y);
+        for (let i = 1; i < path.length; i += 1) {
+          const point = toMap(path[i]);
+          ctx.lineTo(point.x, point.y);
+        }
+        ctx.stroke();
+      });
     }
   });
 
@@ -476,6 +777,9 @@ export default function CamCanvas({
   zoomRequest,
   pastePreview,
   onPlacePaste,
+  sketchEdit,
+  onUpdateOperation,
+  onSelectSketchSegment,
 }) {
   const wrapperRef = useRef(null);
   const canvasRef = useRef(null);
@@ -494,6 +798,7 @@ export default function CamCanvas({
   const [draft, setDraft] = useState(null);
   const [selectBox, setSelectBox] = useState(null);
   const [pointerMm, setPointerMm] = useState({ x: 0, y: 0 });
+  const [sketchArcInsertDraft, setSketchArcInsertDraft] = useState(null);
   const [view, setView] = useState({
     zoom: 1,
     center: {
@@ -503,6 +808,27 @@ export default function CamCanvas({
   });
 
   const selectedSet = useMemo(() => new Set(selectedOperationIds || []), [selectedOperationIds]);
+  const editingSketchOperation = useMemo(
+    () =>
+      sketchEdit?.operationId
+        ? operations.find((operation) => operation.id === sketchEdit.operationId && operation.type === 'sketch') || null
+        : null,
+    [operations, sketchEdit?.operationId]
+  );
+
+  useEffect(() => {
+    if (!editingSketchOperation || !['sketch', 'arc'].includes(activeTool)) {
+      setSketchArcInsertDraft(null);
+      return;
+    }
+
+    setSketchArcInsertDraft((current) => {
+      if (!current || current.mode === activeTool) {
+        return current;
+      }
+      return null;
+    });
+  }, [activeTool, editingSketchOperation]);
 
   const transform = useMemo(
     () => buildTransform(size, settings, view.zoom, view.center),
@@ -605,6 +931,18 @@ export default function CamCanvas({
       ctx.restore();
     }
 
+    if (editingSketchOperation) {
+      drawSketchEditOverlay(
+        ctx,
+        transform,
+        editingSketchOperation,
+        sketchEdit?.selectedSegmentIndex,
+        pointerMm,
+        activeTool,
+        sketchArcInsertDraft
+      );
+    }
+
     drawMiniMap(ctx, transform, operations);
 
     const cursor = worldToCanvas(pointerMm, transform);
@@ -622,10 +960,13 @@ export default function CamCanvas({
   }, [
     draft,
     operations,
+    editingSketchOperation,
     pastePreviewOperations,
     pointerMm,
     selectBox,
     selectedSet,
+    sketchArcInsertDraft,
+    sketchEdit,
     settings.gridSize,
     settings.workHeight,
     settings.workWidth,
@@ -694,10 +1035,9 @@ export default function CamCanvas({
       if (event.key === 'Enter' && draft?.type === 'sketch') {
         event.preventDefault();
         const segments = draft.segments || [];
-        if (draft.start && segments.length >= 1) {
+        if (segments.length >= 1) {
           const id = onAddOperation({
             type: 'sketch',
-            start: draft.start,
             segments,
             closed: false,
             tabsEnabled: false,
@@ -771,6 +1111,82 @@ export default function CamCanvas({
     const point = getPointerPoint(event, true);
     setPointerMm(point);
 
+    if (editingSketchOperation) {
+      if (activeTool === 'select') {
+        const handleToleranceMm = Math.max(1.5, 8 / transform.scale);
+        const handleHit = findSketchHandleHit(editingSketchOperation, point, handleToleranceMm, transform.scale);
+        if (handleHit) {
+          interactionRef.current = {
+            mode: 'drag-handle',
+            pointerId: event.pointerId,
+            start: point,
+            startCenter: null,
+            startClient: null,
+            selectedIds: null,
+            sourceOperations: null,
+            additive: false,
+            handle: handleHit,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+          return;
+        }
+
+        const segmentHit = findSketchSegmentHit(editingSketchOperation, point, Math.max(1.5, 6 / transform.scale));
+        if (segmentHit) {
+          onSelectSketchSegment(segmentHit.index);
+          return;
+        }
+        onSelectSketchSegment(null);
+        return;
+      }
+
+      if (activeTool === 'sketch') {
+        if (!sketchArcInsertDraft?.startPoint) {
+          setSketchArcInsertDraft({
+            mode: 'sketch',
+            startPoint: point,
+          });
+        } else {
+          const newSegment = buildStandaloneSegment(sketchArcInsertDraft.startPoint, point, 'line');
+          onUpdateOperation(editingSketchOperation.id, {
+            segments: [...getSketchSegments(editingSketchOperation), newSegment],
+            closed: false,
+            tabsEnabled: false,
+          });
+          setSketchArcInsertDraft(null);
+        }
+        return;
+      }
+
+      if (activeTool === 'arc') {
+        if (!sketchArcInsertDraft?.startPoint) {
+          setSketchArcInsertDraft({
+            mode: 'arc',
+            startPoint: point,
+          });
+        } else if (!sketchArcInsertDraft?.endPoint) {
+          setSketchArcInsertDraft({
+            ...sketchArcInsertDraft,
+            endPoint: point,
+          });
+        } else {
+          const newSegment = buildStandaloneSegment(
+            sketchArcInsertDraft.startPoint,
+            sketchArcInsertDraft.endPoint,
+            'arc',
+            point
+          );
+          onUpdateOperation(editingSketchOperation.id, {
+            segments: [...getSketchSegments(editingSketchOperation), newSegment],
+            closed: false,
+            tabsEnabled: false,
+          });
+          setSketchArcInsertDraft(null);
+        }
+        return;
+      }
+    }
+
     if (pastePreview && activeTool === 'select' && event.button === 0) {
       onPlacePaste(point);
       return;
@@ -837,21 +1253,21 @@ export default function CamCanvas({
       const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
       setDraft((current) => {
         if (!current || current.type !== 'sketch') {
-          return { type: 'sketch', start: point, segments: [], current: point, pendingArcEnd: null };
+          return { type: 'sketch', startPoint: point, segments: [], current: point, pendingArcEnd: null };
         }
 
-        const currentPoint = getDraftSketchCurrentPoint(current) || current.start;
+        const currentPoint = getDraftSketchCurrentPoint(current) || current.startPoint;
 
-        if ((current.segments?.length || 0) >= 2 && distance(point, current.start) <= closeToleranceMm) {
+        if ((current.segments?.length || 0) >= 2 && distance(point, current.startPoint) <= closeToleranceMm) {
           const closingSegments =
-            currentPoint && distance(currentPoint, current.start) > 0.05
-              ? [...current.segments, { type: 'line', x: current.start.x, y: current.start.y }]
+            currentPoint && distance(currentPoint, current.startPoint) > 0.05
+              ? [...current.segments, buildStandaloneSegment(currentPoint, current.startPoint, 'line')]
               : current.segments;
           const id = onAddOperation({
             type: 'sketch',
-            start: current.start,
             segments: closingSegments,
             closed: true,
+            cutSide: 'outside',
             tabsEnabled: true,
             tabCount: 2,
             tabWidth: 1,
@@ -870,8 +1286,8 @@ export default function CamCanvas({
 
         return {
           type: 'sketch',
-          start: current.start,
-          segments: [...(current.segments || []), { type: 'line', x: point.x, y: point.y }],
+          startPoint: current.startPoint,
+          segments: [...(current.segments || []), buildStandaloneSegment(currentPoint, point, 'line')],
           current: point,
           pendingArcEnd: null,
         };
@@ -883,18 +1299,18 @@ export default function CamCanvas({
       const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
       setDraft((current) => {
         if (!current || current.type !== 'sketch') {
-          return { type: 'sketch', start: point, segments: [], current: point, pendingArcEnd: null };
+          return { type: 'sketch', startPoint: point, segments: [], current: point, pendingArcEnd: null };
         }
 
-        const currentPoint = getDraftSketchCurrentPoint(current) || current.start;
+        const currentPoint = getDraftSketchCurrentPoint(current) || current.startPoint;
         if (!current.pendingArcEnd) {
           if (currentPoint && distance(point, currentPoint) <= 0.05) {
             return current;
           }
 
           const targetPoint =
-            (current.segments?.length || 0) >= 2 && distance(point, current.start) <= closeToleranceMm
-              ? current.start
+            (current.segments?.length || 0) >= 2 && distance(point, current.startPoint) <= closeToleranceMm
+              ? current.startPoint
               : point;
 
           return {
@@ -906,21 +1322,15 @@ export default function CamCanvas({
 
         const nextSegments = [
           ...(current.segments || []),
-          {
-            type: 'arc',
-            x: current.pendingArcEnd.x,
-            y: current.pendingArcEnd.y,
-            throughX: point.x,
-            throughY: point.y,
-          },
+          buildStandaloneSegment(currentPoint, current.pendingArcEnd, 'arc', point),
         ];
 
-        if (distance(current.pendingArcEnd, current.start) <= closeToleranceMm && nextSegments.length >= 2) {
+        if (distance(current.pendingArcEnd, current.startPoint) <= closeToleranceMm && nextSegments.length >= 2) {
           const id = onAddOperation({
             type: 'sketch',
-            start: current.start,
             segments: nextSegments,
             closed: true,
+            cutSide: 'outside',
             tabsEnabled: true,
             tabCount: 2,
             tabWidth: 1,
@@ -935,7 +1345,7 @@ export default function CamCanvas({
 
         return {
           type: 'sketch',
-          start: current.start,
+          startPoint: current.startPoint,
           segments: nextSegments,
           current: current.pendingArcEnd,
           pendingArcEnd: null,
@@ -989,6 +1399,14 @@ export default function CamCanvas({
           transform.workHeight
         ),
       }));
+      return;
+    }
+
+    if (interaction.mode === 'drag-handle' && editingSketchOperation) {
+      const updated = updateSketchHandle(editingSketchOperation, interaction.handle, point);
+      onUpdateOperation(editingSketchOperation.id, {
+        segments: updated.segments,
+      });
       return;
     }
 
@@ -1046,6 +1464,7 @@ export default function CamCanvas({
           width: rect.width,
           height: rect.height,
           cornerRadius: 0,
+          cutSide: 'outside',
           tabsEnabled: true,
           tabCount: 2,
           tabWidth: 1,
@@ -1066,6 +1485,7 @@ export default function CamCanvas({
           x: draft.start.x,
           y: draft.start.y,
           radius,
+          cutSide: 'outside',
           tabsEnabled: true,
           tabCount: 2,
           tabWidth: 1,

@@ -1,4 +1,4 @@
-import { getSketchPathPoints } from './geometry';
+import { getSketchSubpaths } from './geometry';
 import { resolveToolPreset } from './tooling';
 
 function num(value, digits = 3) {
@@ -310,6 +310,12 @@ function getToolRadius(tool) {
   return diameter / 2;
 }
 
+function getCutSide(operation, fallback = 'along') {
+  return operation?.cutSide === 'inside' || operation?.cutSide === 'outside' || operation?.cutSide === 'along'
+    ? operation.cutSide
+    : fallback;
+}
+
 function normalizeRectGeometry(x, y, width, height) {
   let left = Number(x) || 0;
   let bottom = Number(y) || 0;
@@ -352,6 +358,132 @@ function appendArc(path, cx, cy, radius, startAngle, endAngle, segments) {
       y: cy + Math.sin(theta) * r,
     });
   }
+}
+
+function pointsEqual(a, b, tolerance = 0.0001) {
+  return distanceBetween(a, b) <= tolerance;
+}
+
+function getClosedPolylinePoints(pathPoints) {
+  if (!Array.isArray(pathPoints) || pathPoints.length < 4) {
+    return null;
+  }
+
+  const points = pointsEqual(pathPoints[0], pathPoints[pathPoints.length - 1])
+    ? pathPoints.slice(0, -1)
+    : [...pathPoints];
+
+  return points.length >= 3 ? points : null;
+}
+
+function getSignedArea(points) {
+  if (!Array.isArray(points) || points.length < 3) {
+    return 0;
+  }
+
+  let area = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return area / 2;
+}
+
+function intersectInfiniteLines(a1, a2, b1, b2) {
+  const dax = a2.x - a1.x;
+  const day = a2.y - a1.y;
+  const dbx = b2.x - b1.x;
+  const dby = b2.y - b1.y;
+  const denominator = dax * dby - day * dbx;
+
+  if (Math.abs(denominator) <= 0.000001) {
+    return null;
+  }
+
+  const t = ((b1.x - a1.x) * dby - (b1.y - a1.y) * dbx) / denominator;
+  return {
+    x: a1.x + dax * t,
+    y: a1.y + day * t,
+  };
+}
+
+function offsetClosedPath(pathPoints, offsetDistance) {
+  const points = getClosedPolylinePoints(pathPoints);
+  if (!points || Math.abs(offsetDistance) <= 0.000001) {
+    return points ? [...points, points[0]] : null;
+  }
+
+  const orientation = getSignedArea(points) >= 0 ? 1 : -1;
+  const offsetPoints = [];
+
+  for (let i = 0; i < points.length; i += 1) {
+    const previous = points[(i - 1 + points.length) % points.length];
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+
+    const prevDx = current.x - previous.x;
+    const prevDy = current.y - previous.y;
+    const nextDx = next.x - current.x;
+    const nextDy = next.y - current.y;
+    const prevLength = Math.sqrt(prevDx * prevDx + prevDy * prevDy);
+    const nextLength = Math.sqrt(nextDx * nextDx + nextDy * nextDy);
+
+    if (prevLength <= 0.000001 || nextLength <= 0.000001) {
+      return null;
+    }
+
+    const prevLeftNormal = { x: -prevDy / prevLength, y: prevDx / prevLength };
+    const nextLeftNormal = { x: -nextDy / nextLength, y: nextDx / nextLength };
+    const sideSign = offsetDistance >= 0 ? 1 : -1;
+    const magnitude = Math.abs(offsetDistance);
+    const prevNormal = {
+      x: prevLeftNormal.x * -orientation * sideSign,
+      y: prevLeftNormal.y * -orientation * sideSign,
+    };
+    const nextNormal = {
+      x: nextLeftNormal.x * -orientation * sideSign,
+      y: nextLeftNormal.y * -orientation * sideSign,
+    };
+
+    const prevLineStart = { x: previous.x + prevNormal.x * magnitude, y: previous.y + prevNormal.y * magnitude };
+    const prevLineEnd = { x: current.x + prevNormal.x * magnitude, y: current.y + prevNormal.y * magnitude };
+    const nextLineStart = { x: current.x + nextNormal.x * magnitude, y: current.y + nextNormal.y * magnitude };
+    const nextLineEnd = { x: next.x + nextNormal.x * magnitude, y: next.y + nextNormal.y * magnitude };
+
+    const intersection = intersectInfiniteLines(prevLineStart, prevLineEnd, nextLineStart, nextLineEnd);
+    if (intersection) {
+      offsetPoints.push(intersection);
+      continue;
+    }
+
+    const averageNormal = {
+      x: prevNormal.x + nextNormal.x,
+      y: prevNormal.y + nextNormal.y,
+    };
+    const averageLength = Math.sqrt(
+      averageNormal.x * averageNormal.x + averageNormal.y * averageNormal.y
+    );
+
+    if (averageLength <= 0.000001) {
+      offsetPoints.push({
+        x: current.x + prevNormal.x * magnitude,
+        y: current.y + prevNormal.y * magnitude,
+      });
+      continue;
+    }
+
+    offsetPoints.push({
+      x: current.x + (averageNormal.x / averageLength) * magnitude,
+      y: current.y + (averageNormal.y / averageLength) * magnitude,
+    });
+  }
+
+  if (offsetPoints.length < 3) {
+    return null;
+  }
+
+  return [...offsetPoints, offsetPoints[0]];
 }
 
 function buildRoundedRectPath(rect, cornerRadius, cornerSegments) {
@@ -531,26 +663,33 @@ function appendRectCut(lines, operation, settings, tool, useStartEndClearance = 
   }
   const baseRect = normalizeRectGeometry(operation.x, operation.y, operation.width, operation.height);
   const toolRadius = getToolRadius(tool);
+  const cutSide = getCutSide(operation, 'outside');
+  const offsetAmount = cutSide === 'outside' ? toolRadius : cutSide === 'inside' ? -toolRadius : 0;
   const offsetRect = {
-    x: baseRect.x - toolRadius,
-    y: baseRect.y - toolRadius,
-    width: baseRect.width + toolRadius * 2,
-    height: baseRect.height + toolRadius * 2,
+    x: baseRect.x - offsetAmount,
+    y: baseRect.y - offsetAmount,
+    width: baseRect.width + offsetAmount * 2,
+    height: baseRect.height + offsetAmount * 2,
   };
   const baseCorner = clampRectCornerRadius(operation.cornerRadius, baseRect.width, baseRect.height);
   const offsetCorner = clampRectCornerRadius(
-    baseCorner + toolRadius,
+    baseCorner + offsetAmount,
     offsetRect.width,
     offsetRect.height
   );
   const cornerSegments = Math.max(2, Math.floor((settings.circleSegments || 48) / 4));
 
-  lines.push(`; Cut rectangle (outside offset by tool radius ${num(toolRadius)}mm)`);
-  lines.push(
-    `; Nominal ${num(baseRect.width)} x ${num(baseRect.height)} mm, corner R${num(baseCorner)} -> path corner R${num(offsetCorner)}`
-  );
+  if (offsetRect.width <= 0.0001 || offsetRect.height <= 0.0001) {
+    lines.push(`; Cut rectangle (${cutSide} requested, falling back to along path: tool too large for inside offset)`);
+    appendCutPath(lines, buildRoundedRectPath(baseRect, baseCorner, cornerSegments), operation, settings, tool, useStartEndClearance);
+    return;
+  }
 
-  const path = buildRoundedRectPath(offsetRect, offsetCorner, cornerSegments);
+  lines.push(`; Cut rectangle (${cutSide} path)`);
+  lines.push(`; Tool radius compensation ${num(offsetAmount)}mm`);
+  lines.push(`; Nominal ${num(baseRect.width)} x ${num(baseRect.height)} mm, corner R${num(baseCorner)} -> path corner R${num(offsetCorner)}`);
+
+  const path = buildRoundedRectPath(cutSide === 'along' ? baseRect : offsetRect, cutSide === 'along' ? baseCorner : offsetCorner, cornerSegments);
   appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
 }
 
@@ -559,17 +698,25 @@ function appendCircleCut(lines, operation, settings, tool, useStartEndClearance 
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
   const toolRadius = getToolRadius(tool);
-  const compensatedRadius = Math.max(0.1, operation.radius + toolRadius);
-  lines.push(`; Cut circle nominal R${num(operation.radius)} (outside tool-center path R${num(compensatedRadius)})`);
+  const cutSide = getCutSide(operation, 'outside');
+  const offsetAmount = cutSide === 'outside' ? toolRadius : cutSide === 'inside' ? -toolRadius : 0;
+  const compensatedRadius = operation.radius + offsetAmount;
+
+  if (compensatedRadius <= 0.0001) {
+    lines.push(`; Cut circle (${cutSide} requested, falling back to along path: tool too large for inside offset)`);
+  } else {
+    lines.push(`; Cut circle nominal R${num(operation.radius)} (${cutSide} tool-center path R${num(compensatedRadius)})`);
+  }
 
   const segments = Math.max(8, Math.floor(settings.circleSegments || 48));
   const path = [];
+  const pathRadius = compensatedRadius <= 0.0001 ? operation.radius : compensatedRadius;
 
   for (let i = 0; i <= segments; i += 1) {
     const theta = (Math.PI * 2 * i) / segments;
     path.push({
-      x: operation.x + compensatedRadius * Math.cos(theta),
-      y: operation.y + compensatedRadius * Math.sin(theta),
+      x: operation.x + pathRadius * Math.cos(theta),
+      y: operation.y + pathRadius * Math.sin(theta),
     });
   }
 
@@ -581,13 +728,31 @@ function appendSketchCut(lines, operation, settings, tool, useStartEndClearance 
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
 
-  const path = getSketchPathPoints(operation);
-  if (path.length < 2) {
+  const subpaths = getSketchSubpaths(operation, settings.circleSegments || 48);
+  if (subpaths.length === 0) {
     return;
   }
 
-  lines.push(`; Cut sketch ${operation.closed ? 'closed' : 'open'} path (${Math.max(1, path.length - 1)} segments)`);
-  appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
+  const cutSide = getCutSide(operation, operation.closed ? 'outside' : 'along');
+  const toolRadius = getToolRadius(tool);
+  lines.push(`; Cut sketch ${operation.closed ? 'closed' : 'open'} path (${subpaths.length} subpath(s))`);
+  lines.push(`; Toolpath mode: ${operation.closed ? cutSide : 'along'}${operation.closed && cutSide !== 'along' ? `, tool radius compensation ${num(toolRadius)}mm` : ''}`);
+  subpaths.forEach((path, index) => {
+    if (path.length < 2) {
+      return;
+    }
+    let plannedPath = path;
+    if (operation.closed && cutSide !== 'along') {
+      const offsetPath = offsetClosedPath(path, cutSide === 'outside' ? toolRadius : -toolRadius);
+      if (offsetPath) {
+        plannedPath = offsetPath;
+      } else {
+        lines.push(`; Sketch subpath ${index + 1} offset failed, falling back to along path`);
+      }
+    }
+    lines.push(`; Sketch subpath ${index + 1}`);
+    appendCutPath(lines, plannedPath, operation, settings, tool, useStartEndClearance && index === 0);
+  });
 }
 
 export function generateMarlinGcode({ operations, settings, tools }) {

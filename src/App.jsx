@@ -3,7 +3,7 @@ import CamCanvas from './components/CamCanvas';
 import ControlPanel from './components/ControlPanel';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
-import { getOperationBounds, moveOperation, sanitizeOperation } from './utils/geometry';
+import { getOperationBounds, isClosedSketchPath, moveOperation, sanitizeOperation } from './utils/geometry';
 import {
   normalizeMaterial,
   normalizeTool,
@@ -75,8 +75,8 @@ const TOOLS = [
   { id: 'select', label: 'Select' },
   { id: 'drill', label: 'Drill' },
   { id: 'line', label: 'Cut Line' },
-  { id: 'sketch', label: 'Sketch' },
-  { id: 'arc', label: 'Sketch Arc' },
+  { id: 'sketch', label: 'Poly-Line' },
+  { id: 'arc', label: 'Poly-Arc' },
   { id: 'rect', label: 'Cut Rect' },
   { id: 'circle', label: 'Cut Circle' },
 ];
@@ -306,6 +306,10 @@ export default function App() {
   const [activeToolId, setActiveToolId] = useState(initialState.activeToolId);
   const [octoprintSettings, setOctoprintSettings] = useState(DEFAULT_OCTOPRINT_SETTINGS);
   const [isOctoprintModalOpen, setIsOctoprintModalOpen] = useState(false);
+  const [sketchEdit, setSketchEdit] = useState({
+    operationId: null,
+    selectedSegmentIndex: null,
+  });
 
   const operations = operationsHistory.present;
   const canUndo = operationsHistory.past.length > 0;
@@ -331,6 +335,8 @@ export default function App() {
     if (selectedIds.length !== 1) return null;
     return operations.find((op) => op.id === selectedIds[0]) || null;
   }, [operations, selectedIds]);
+  const isEditingSelectedSketch =
+    selectedOperation?.type === 'sketch' && sketchEdit.operationId === selectedOperation.id;
 
   const hasOctoprintSettings =
     Boolean(octoprintSettings.baseUrl && octoprintSettings.baseUrl.trim()) &&
@@ -426,6 +432,65 @@ export default function App() {
     },
     [commitOperations]
   );
+
+  const startSketchEdit = useCallback(() => {
+    if (!selectedOperation || selectedOperation.type !== 'sketch') {
+      return;
+    }
+
+    setSketchEdit({
+      operationId: selectedOperation.id,
+      selectedSegmentIndex: null,
+    });
+    setActiveTool('select');
+  }, [selectedOperation]);
+
+  const stopSketchEdit = useCallback(() => {
+    if (selectedOperation?.type === 'sketch') {
+      const closed = isClosedSketchPath(selectedOperation);
+      updateOperation(selectedOperation.id, {
+        closed,
+        cutSide: closed ? selectedOperation.cutSide || 'outside' : 'along',
+        tabsEnabled: closed ? selectedOperation.tabsEnabled : false,
+      });
+    }
+
+    setSketchEdit({
+      operationId: null,
+      selectedSegmentIndex: null,
+    });
+  }, [selectedOperation, updateOperation]);
+
+  const selectSketchSegment = useCallback((segmentIndex) => {
+    setSketchEdit((prev) => ({
+      ...prev,
+      selectedSegmentIndex: Number.isInteger(segmentIndex) ? segmentIndex : null,
+    }));
+  }, []);
+
+  const deleteSelectedSketchSegment = useCallback(() => {
+    if (!selectedOperation || selectedOperation.type !== 'sketch') {
+      return;
+    }
+
+    const segmentIndex = sketchEdit.selectedSegmentIndex;
+    if (!Number.isInteger(segmentIndex)) {
+      return;
+    }
+
+    const segments = Array.isArray(selectedOperation.segments) ? selectedOperation.segments : [];
+    const nextSegments = segments.filter((_, index) => index !== segmentIndex);
+
+    updateOperation(selectedOperation.id, {
+      segments: nextSegments,
+      closed: false,
+      tabsEnabled: false,
+    });
+    setSketchEdit((prev) => ({
+      ...prev,
+      selectedSegmentIndex: nextSegments.length === 0 ? null : Math.min(segmentIndex, nextSegments.length - 1),
+    }));
+  }, [selectedOperation, sketchEdit.selectedSegmentIndex, updateOperation]);
 
   const applyDepthSettingsToAll = useCallback(() => {
     if (operations.length === 0) {
@@ -897,6 +962,27 @@ export default function App() {
   }, [operations]);
 
   useEffect(() => {
+    if (!sketchEdit.operationId) {
+      return;
+    }
+
+    const matching = operations.find((operation) => operation.id === sketchEdit.operationId);
+    if (!matching || matching.type !== 'sketch') {
+      stopSketchEdit();
+    }
+  }, [operations, sketchEdit.operationId, stopSketchEdit]);
+
+  useEffect(() => {
+    if (!selectedOperation || selectedOperation.type !== 'sketch' || selectedOperation.id !== sketchEdit.operationId) {
+      setSketchEdit((prev) =>
+        prev.operationId === null
+          ? prev
+          : { operationId: null, selectedSegmentIndex: null }
+      );
+    }
+  }, [selectedOperation, sketchEdit.operationId]);
+
+  useEffect(() => {
     if (settings.activeMaterialId === activeMaterialId) {
       return;
     }
@@ -1025,7 +1111,7 @@ export default function App() {
           <span className="topbar-subtitle">MPCNC / Marlin pattern editor</span>
         </div>
         <div className="topbar-tools">
-          {TOOLS.map((tool) => (
+          {(isEditingSelectedSketch ? TOOLS.filter((tool) => ['select', 'sketch', 'arc'].includes(tool.id)) : TOOLS).map((tool) => (
             <button
               key={tool.id}
               type="button"
@@ -1098,6 +1184,9 @@ export default function App() {
             zoomRequest={zoomRequest}
             pastePreview={pastePreview}
             onPlacePaste={placePastedOperations}
+            sketchEdit={sketchEdit}
+            onUpdateOperation={updateOperation}
+            onSelectSketchSegment={selectSketchSegment}
           />
         </main>
 
@@ -1120,6 +1209,11 @@ export default function App() {
             onRedo={redo}
             canUndo={canUndo}
             canRedo={canRedo}
+            isEditingSelectedSketch={isEditingSelectedSketch}
+            selectedSketchSegmentIndex={sketchEdit.selectedSegmentIndex}
+            onStartSketchEdit={startSketchEdit}
+            onStopSketchEdit={stopSketchEdit}
+            onDeleteSelectedSketchSegment={deleteSelectedSketchSegment}
           />
         </aside>
       </div>

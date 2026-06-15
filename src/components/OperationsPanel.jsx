@@ -53,6 +53,44 @@ function DepthEditor({ value, onChange }) {
   );
 }
 
+function CutSideEditor({ value, onChange, disabled = false, options = ['inside', 'outside', 'along'] }) {
+  return (
+    <label className="field-row">
+      <span>Toolpath</span>
+      <select value={value || 'along'} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+        {options.includes('outside') ? <option value="outside">Cut outside</option> : null}
+        {options.includes('inside') ? <option value="inside">Cut inside</option> : null}
+        <option value="along">Cut along path</option>
+      </select>
+    </label>
+  );
+}
+
+function updateSketchStart(operation, updates, onUpdateOperation) {
+  const segments = getSketchSegments(operation);
+  if (segments.length === 0) return;
+
+  onUpdateOperation(operation.id, {
+    segments: segments.map((segment, index) =>
+      index === 0
+        ? {
+            ...segment,
+            x1: updates.x ?? segment.x1,
+            y1: updates.y ?? segment.y1,
+          }
+        : segment
+    ),
+  });
+}
+
+function updateSketchSegment(operation, index, updates, onUpdateOperation) {
+  const segments = getSketchSegments(operation);
+  const next = segments.map((segment, segmentIndex) =>
+    segmentIndex === index ? { ...segment, ...updates } : segment
+  );
+  onUpdateOperation(operation.id, { segments: next });
+}
+
 export default function OperationsPanel({
   operations,
   selectedOperation,
@@ -65,6 +103,11 @@ export default function OperationsPanel({
   onDeleteSelection,
   onMoveOperation,
   onRepeatOperation,
+  isEditingSelectedSketch,
+  selectedSketchSegmentIndex,
+  onStartSketchEdit,
+  onStopSketchEdit,
+  onDeleteSelectedSketchSegment,
 }) {
   const [repeatCount, setRepeatCount] = useState(1);
   const [repeatOffsetX, setRepeatOffsetX] = useState(10);
@@ -80,6 +123,11 @@ export default function OperationsPanel({
         )
       : 0;
   const selectedCount = selectedOperationIds?.length || 0;
+  const sketchStart = selectedOperation?.type === 'sketch' ? getSketchStartPoint(selectedOperation) : null;
+  const sketchSegments = selectedOperation?.type === 'sketch' ? getSketchSegments(selectedOperation) : [];
+  const sketchCutOptions = selectedOperation?.type === 'sketch' && selectedOperation.closed
+    ? ['outside', 'inside', 'along']
+    : ['along'];
 
   return (
     <div className="panel">
@@ -91,6 +139,22 @@ export default function OperationsPanel({
             value={selectedOperation.depth}
             onChange={(value) => onUpdateOperation(selectedOperation.id, { depth: value })}
           />
+
+          {selectedOperation.type === 'rect' || selectedOperation.type === 'circle' ? (
+            <CutSideEditor
+              value={selectedOperation.cutSide || 'outside'}
+              onChange={(value) => onUpdateOperation(selectedOperation.id, { cutSide: value })}
+            />
+          ) : null}
+
+          {selectedOperation.type === 'sketch' ? (
+            <CutSideEditor
+              value={selectedOperation.cutSide || (selectedOperation.closed ? 'outside' : 'along')}
+              onChange={(value) => onUpdateOperation(selectedOperation.id, { cutSide: value })}
+              disabled={!selectedOperation.closed}
+              options={sketchCutOptions}
+            />
+          ) : null}
 
           <label className="field-row">
             <span>Tool</span>
@@ -200,8 +264,43 @@ export default function OperationsPanel({
             <>
               <label className="field-row">
                 <span>Segments</span>
-                <input type="number" value={getSketchSegments(selectedOperation).length} readOnly />
+                <input type="number" value={sketchSegments.length} readOnly />
               </label>
+              {sketchStart ? (
+                <>
+                  <h3>Sketch start</h3>
+                  <label className="field-row">
+                    <span>Start X</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={sketchStart.x}
+                      onChange={(event) =>
+                        updateSketchStart(
+                          selectedOperation,
+                          { x: Number(event.target.value) },
+                          onUpdateOperation
+                        )
+                      }
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>Start Y</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={sketchStart.y}
+                      onChange={(event) =>
+                        updateSketchStart(
+                          selectedOperation,
+                          { y: Number(event.target.value) },
+                          onUpdateOperation
+                        )
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
               <label className="field-row checkbox-row">
                 <span>Closed path</span>
                 <input
@@ -210,12 +309,132 @@ export default function OperationsPanel({
                   onChange={(event) =>
                     onUpdateOperation(selectedOperation.id, {
                       closed: event.target.checked,
+                      cutSide: event.target.checked
+                        ? selectedOperation.cutSide || 'outside'
+                        : 'along',
                       tabsEnabled: event.target.checked ? selectedOperation.tabsEnabled : false,
                     })
                   }
-                  disabled={getSketchSegments(selectedOperation).length < 2 || !getSketchStartPoint(selectedOperation)}
+                  disabled={sketchSegments.length < 2 || !sketchStart}
                 />
               </label>
+              {sketchSegments.length > 0 ? (
+                <>
+                  <h3>Sketch edit</h3>
+                  <div className="button-column">
+                    {isEditingSelectedSketch ? (
+                      <>
+                        <button type="button" className="accent" onClick={onStopSketchEdit}>
+                          Finish sketch edit
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={onDeleteSelectedSketchSegment}
+                          disabled={!Number.isInteger(selectedSketchSegmentIndex)}
+                        >
+                          Delete selected segment
+                        </button>
+                        <p className="hint-text">
+                          Drag sketch handles in the canvas. Click a segment in the canvas to select it for
+                          deletion, or use the `Poly-Line` / `Poly-Arc` toolbar tool to place new replacement
+                          segments by choosing their own start and end points.
+                        </p>
+                      </>
+                    ) : (
+                      <button type="button" className="accent" onClick={onStartSketchEdit}>
+                        Edit sketch
+                      </button>
+                    )}
+                  </div>
+                  <h3>Segments</h3>
+                  {sketchSegments.map((segment, index) => (
+                    <div
+                      key={`${selectedOperation.id}-segment-${index}`}
+                      style={{
+                        padding: 8,
+                        marginBottom: 8,
+                        border: index === selectedSketchSegmentIndex ? '1px solid #38bdf8' : '1px solid #334155',
+                        borderRadius: 8,
+                        background: index === selectedSketchSegmentIndex ? '#082f49' : 'transparent',
+                      }}
+                    >
+                      <label className="field-row">
+                        <span>Segment {index + 1}</span>
+                        <input type="text" value={segment.type.toUpperCase()} readOnly />
+                      </label>
+                      <label className="field-row">
+                        <span>End X</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={segment.x2}
+                          onChange={(event) =>
+                            updateSketchSegment(
+                              selectedOperation,
+                              index,
+                              { x2: Number(event.target.value) },
+                              onUpdateOperation
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="field-row">
+                        <span>End Y</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={segment.y2}
+                          onChange={(event) =>
+                            updateSketchSegment(
+                              selectedOperation,
+                              index,
+                              { y2: Number(event.target.value) },
+                              onUpdateOperation
+                            )
+                          }
+                        />
+                      </label>
+                      {segment.type === 'arc' ? (
+                        <>
+                          <label className="field-row">
+                            <span>Through X</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={segment.throughX}
+                              onChange={(event) =>
+                                updateSketchSegment(
+                                  selectedOperation,
+                                  index,
+                                  { throughX: Number(event.target.value) },
+                                  onUpdateOperation
+                                )
+                              }
+                            />
+                          </label>
+                          <label className="field-row">
+                            <span>Through Y</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={segment.throughY}
+                              onChange={(event) =>
+                                updateSketchSegment(
+                                  selectedOperation,
+                                  index,
+                                  { throughY: Number(event.target.value) },
+                                  onUpdateOperation
+                                )
+                              }
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+                  ))}
+                </>
+              ) : null}
               {selectedOperation.closed ? (
                 <>
                   <label className="field-row checkbox-row">
