@@ -2,6 +2,8 @@
 
 Simple desktop CAM sketcher for MPCNC / Marlin workflows, built with Electron + React.
 
+Current release stage: alpha.
+
 ## Safety disclaimer
 
 This project is a work in progress. Use it at your own risk.
@@ -78,6 +80,16 @@ npm run test:coverage
 ```
 
 The GitHub Actions CI workflow runs `typecheck`, `test:coverage`, and `build` on pushes to `main` and on pull requests.
+
+## Releases
+
+Tagged GitHub releases are built automatically by GitHub Actions.
+
+- Use `vX.Y.Z-alpha.N` tags for alpha releases
+- Use `vX.Y.Z-beta.N` tags for beta releases
+- Use `vX.Y.Z` tags for stable releases once the app is ready
+
+Alpha and beta tags are published as GitHub pre-releases automatically. Stable tags publish a normal GitHub release with zipped `dist/` and `dist-electron/` artifacts plus a `SHA256SUMS.txt` manifest.
 
 ## Launch (production mode)
 
