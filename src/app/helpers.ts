@@ -108,7 +108,7 @@ export function operationsChanged(a: Operation[], b: Operation[]): boolean {
 }
 
 export function buildGcodeFileName(projectName: string): string {
-  const base = (projectName || 'output').replace(/\.(cam|json|gcode)$/i, '');
+  const base = (projectName || 'output').replace(/(\.cam\.json|\.cam|\.json|\.gcode)$/i, '');
   return `${base || 'output'}.gcode`;
 }
 

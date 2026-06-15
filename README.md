@@ -63,6 +63,20 @@ Build renderer assets for production:
 npm run build
 ```
 
+## Test
+
+Run the unit test suite:
+
+```bash
+npm test
+```
+
+Run the suite with coverage output:
+
+```bash
+npm run test:coverage
+```
+
 ## Launch (production mode)
 
 Builds first, then opens Electron:
@@ -88,5 +102,7 @@ npm start
 ## Repository notes
 
 - Build output is generated into `dist/`
+- Electron build output is generated into `dist-electron/`
+- Test coverage output is generated into `coverage/`
 - Dependency directory is `node_modules/`
 - These are ignored via [`.gitignore`](.gitignore)
