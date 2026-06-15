@@ -1,28 +1,40 @@
-function isFiniteNumber(value) {
+import type {
+  CutSide,
+  Operation,
+  Point,
+  RectBounds,
+  SketchArcSegment,
+  SketchOperation,
+  SketchSegment,
+} from '../types';
+import { sanitizeMaterialId, sanitizeToolId } from './tooling';
+
+type RawRecord = Record<string, unknown>;
+type OperationBounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
 
-function toNumber(value, fallback = 0) {
+function toNumber(value: unknown, fallback = 0): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function toOptionalPositiveNumber(value) {
+function toOptionalPositiveNumber(value: unknown): number | undefined {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
 }
 
-function normalizeCutSideValue(value, fallback = 'along') {
+function normalizeCutSideValue(value: unknown, fallback: CutSide = 'along'): CutSide {
   return value === 'inside' || value === 'outside' || value === 'along' ? value : fallback;
 }
 
-import { sanitizeMaterialId, sanitizeToolId } from './tooling';
-
-export function clamp(value, min, max) {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function normalizeRect(x, y, width, height) {
+export function normalizeRect(x: number, y: number, width: number, height: number): RectBounds {
   let left = x;
   let top = y;
   let rectWidth = width;
@@ -46,7 +58,7 @@ export function normalizeRect(x, y, width, height) {
   };
 }
 
-export function snapValue(value, step) {
+export function snapValue(value: number, step: number): number {
   if (!step || step <= 0) {
     return value;
   }
@@ -54,7 +66,7 @@ export function snapValue(value, step) {
   return Math.round(value / step) * step;
 }
 
-export function snapPoint(point, snapEnabled, gridSize) {
+export function snapPoint(point: Point | null, snapEnabled: boolean, gridSize: number): Point | null {
   if (!point) return point;
 
   if (!snapEnabled || !gridSize || gridSize <= 0) {
@@ -67,13 +79,13 @@ export function snapPoint(point, snapEnabled, gridSize) {
   };
 }
 
-export function distance(a, b) {
+export function distance(a: Point, b: Point): number {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function normalizeAngle(angle) {
+function normalizeAngle(angle: number): number {
   const full = Math.PI * 2;
   let value = angle % full;
   if (value < 0) {
@@ -82,11 +94,11 @@ function normalizeAngle(angle) {
   return value;
 }
 
-function pointsEqual(a, b, tolerance = 0.0001) {
+function pointsEqual(a: Point, b: Point, tolerance = 0.0001): boolean {
   return distance(a, b) <= tolerance;
 }
 
-function normalizeSketchPoint(point) {
+function normalizeSketchPoint(point: Partial<Point> | null | undefined): Point | null {
   const x = toNumber(point?.x, NaN);
   const y = toNumber(point?.y, NaN);
   if (!isFiniteNumber(x) || !isFiniteNumber(y)) {
@@ -95,16 +107,16 @@ function normalizeSketchPoint(point) {
   return { x, y };
 }
 
-function normalizeLegacySketch(operation) {
-  const points = Array.isArray(operation?.points)
-    ? operation.points.map(normalizeSketchPoint).filter(Boolean)
+function normalizeLegacySketch(operation: RawRecord): { segments: SketchSegment[] } | null {
+  const points = Array.isArray(operation.points)
+    ? operation.points.map((point) => normalizeSketchPoint(point as Partial<Point>)).filter((point): point is Point => Boolean(point))
     : [];
 
   if (points.length < 2) {
     return null;
   }
 
-  const segments = [];
+  const segments: SketchSegment[] = [];
   for (let i = 1; i < points.length; i += 1) {
     segments.push({
       type: 'line',
@@ -115,26 +127,32 @@ function normalizeLegacySketch(operation) {
     });
   }
 
-  return {
-    segments,
-  };
+  return { segments };
 }
 
-function normalizeSketchSegment(segment) {
+function normalizeSketchSegment(segment: unknown): SketchSegment | null {
   if (!segment || typeof segment !== 'object') {
     return null;
   }
 
-  if (segment.type === 'line') {
-    const start = normalizeSketchPoint({ x: segment.x1, y: segment.y1 });
-    const end = normalizeSketchPoint({ x: segment.x2 ?? segment.x, y: segment.y2 ?? segment.y });
+  const data = segment as RawRecord;
+
+  if (data.type === 'line') {
+    const start = normalizeSketchPoint({ x: data.x1 as number, y: data.y1 as number });
+    const end = normalizeSketchPoint({
+      x: (data.x2 ?? data.x) as number,
+      y: (data.y2 ?? data.y) as number,
+    });
     return start && end ? { type: 'line', x1: start.x, y1: start.y, x2: end.x, y2: end.y } : null;
   }
 
-  if (segment.type === 'arc') {
-    const start = normalizeSketchPoint({ x: segment.x1, y: segment.y1 });
-    const end = normalizeSketchPoint({ x: segment.x2 ?? segment.x, y: segment.y2 ?? segment.y });
-    const through = normalizeSketchPoint({ x: segment.throughX, y: segment.throughY });
+  if (data.type === 'arc') {
+    const start = normalizeSketchPoint({ x: data.x1 as number, y: data.y1 as number });
+    const end = normalizeSketchPoint({
+      x: (data.x2 ?? data.x) as number,
+      y: (data.y2 ?? data.y) as number,
+    });
+    const through = normalizeSketchPoint({ x: data.throughX as number, y: data.throughY as number });
     if (!start || !end || !through) {
       return null;
     }
@@ -153,7 +171,7 @@ function normalizeSketchSegment(segment) {
   return null;
 }
 
-export function getSketchStartPoint(operation) {
+export function getSketchStartPoint(operation: Operation | null | undefined): Point | null {
   if (operation?.type !== 'sketch') {
     return null;
   }
@@ -165,19 +183,21 @@ export function getSketchStartPoint(operation) {
   return null;
 }
 
-export function getSketchSegments(operation) {
-  if (operation?.type !== 'sketch') {
+export function getSketchSegments(operation: Operation | RawRecord | null | undefined): SketchSegment[] {
+  if (!operation || operation.type !== 'sketch') {
     return [];
   }
 
-  if (Array.isArray(operation.segments)) {
-    return operation.segments.map(normalizeSketchSegment).filter(Boolean);
+  if (Array.isArray((operation as SketchOperation).segments)) {
+    return (operation as SketchOperation).segments
+      .map((segment) => normalizeSketchSegment(segment))
+      .filter((segment): segment is SketchSegment => Boolean(segment));
   }
 
-  return normalizeLegacySketch(operation)?.segments || [];
+  return normalizeLegacySketch(operation as RawRecord)?.segments || [];
 }
 
-function computeCircleFromThreePoints(start, end, through) {
+function computeCircleFromThreePoints(start: Point, end: Point, through: Point): { center: Point; radius: number } | null {
   const ax = start.x;
   const ay = start.y;
   const bx = through.x;
@@ -207,7 +227,7 @@ function computeCircleFromThreePoints(start, end, through) {
   };
 }
 
-function isAngleOnCounterClockwiseSweep(startAngle, viaAngle, endAngle) {
+function isAngleOnCounterClockwiseSweep(startAngle: number, viaAngle: number, endAngle: number): boolean {
   const start = normalizeAngle(startAngle);
   const via = normalizeAngle(viaAngle);
   const end = normalizeAngle(endAngle);
@@ -216,7 +236,7 @@ function isAngleOnCounterClockwiseSweep(startAngle, viaAngle, endAngle) {
   return viaDelta <= endDelta + 0.000001;
 }
 
-function flattenArcSegment(start, segment, circleSegments = 48) {
+function flattenArcSegment(start: Point, segment: SketchArcSegment, circleSegments = 48): Point[] {
   const end = { x: segment.x2, y: segment.y2 };
   const through = { x: segment.throughX, y: segment.throughY };
   const circle = computeCircleFromThreePoints(start, end, through);
@@ -233,7 +253,7 @@ function flattenArcSegment(start, segment, circleSegments = 48) {
     ? normalizeAngle(endAngle - startAngle)
     : normalizeAngle(startAngle - endAngle);
   const steps = Math.max(6, Math.ceil((circleSegments * rawSpan) / (Math.PI * 2)));
-  const points = [];
+  const points: Point[] = [];
 
   for (let i = 1; i <= steps; i += 1) {
     const t = i / steps;
@@ -251,15 +271,15 @@ function flattenArcSegment(start, segment, circleSegments = 48) {
   return points;
 }
 
-export function getSketchSubpaths(operation, circleSegments = 48) {
+export function getSketchSubpaths(operation: Operation | RawRecord | null | undefined, circleSegments = 48): Point[][] {
   const segments = getSketchSegments(operation);
   if (segments.length === 0) {
     return [];
   }
 
-  const subpaths = [];
-  let currentPath = null;
-  let currentEnd = null;
+  const subpaths: Point[][] = [];
+  let currentPath: Point[] | null = null;
+  let currentEnd: Point | null = null;
 
   segments.forEach((segment) => {
     const segmentStart = { x: segment.x1, y: segment.y1 };
@@ -276,14 +296,12 @@ export function getSketchSubpaths(operation, circleSegments = 48) {
       return;
     }
 
-    if (segment.type === 'arc') {
-      const points = flattenArcSegment(segmentStart, segment, circleSegments);
-      points.forEach((point) => currentPath.push(point));
-      currentEnd = segmentEnd;
-    }
+    const points = flattenArcSegment(segmentStart, segment, circleSegments);
+    points.forEach((point) => currentPath?.push(point));
+    currentEnd = segmentEnd;
   });
 
-  if (operation?.closed && subpaths.length === 1) {
+  if (operation?.type === 'sketch' && operation.closed && subpaths.length === 1) {
     const first = subpaths[0][0];
     const last = subpaths[0][subpaths[0].length - 1];
     if (!pointsEqual(first, last)) {
@@ -294,7 +312,7 @@ export function getSketchSubpaths(operation, circleSegments = 48) {
   return subpaths;
 }
 
-export function isClosedSketchPath(operation) {
+export function isClosedSketchPath(operation: Operation | RawRecord | null | undefined): boolean {
   const subpaths = getSketchSubpaths(operation);
   if (subpaths.length !== 1) {
     return false;
@@ -308,7 +326,7 @@ export function isClosedSketchPath(operation) {
   return pointsEqual(path[0], path[path.length - 1]);
 }
 
-export function getSketchPathPoints(operation, circleSegments = 48) {
+export function getSketchPathPoints(operation: Operation | RawRecord | null | undefined, circleSegments = 48): Point[] {
   const subpaths = getSketchSubpaths(operation, circleSegments);
   if (subpaths.length === 0) {
     return [];
@@ -316,7 +334,7 @@ export function getSketchPathPoints(operation, circleSegments = 48) {
   return subpaths[0];
 }
 
-export function getOperationBounds(operation) {
+export function getOperationBounds(operation: Operation | null | undefined): OperationBounds | null {
   if (!operation) return null;
 
   if (operation.type === 'drill') {
@@ -351,24 +369,20 @@ export function getOperationBounds(operation) {
     };
   }
 
-  if (operation.type === 'sketch') {
-    const points = getSketchSubpaths(operation).flat();
-    if (points.length === 0) return null;
-    return points.reduce(
-      (acc, point) => ({
-        minX: Math.min(acc.minX, point.x),
-        minY: Math.min(acc.minY, point.y),
-        maxX: Math.max(acc.maxX, point.x),
-        maxY: Math.max(acc.maxY, point.y),
-      }),
-      { minX: points[0].x, minY: points[0].y, maxX: points[0].x, maxY: points[0].y }
-    );
-  }
-
-  return null;
+  const points = getSketchSubpaths(operation).flat();
+  if (points.length === 0) return null;
+  return points.reduce<OperationBounds>(
+    (acc, point) => ({
+      minX: Math.min(acc.minX, point.x),
+      minY: Math.min(acc.minY, point.y),
+      maxX: Math.max(acc.maxX, point.x),
+      maxY: Math.max(acc.maxY, point.y),
+    }),
+    { minX: points[0].x, minY: points[0].y, maxX: points[0].x, maxY: points[0].y }
+  );
 }
 
-export function pointToSegmentDistance(point, a, b) {
+export function pointToSegmentDistance(point: Point, a: Point, b: Point): number {
   const ax = a.x;
   const ay = a.y;
   const bx = b.x;
@@ -395,7 +409,7 @@ export function pointToSegmentDistance(point, a, b) {
   return distance(point, closest);
 }
 
-function isPointInRect(point, rect) {
+function isPointInRect(point: Point, rect: RectBounds): boolean {
   return (
     point.x >= rect.x &&
     point.x <= rect.x + rect.width &&
@@ -404,7 +418,7 @@ function isPointInRect(point, rect) {
   );
 }
 
-export function hitTestOperation(operation, point, tolerance = 2) {
+export function hitTestOperation(operation: Operation | null | undefined, point: Point, tolerance = 2): boolean {
   if (!operation) return false;
 
   if (operation.type === 'drill') {
@@ -424,7 +438,7 @@ export function hitTestOperation(operation, point, tolerance = 2) {
       return isPointInRect(point, rect);
     }
 
-    const edges = [
+    const edges: [Point, Point][] = [
       [{ x: rect.x, y: rect.y }, { x: rect.x + rect.width, y: rect.y }],
       [{ x: rect.x + rect.width, y: rect.y }, { x: rect.x + rect.width, y: rect.y + rect.height }],
       [{ x: rect.x + rect.width, y: rect.y + rect.height }, { x: rect.x, y: rect.y + rect.height }],
@@ -444,16 +458,12 @@ export function hitTestOperation(operation, point, tolerance = 2) {
     return Math.abs(d - operation.radius) <= tolerance || d < operation.radius;
   }
 
-  if (operation.type === 'sketch') {
-    return getSketchSubpaths(operation).some((path) =>
-      path.some((_, index) => index > 0 && pointToSegmentDistance(point, path[index - 1], path[index]) <= tolerance)
-    );
-  }
-
-  return false;
+  return getSketchSubpaths(operation).some((path) =>
+    path.some((_, index) => index > 0 && pointToSegmentDistance(point, path[index - 1], path[index]) <= tolerance)
+  );
 }
 
-export function moveOperation(operation, dx, dy) {
+export function moveOperation(operation: Operation | null | undefined, dx: number, dy: number): Operation | null | undefined {
   if (!operation) return operation;
 
   if (operation.type === 'drill') {
@@ -486,146 +496,144 @@ export function moveOperation(operation, dx, dy) {
     };
   }
 
-  if (operation.type === 'sketch') {
-    return {
-      ...operation,
-      segments: getSketchSegments(operation).map((segment) =>
-        segment.type === 'arc'
-          ? {
+  return {
+    ...operation,
+    segments: getSketchSegments(operation).map((segment) =>
+      segment.type === 'arc'
+        ? {
             ...segment,
-              x1: segment.x1 + dx,
-              y1: segment.y1 + dy,
-              x2: segment.x2 + dx,
-              y2: segment.y2 + dy,
-              throughX: segment.throughX + dx,
-              throughY: segment.throughY + dy,
-            }
-          : {
-              ...segment,
-              x1: segment.x1 + dx,
-              y1: segment.y1 + dy,
-              x2: segment.x2 + dx,
-              y2: segment.y2 + dy,
-            }
-      ),
-    };
-  }
-
-  return operation;
+            x1: segment.x1 + dx,
+            y1: segment.y1 + dy,
+            x2: segment.x2 + dx,
+            y2: segment.y2 + dy,
+            throughX: segment.throughX + dx,
+            throughY: segment.throughY + dy,
+          }
+        : {
+            ...segment,
+            x1: segment.x1 + dx,
+            y1: segment.y1 + dy,
+            x2: segment.x2 + dx,
+            y2: segment.y2 + dy,
+          }
+    ),
+  };
 }
 
-export function sanitizeOperation(raw) {
+export function sanitizeOperation(raw: unknown): Operation | null {
   if (!raw || typeof raw !== 'object') {
     return null;
   }
 
-  if (raw.type === 'drill') {
-    const x = toNumber(raw.x, NaN);
-    const y = toNumber(raw.y, NaN);
+  const data = raw as RawRecord;
+
+  if (data.type === 'drill') {
+    const x = toNumber(data.x, NaN);
+    const y = toNumber(data.y, NaN);
     if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null;
 
     return {
-      id: raw.id,
+      id: String(data.id ?? ''),
       type: 'drill',
       x,
       y,
-      depth: toNumber(raw.depth, undefined),
-      toolId: sanitizeToolId(raw.toolId),
-      materialId: sanitizeMaterialId(raw.materialId),
+      depth: toNumber(data.depth, undefined),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
     };
   }
 
-  if (raw.type === 'line') {
-    const x1 = toNumber(raw.x1, NaN);
-    const y1 = toNumber(raw.y1, NaN);
-    const x2 = toNumber(raw.x2, NaN);
-    const y2 = toNumber(raw.y2, NaN);
+  if (data.type === 'line') {
+    const x1 = toNumber(data.x1, NaN);
+    const y1 = toNumber(data.y1, NaN);
+    const x2 = toNumber(data.x2, NaN);
+    const y2 = toNumber(data.y2, NaN);
     if (![x1, y1, x2, y2].every(isFiniteNumber)) return null;
 
     return {
-      id: raw.id,
+      id: String(data.id ?? ''),
       type: 'line',
       x1,
       y1,
       x2,
       y2,
-      depth: toNumber(raw.depth, undefined),
-      toolId: sanitizeToolId(raw.toolId),
-      materialId: sanitizeMaterialId(raw.materialId),
+      depth: toNumber(data.depth, undefined),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
     };
   }
 
-  if (raw.type === 'rect') {
-    const x = toNumber(raw.x, NaN);
-    const y = toNumber(raw.y, NaN);
-    const width = toNumber(raw.width, NaN);
-    const height = toNumber(raw.height, NaN);
+  if (data.type === 'rect') {
+    const x = toNumber(data.x, NaN);
+    const y = toNumber(data.y, NaN);
+    const width = toNumber(data.width, NaN);
+    const height = toNumber(data.height, NaN);
     if (![x, y, width, height].every(isFiniteNumber)) return null;
     const maxCorner = Math.max(0, Math.min(Math.abs(width), Math.abs(height)) / 2);
-    const cornerRadius = clamp(Math.abs(toNumber(raw.cornerRadius, 0)), 0, maxCorner);
+    const cornerRadius = clamp(Math.abs(toNumber(data.cornerRadius, 0)), 0, maxCorner);
 
     return {
-      id: raw.id,
+      id: String(data.id ?? ''),
       type: 'rect',
       x,
       y,
       width,
       height,
       cornerRadius,
-      depth: toNumber(raw.depth, undefined),
-      toolId: sanitizeToolId(raw.toolId),
-      materialId: sanitizeMaterialId(raw.materialId),
-      cutSide: normalizeCutSideValue(raw.cutSide, 'outside'),
-      tabsEnabled: Boolean(raw.tabsEnabled),
-      tabCount: Math.max(1, Math.round(toNumber(raw.tabCount, 2))),
-      tabWidth: toOptionalPositiveNumber(raw.tabWidth) ?? 1,
-      tabHeight: toOptionalPositiveNumber(raw.tabHeight) ?? 1,
+      depth: toNumber(data.depth, undefined),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
+      cutSide: normalizeCutSideValue(data.cutSide, 'outside'),
+      tabsEnabled: Boolean(data.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
     };
   }
 
-  if (raw.type === 'circle') {
-    const x = toNumber(raw.x, NaN);
-    const y = toNumber(raw.y, NaN);
-    const radius = toNumber(raw.radius, NaN);
+  if (data.type === 'circle') {
+    const x = toNumber(data.x, NaN);
+    const y = toNumber(data.y, NaN);
+    const radius = toNumber(data.radius, NaN);
     if (![x, y, radius].every(isFiniteNumber)) return null;
 
     return {
-      id: raw.id,
+      id: String(data.id ?? ''),
       type: 'circle',
       x,
       y,
       radius: Math.max(0.1, Math.abs(radius)),
-      depth: toNumber(raw.depth, undefined),
-      toolId: sanitizeToolId(raw.toolId),
-      materialId: sanitizeMaterialId(raw.materialId),
-      cutSide: normalizeCutSideValue(raw.cutSide, 'outside'),
-      tabsEnabled: Boolean(raw.tabsEnabled),
-      tabCount: Math.max(1, Math.round(toNumber(raw.tabCount, 2))),
-      tabWidth: toOptionalPositiveNumber(raw.tabWidth) ?? 1,
-      tabHeight: toOptionalPositiveNumber(raw.tabHeight) ?? 1,
+      depth: toNumber(data.depth, undefined),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
+      cutSide: normalizeCutSideValue(data.cutSide, 'outside'),
+      tabsEnabled: Boolean(data.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
     };
   }
 
-  if (raw.type === 'sketch') {
-    const segments = Array.isArray(raw.segments)
-      ? raw.segments.map(normalizeSketchSegment).filter(Boolean)
-      : normalizeLegacySketch(raw)?.segments || [];
+  if (data.type === 'sketch') {
+    const segments = Array.isArray(data.segments)
+      ? data.segments.map((segment) => normalizeSketchSegment(segment)).filter((segment): segment is SketchSegment => Boolean(segment))
+      : normalizeLegacySketch(data)?.segments || [];
 
     if (segments.length < 1) return null;
 
     return {
-      id: raw.id,
+      id: String(data.id ?? ''),
       type: 'sketch',
       segments,
-      closed: Boolean(raw.closed) && segments.length > 1,
-      depth: toNumber(raw.depth, undefined),
-      toolId: sanitizeToolId(raw.toolId),
-      materialId: sanitizeMaterialId(raw.materialId),
-      cutSide: normalizeCutSideValue(raw.cutSide, 'along'),
-      tabsEnabled: Boolean(raw.tabsEnabled),
-      tabCount: Math.max(1, Math.round(toNumber(raw.tabCount, 2))),
-      tabWidth: toOptionalPositiveNumber(raw.tabWidth) ?? 1,
-      tabHeight: toOptionalPositiveNumber(raw.tabHeight) ?? 1,
+      closed: Boolean(data.closed) && segments.length > 1,
+      depth: toNumber(data.depth, undefined),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
+      cutSide: normalizeCutSideValue(data.cutSide, 'along'),
+      tabsEnabled: Boolean(data.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
     };
   }
 

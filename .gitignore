@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-electron/
 
 # Logs
 npm-debug.log*
@@ -18,4 +19,3 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 .vscode/
-

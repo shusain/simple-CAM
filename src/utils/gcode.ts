@@ -1,27 +1,49 @@
+import type {
+  CircleOperation,
+  CutSide,
+  DrillOperation,
+  LineOperation,
+  MachineSettings,
+  Operation,
+  Point,
+  RectBounds,
+  RectOperation,
+  SketchOperation,
+  Tool,
+} from '../types';
 import { getSketchSubpaths } from './geometry';
 import { resolveToolPreset } from './tooling';
 
-function num(value, digits = 3) {
+type TabRange = { start: number; end: number };
+type PathOperation = LineOperation | RectOperation | CircleOperation | SketchOperation;
+
+interface GenerateMarlinGcodeArgs {
+  operations: Operation[];
+  settings: MachineSettings;
+  tools: Tool[];
+}
+
+function num(value: number, digits = 3): string {
   return Number(value).toFixed(digits);
 }
 
-function toNegativeDepth(value, fallbackDepth) {
+function toNegativeDepth(value: number, fallbackDepth: number): number {
   const source = Number.isFinite(value) ? Number(value) : Number(fallbackDepth);
   const finite = Number.isFinite(source) ? source : -1;
   return finite <= 0 ? finite : -finite;
 }
 
-function toPositiveStep(value, fallbackStep) {
+function toPositiveStep(value: number, fallbackStep: number): number {
   const source = Number.isFinite(value) ? Number(value) : Number(fallbackStep);
   const finite = Number.isFinite(source) ? Math.abs(source) : Math.abs(fallbackStep || 1);
   return Math.max(0.001, finite);
 }
 
-function buildIncrementDepths(targetNegativeDepth, increment) {
+function buildIncrementDepths(targetNegativeDepth: number, increment: number): number[] {
   const target = Math.abs(targetNegativeDepth);
   const step = toPositiveStep(increment, target || 1);
 
-  const depths = [];
+  const depths: number[] = [];
   let current = 0;
 
   while (current < target) {
@@ -36,7 +58,7 @@ function buildIncrementDepths(targetNegativeDepth, increment) {
   return depths;
 }
 
-function getStartEndZ(settings) {
+function getStartEndZ(settings: MachineSettings): number {
   const value = Number(settings.startEndZ);
   if (Number.isFinite(value)) {
     return value;
@@ -44,30 +66,30 @@ function getStartEndZ(settings) {
   return Number(settings.safeZ) || 5;
 }
 
-function distanceBetween(a, b) {
+function distanceBetween(a: Point, b: Point): number {
   const dx = (b.x || 0) - (a.x || 0);
   const dy = (b.y || 0) - (a.y || 0);
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function interpolatePoint(a, b, distance) {
+function interpolatePoint(a: Point, b: Point, distanceValue: number): Point {
   const length = distanceBetween(a, b);
   if (length <= 0.000001) {
     return { x: a.x, y: a.y };
   }
 
-  const ratio = clamp01(distance / length);
+  const ratio = clamp01(distanceValue / length);
   return {
     x: a.x + (b.x - a.x) * ratio,
     y: a.y + (b.y - a.y) * ratio,
   };
 }
 
-function clamp01(value) {
+function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function getClosedPathLength(pathPoints) {
+function getClosedPathLength(pathPoints: Point[]): number {
   let total = 0;
   for (let i = 1; i < pathPoints.length; i += 1) {
     total += distanceBetween(pathPoints[i - 1], pathPoints[i]);
@@ -75,12 +97,12 @@ function getClosedPathLength(pathPoints) {
   return total;
 }
 
-function mergeRanges(ranges, totalLength) {
+function mergeRanges(ranges: TabRange[], totalLength: number): TabRange[] {
   if (!Array.isArray(ranges) || ranges.length === 0 || totalLength <= 0) {
     return [];
   }
 
-  const expanded = [];
+  const expanded: TabRange[] = [];
   ranges.forEach((range) => {
     if (!range) return;
     let start = Number(range.start);
@@ -98,7 +120,7 @@ function mergeRanges(ranges, totalLength) {
   });
 
   expanded.sort((a, b) => a.start - b.start);
-  const merged = [];
+  const merged: TabRange[] = [];
   expanded.forEach((range) => {
     const last = merged[merged.length - 1];
     if (!last || range.start > last.end) {
@@ -110,14 +132,14 @@ function mergeRanges(ranges, totalLength) {
   return merged;
 }
 
-function buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter = 0) {
+function buildEvenTabRanges(totalLength: number, tabCount: number, tabWidth: number, toolDiameter = 0): TabRange[] {
   if (totalLength <= 0 || tabCount < 1 || tabWidth <= 0) {
     return [];
   }
 
   const compensatedWidth = Math.max(tabWidth, tabWidth + Math.max(0, toolDiameter));
   const safeWidth = Math.min(compensatedWidth, totalLength / tabCount);
-  const ranges = [];
+  const ranges: TabRange[] = [];
   for (let i = 0; i < tabCount; i += 1) {
     const center = ((i + 0.5) * totalLength) / tabCount;
     ranges.push({
@@ -128,7 +150,7 @@ function buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter = 0) {
   return mergeRanges(ranges, totalLength);
 }
 
-function buildRectTabRanges(pathPoints, operation, toolDiameter = 0) {
+function buildRectTabRanges(pathPoints: Point[], operation: RectOperation, toolDiameter = 0): TabRange[] {
   const totalLength = getClosedPathLength(pathPoints);
   const tabCount = Math.max(1, Math.round(Number(operation.tabCount) || 1));
   const tabWidth = Math.max(0.1, Math.abs(Number(operation.tabWidth) || 1));
@@ -137,7 +159,7 @@ function buildRectTabRanges(pathPoints, operation, toolDiameter = 0) {
     return buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter);
   }
 
-  const lengths = [];
+  const lengths: Array<{ index: number; start: number; length: number }> = [];
   let cursor = 0;
   for (let i = 1; i < pathPoints.length; i += 1) {
     const segmentLength = distanceBetween(pathPoints[i - 1], pathPoints[i]);
@@ -151,7 +173,7 @@ function buildRectTabRanges(pathPoints, operation, toolDiameter = 0) {
 
   const sorted = [...lengths].sort((a, b) => b.length - a.length || a.index - b.index);
   const compensatedWidth = Math.max(tabWidth, tabWidth + Math.max(0, toolDiameter));
-  const ranges = [];
+  const ranges: TabRange[] = [];
   for (let i = 0; i < tabCount; i += 1) {
     const segment = sorted[i % sorted.length];
     const slot = Math.floor(i / sorted.length);
@@ -166,8 +188,8 @@ function buildRectTabRanges(pathPoints, operation, toolDiameter = 0) {
   return mergeRanges(ranges, totalLength);
 }
 
-function getTabRanges(pathPoints, operation, tool) {
-  if (!operation?.tabsEnabled) {
+function getTabRanges(pathPoints: Point[], operation: PathOperation, tool: Tool | null): TabRange[] {
+  if (!('tabsEnabled' in operation) || !operation.tabsEnabled) {
     return [];
   }
 
@@ -191,7 +213,15 @@ function getTabRanges(pathPoints, operation, tool) {
   return [];
 }
 
-function appendPathWithTabs(lines, pathPoints, depth, liftedDepth, cutFeed, plungeFeed, tabRanges) {
+function appendPathWithTabs(
+  lines: string[],
+  pathPoints: Point[],
+  depth: number,
+  liftedDepth: number,
+  cutFeed: string,
+  plungeFeed: string,
+  tabRanges: TabRange[]
+): void {
   let traveled = 0;
   let rangeIndex = 0;
   let liftedForTab = false;
@@ -257,7 +287,7 @@ function appendPathWithTabs(lines, pathPoints, depth, liftedDepth, cutFeed, plun
   }
 }
 
-function addHeader(lines, settings, operationCount) {
+function addHeader(lines: string[], settings: MachineSettings, operationCount: number): void {
   const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
   const startEndZ = num(getStartEndZ(settings));
 
@@ -277,7 +307,7 @@ function addHeader(lines, settings, operationCount) {
   lines.push('');
 }
 
-function addFooter(lines, settings) {
+function addFooter(lines: string[], settings: MachineSettings): void {
   const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
   const startEndZ = num(getStartEndZ(settings));
 
@@ -293,7 +323,7 @@ function addFooter(lines, settings) {
   lines.push('M2');
 }
 
-function getOperationTool(operation, tools) {
+function getOperationTool(operation: Operation, tools: Tool[] | null | undefined): Tool | null {
   if (!Array.isArray(tools) || tools.length === 0) {
     return null;
   }
@@ -302,7 +332,7 @@ function getOperationTool(operation, tools) {
   return match || null;
 }
 
-function getToolRadius(tool) {
+function getToolRadius(tool: Tool | null): number {
   const diameter = Number(tool?.diameter);
   if (!Number.isFinite(diameter) || diameter <= 0) {
     return 0;
@@ -310,13 +340,13 @@ function getToolRadius(tool) {
   return diameter / 2;
 }
 
-function getCutSide(operation, fallback = 'along') {
+function getCutSide(operation: { cutSide?: CutSide }, fallback: CutSide = 'along'): CutSide {
   return operation?.cutSide === 'inside' || operation?.cutSide === 'outside' || operation?.cutSide === 'along'
     ? operation.cutSide
     : fallback;
 }
 
-function normalizeRectGeometry(x, y, width, height) {
+function normalizeRectGeometry(x: number, y: number, width: number, height: number): RectBounds {
   let left = Number(x) || 0;
   let bottom = Number(y) || 0;
   let rectWidth = Number(width) || 0;
@@ -340,14 +370,22 @@ function normalizeRectGeometry(x, y, width, height) {
   };
 }
 
-function clampRectCornerRadius(radius, width, height) {
+function clampRectCornerRadius(radius: number, width: number, height: number): number {
   const maxCorner = Math.max(0, Math.min(Math.abs(width), Math.abs(height)) / 2);
   const raw = Number(radius);
   const safe = Number.isFinite(raw) ? Math.abs(raw) : 0;
   return Math.min(safe, maxCorner);
 }
 
-function appendArc(path, cx, cy, radius, startAngle, endAngle, segments) {
+function appendArc(
+  path: Point[],
+  cx: number,
+  cy: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+  segments: number
+): void {
   const count = Math.max(2, Math.floor(segments || 2));
   const span = endAngle - startAngle;
   const r = Math.abs(Number(radius) || 0);
@@ -360,11 +398,11 @@ function appendArc(path, cx, cy, radius, startAngle, endAngle, segments) {
   }
 }
 
-function pointsEqual(a, b, tolerance = 0.0001) {
+function pointsEqual(a: Point, b: Point, tolerance = 0.0001): boolean {
   return distanceBetween(a, b) <= tolerance;
 }
 
-function getClosedPolylinePoints(pathPoints) {
+function getClosedPolylinePoints(pathPoints: Point[]): Point[] | null {
   if (!Array.isArray(pathPoints) || pathPoints.length < 4) {
     return null;
   }
@@ -376,7 +414,7 @@ function getClosedPolylinePoints(pathPoints) {
   return points.length >= 3 ? points : null;
 }
 
-function getSignedArea(points) {
+function getSignedArea(points: Point[]): number {
   if (!Array.isArray(points) || points.length < 3) {
     return 0;
   }
@@ -390,7 +428,7 @@ function getSignedArea(points) {
   return area / 2;
 }
 
-function intersectInfiniteLines(a1, a2, b1, b2) {
+function intersectInfiniteLines(a1: Point, a2: Point, b1: Point, b2: Point): Point | null {
   const dax = a2.x - a1.x;
   const day = a2.y - a1.y;
   const dbx = b2.x - b1.x;
@@ -408,14 +446,14 @@ function intersectInfiniteLines(a1, a2, b1, b2) {
   };
 }
 
-function offsetClosedPath(pathPoints, offsetDistance) {
+function offsetClosedPath(pathPoints: Point[], offsetDistance: number): Point[] | null {
   const points = getClosedPolylinePoints(pathPoints);
   if (!points || Math.abs(offsetDistance) <= 0.000001) {
     return points ? [...points, points[0]] : null;
   }
 
   const orientation = getSignedArea(points) >= 0 ? 1 : -1;
-  const offsetPoints = [];
+  const offsetPoints: Point[] = [];
 
   for (let i = 0; i < points.length; i += 1) {
     const previous = points[(i - 1 + points.length) % points.length];
@@ -486,7 +524,7 @@ function offsetClosedPath(pathPoints, offsetDistance) {
   return [...offsetPoints, offsetPoints[0]];
 }
 
-function buildRoundedRectPath(rect, cornerRadius, cornerSegments) {
+function buildRoundedRectPath(rect: RectBounds, cornerRadius: number, cornerSegments: number): Point[] {
   const width = Math.max(0, rect.width || 0);
   const height = Math.max(0, rect.height || 0);
   const radius = clampRectCornerRadius(cornerRadius, width, height);
@@ -508,7 +546,7 @@ function buildRoundedRectPath(rect, cornerRadius, cornerSegments) {
   const x = rect.x;
   const y = rect.y;
   const r = radius;
-  const path = [{ x: x + r, y }];
+  const path: Point[] = [{ x: x + r, y }];
 
   path.push({ x: x + width - r, y });
   appendArc(path, x + width - r, y + r, r, -Math.PI / 2, 0, cornerSegments);
@@ -526,21 +564,21 @@ function buildRoundedRectPath(rect, cornerRadius, cornerSegments) {
   return path;
 }
 
-function getToolKey(tool) {
+function getToolKey(tool: Tool | null): string {
   if (tool?.id) {
     return `tool:${tool.id}`;
   }
   return 'tool:none';
 }
 
-function formatToolLabel(tool) {
+function formatToolLabel(tool: Tool | null): string {
   if (!tool) {
     return 'Unassigned tool';
   }
   return `${tool.name} (Ø${num(tool.diameter)}mm)`;
 }
 
-function appendToolChange(lines, previousTool, nextTool, settings) {
+function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: Tool | null, settings: MachineSettings): void {
   const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
   const startEndZ = num(getStartEndZ(settings));
 
@@ -562,7 +600,13 @@ function appendToolChange(lines, previousTool, nextTool, settings) {
   lines.push('');
 }
 
-function appendEntryMove(lines, startPoint, rapidFeed, settings, useStartEndClearance) {
+function appendEntryMove(
+  lines: string[],
+  startPoint: Point,
+  rapidFeed: string,
+  settings: MachineSettings,
+  useStartEndClearance: boolean
+): void {
   if (useStartEndClearance) {
     lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
     lines.push(`G0 Z${num(settings.safeZ)} F${rapidFeed}`);
@@ -573,7 +617,13 @@ function appendEntryMove(lines, startPoint, rapidFeed, settings, useStartEndClea
   lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
 }
 
-function appendDrill(lines, operation, settings, tool, useStartEndClearance = false) {
+function appendDrill(
+  lines: string[],
+  operation: DrillOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
   const preset = resolveToolPreset(tool, operation.materialId, settings);
   const rapidFeed = num(preset.rapidFeedRate, 0);
   const plungeFeed = num(preset.plungeFeedRate, 0);
@@ -603,7 +653,14 @@ function appendDrill(lines, operation, settings, tool, useStartEndClearance = fa
   lines.push('');
 }
 
-function appendCutPath(lines, pathPoints, operation, settings, tool, useStartEndClearance = false) {
+function appendCutPath(
+  lines: string[],
+  pathPoints: Point[],
+  operation: PathOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
   if (!Array.isArray(pathPoints) || pathPoints.length < 2) {
     return;
   }
@@ -616,15 +673,15 @@ function appendCutPath(lines, pathPoints, operation, settings, tool, useStartEnd
   const passStep = toPositiveStep(preset.cutDepthPerPass, Math.abs(finalDepth));
   const passes = buildIncrementDepths(finalDepth, passStep);
   const tabRanges = getTabRanges(pathPoints, operation, tool);
-  const tabHeight = Math.max(0.1, Math.abs(Number(operation.tabHeight) || 1));
+  const tabHeight = 'tabHeight' in operation ? Math.max(0.1, Math.abs(Number(operation.tabHeight) || 1)) : 1;
 
   const start = pathPoints[0];
   passes.forEach((depth, index) => {
     appendEntryMove(lines, start, rapidFeed, settings, useStartEndClearance && index === 0);
     lines.push(`G1 Z${num(depth)} F${plungeFeed}`);
 
-    const liftedDepth = operation.tabsEnabled ? Math.min(-0.001, depth + tabHeight) : depth;
-    if (operation.tabsEnabled && liftedDepth !== depth && tabRanges.length > 0) {
+    const liftedDepth = 'tabsEnabled' in operation && operation.tabsEnabled ? Math.min(-0.001, depth + tabHeight) : depth;
+    if ('tabsEnabled' in operation && operation.tabsEnabled && liftedDepth !== depth && tabRanges.length > 0) {
       appendPathWithTabs(lines, pathPoints, depth, liftedDepth, cutFeed, plungeFeed, tabRanges);
     } else {
       for (let i = 1; i < pathPoints.length; i += 1) {
@@ -639,7 +696,13 @@ function appendCutPath(lines, pathPoints, operation, settings, tool, useStartEnd
   lines.push('');
 }
 
-function appendLineCut(lines, operation, settings, tool, useStartEndClearance = false) {
+function appendLineCut(
+  lines: string[],
+  operation: LineOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
@@ -657,7 +720,13 @@ function appendLineCut(lines, operation, settings, tool, useStartEndClearance = 
   );
 }
 
-function appendRectCut(lines, operation, settings, tool, useStartEndClearance = false) {
+function appendRectCut(
+  lines: string[],
+  operation: RectOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
@@ -689,11 +758,21 @@ function appendRectCut(lines, operation, settings, tool, useStartEndClearance = 
   lines.push(`; Tool radius compensation ${num(offsetAmount)}mm`);
   lines.push(`; Nominal ${num(baseRect.width)} x ${num(baseRect.height)} mm, corner R${num(baseCorner)} -> path corner R${num(offsetCorner)}`);
 
-  const path = buildRoundedRectPath(cutSide === 'along' ? baseRect : offsetRect, cutSide === 'along' ? baseCorner : offsetCorner, cornerSegments);
+  const path = buildRoundedRectPath(
+    cutSide === 'along' ? baseRect : offsetRect,
+    cutSide === 'along' ? baseCorner : offsetCorner,
+    cornerSegments
+  );
   appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
 }
 
-function appendCircleCut(lines, operation, settings, tool, useStartEndClearance = false) {
+function appendCircleCut(
+  lines: string[],
+  operation: CircleOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
@@ -709,7 +788,7 @@ function appendCircleCut(lines, operation, settings, tool, useStartEndClearance 
   }
 
   const segments = Math.max(8, Math.floor(settings.circleSegments || 48));
-  const path = [];
+  const path: Point[] = [];
   const pathRadius = compensatedRadius <= 0.0001 ? operation.radius : compensatedRadius;
 
   for (let i = 0; i <= segments; i += 1) {
@@ -723,7 +802,13 @@ function appendCircleCut(lines, operation, settings, tool, useStartEndClearance 
   appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
 }
 
-function appendSketchCut(lines, operation, settings, tool, useStartEndClearance = false) {
+function appendSketchCut(
+  lines: string[],
+  operation: SketchOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
@@ -755,12 +840,12 @@ function appendSketchCut(lines, operation, settings, tool, useStartEndClearance 
   });
 }
 
-export function generateMarlinGcode({ operations, settings, tools }) {
-  const lines = [];
+export function generateMarlinGcode({ operations, settings, tools }: GenerateMarlinGcodeArgs): string {
+  const lines: string[] = [];
   addHeader(lines, settings, operations.length);
 
-  let previousTool = null;
-  let previousToolKey = null;
+  let previousTool: Tool | null = null;
+  let previousToolKey: string | null = null;
   let useStartEndClearance = true;
 
   operations.forEach((operation) => {
@@ -804,12 +889,10 @@ export function generateMarlinGcode({ operations, settings, tools }) {
       return;
     }
 
-    if (operation.type === 'sketch') {
-      appendSketchCut(lines, operation, settings, tool, useStartEndClearance);
-      previousTool = tool;
-      previousToolKey = toolKey;
-      useStartEndClearance = false;
-    }
+    appendSketchCut(lines, operation, settings, tool, useStartEndClearance);
+    previousTool = tool;
+    previousToolKey = toolKey;
+    useStartEndClearance = false;
   });
 
   addFooter(lines, settings);

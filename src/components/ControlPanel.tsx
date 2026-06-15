@@ -1,7 +1,78 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { resolveToolPreset } from '../utils/tooling';
+import type { MachineSettings, Material, Tool, ToolMaterialProfile } from '../types';
 
-function NumberField({ label, value, step = 'any', min, onChange }) {
+interface NumberFieldProps {
+  label: string;
+  value: number;
+  step?: number | 'any';
+  min?: number;
+  onChange: (value: number) => void;
+}
+
+interface ToolManagerModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  tools: Tool[];
+  materials: Material[];
+  settings: MachineSettings;
+  activeToolId: string;
+  activeMaterialId: string;
+  onSelectTool: (toolId: string) => void;
+  onAddTool: () => void;
+  onUpdateTool: (toolId: string, updates: Partial<Tool>) => void;
+  onUpdateToolMaterialProfile: (
+    toolId: string,
+    materialId: string,
+    updates: Partial<ToolMaterialProfile>
+  ) => void;
+  onDeleteTool: (toolId: string) => void;
+}
+
+interface MaterialManagerModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  materials: Material[];
+  activeMaterialId: string;
+  onSelectMaterial: (materialId: string) => void;
+  onAddMaterial: () => void;
+  onUpdateMaterial: (materialId: string, updates: Partial<Material>) => void;
+  onDeleteMaterial: (materialId: string) => void;
+}
+
+interface ControlPanelProps {
+  settings: MachineSettings;
+  onSettingsChange: (updates: Partial<MachineSettings>) => void;
+  materials: Material[];
+  tools: Tool[];
+  activeToolId: string;
+  activeMaterialId: string;
+  onSelectTool: (toolId: string) => void;
+  onSelectMaterial: (materialId: string) => void;
+  onAddMaterial: () => void;
+  onUpdateMaterial: (materialId: string, updates: Partial<Material>) => void;
+  onDeleteMaterial: (materialId: string) => void;
+  onAddTool: () => void;
+  onUpdateTool: (toolId: string, updates: Partial<Tool>) => void;
+  onUpdateToolMaterialProfile: (
+    toolId: string,
+    materialId: string,
+    updates: Partial<ToolMaterialProfile>
+  ) => void;
+  onDeleteTool: (toolId: string) => void;
+  onNewProject: () => void;
+  onOpenProject: () => void;
+  onSaveProject: () => void;
+  onExportGcode: () => void;
+  canSendToOctoprint: boolean;
+  onSendToOctoprint: () => void;
+  onSendAndRunOctoprint: () => void;
+  operationCount: number;
+  onApplyDepthSettingsToAll: () => void;
+  onApplyMaterialToAll: () => void;
+}
+
+function NumberField({ label, value, step = 'any', min, onChange }: NumberFieldProps): React.JSX.Element {
   return (
     <label className="field-row">
       <span>{label}</span>
@@ -29,7 +100,7 @@ function ToolManagerModal({
   onUpdateTool,
   onUpdateToolMaterialProfile,
   onDeleteTool,
-}) {
+}: ToolManagerModalProps): React.JSX.Element | null {
   const [editingToolId, setEditingToolId] = useState(activeToolId);
   const [editingMaterialId, setEditingMaterialId] = useState(activeMaterialId);
 
@@ -85,12 +156,7 @@ function ToolManagerModal({
             </ul>
 
             <div className="button-column">
-              <button
-                type="button"
-                onClick={() => {
-                  onAddTool();
-                }}
-              >
+              <button type="button" onClick={onAddTool}>
                 Add Tool
               </button>
               <button
@@ -244,7 +310,7 @@ function MaterialManagerModal({
   onAddMaterial,
   onUpdateMaterial,
   onDeleteMaterial,
-}) {
+}: MaterialManagerModalProps): React.JSX.Element | null {
   const [editingMaterialId, setEditingMaterialId] = useState(activeMaterialId);
 
   const editingMaterial = useMemo(
@@ -355,7 +421,7 @@ export default function ControlPanel({
   operationCount,
   onApplyDepthSettingsToAll,
   onApplyMaterialToAll,
-}) {
+}: ControlPanelProps): React.JSX.Element {
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const activeTool = tools.find((tool) => tool.id === activeToolId) || tools[0];

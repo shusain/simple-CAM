@@ -1,7 +1,54 @@
 import React, { useState } from 'react';
 import { getSketchSegments, getSketchStartPoint } from '../utils/geometry';
+import type {
+  CutSide,
+  Material,
+  Operation,
+  SketchArcSegment,
+  SketchLineSegment,
+  SketchOperation,
+  SketchSegment,
+  Tool,
+} from '../types';
 
-function formatOperationLabel(operation) {
+interface RepeatArgs {
+  count: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+interface DepthEditorProps {
+  value: number | undefined;
+  onChange: (value: number) => void;
+}
+
+interface CutSideEditorProps {
+  value: CutSide | undefined;
+  onChange: (value: CutSide) => void;
+  disabled?: boolean;
+  options?: CutSide[];
+}
+
+interface OperationsPanelProps {
+  operations: Operation[];
+  selectedOperation: Operation | null;
+  selectedOperationIds: string[];
+  materials: Material[];
+  tools: Tool[];
+  onSelectOperation: (id: string | null, options?: { additive?: boolean; toggle?: boolean }) => void;
+  onUpdateOperation: (id: string, updates: Partial<Operation>) => void;
+  onDeleteOperation: (id: string) => void;
+  onDeleteSelection: () => void;
+  onMoveOperation: (id: string, direction: number) => void;
+  onRepeatOperation: (args: RepeatArgs) => void;
+  isEditingSelectedSketch: boolean;
+  selectedSketchSegmentIndex: number | null;
+  onStartSketchEdit: () => void;
+  onStopSketchEdit: () => void;
+  onDeleteSelectedSketchSegment: () => void;
+}
+
+function formatOperationLabel(operation: Operation): string {
   if (operation.type === 'drill') {
     return `Drill @ X${operation.x.toFixed(2)} Y${operation.y.toFixed(2)}`;
   }
@@ -21,25 +68,21 @@ function formatOperationLabel(operation) {
     return `Circle R${operation.radius.toFixed(2)} @ X${operation.x.toFixed(1)} Y${operation.y.toFixed(1)}`;
   }
 
-  if (operation.type === 'sketch') {
-    const segmentCount = getSketchSegments(operation).length + (operation.closed ? 1 : 0);
-    return `Sketch ${operation.closed ? 'closed' : 'open'} (${segmentCount} segments)`;
-  }
-
-  return operation.type;
+  const segmentCount = getSketchSegments(operation).length + (operation.closed ? 1 : 0);
+  return `Sketch ${operation.closed ? 'closed' : 'open'} (${segmentCount} segments)`;
 }
 
-function getToolName(toolId, tools) {
+function getToolName(toolId: string | undefined, tools: Tool[]): string {
   const tool = tools.find((item) => item.id === toolId);
   return tool ? `${tool.name} (Ø${tool.diameter}mm)` : 'Unassigned tool';
 }
 
-function getMaterialName(materialId, materials) {
+function getMaterialName(materialId: string | undefined, materials: Material[]): string {
   const material = materials.find((item) => item.id === materialId);
   return material ? material.name : 'Unassigned material';
 }
 
-function DepthEditor({ value, onChange }) {
+function DepthEditor({ value, onChange }: DepthEditorProps): React.JSX.Element {
   return (
     <label className="field-row">
       <span>Depth (mm)</span>
@@ -53,11 +96,20 @@ function DepthEditor({ value, onChange }) {
   );
 }
 
-function CutSideEditor({ value, onChange, disabled = false, options = ['inside', 'outside', 'along'] }) {
+function CutSideEditor({
+  value,
+  onChange,
+  disabled = false,
+  options = ['inside', 'outside', 'along'],
+}: CutSideEditorProps): React.JSX.Element {
   return (
     <label className="field-row">
       <span>Toolpath</span>
-      <select value={value || 'along'} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+      <select
+        value={value || 'along'}
+        onChange={(event) => onChange(event.target.value as CutSide)}
+        disabled={disabled}
+      >
         {options.includes('outside') ? <option value="outside">Cut outside</option> : null}
         {options.includes('inside') ? <option value="inside">Cut inside</option> : null}
         <option value="along">Cut along path</option>
@@ -66,28 +118,75 @@ function CutSideEditor({ value, onChange, disabled = false, options = ['inside',
   );
 }
 
-function updateSketchStart(operation, updates, onUpdateOperation) {
+function updateSketchStart(
+  operation: SketchOperation,
+  updates: Partial<{ x: number; y: number }>,
+  onUpdateOperation: OperationsPanelProps['onUpdateOperation']
+): void {
   const segments = getSketchSegments(operation);
   if (segments.length === 0) return;
 
+  const nextSegments: SketchSegment[] = segments.map((segment, index) => {
+    if (index !== 0) {
+      return segment;
+    }
+
+    if (segment.type === 'arc') {
+      return {
+        ...segment,
+        x1: updates.x ?? segment.x1,
+        y1: updates.y ?? segment.y1,
+      };
+    }
+
+    return {
+      ...segment,
+      x1: updates.x ?? segment.x1,
+      y1: updates.y ?? segment.y1,
+    };
+  });
+
   onUpdateOperation(operation.id, {
-    segments: segments.map((segment, index) =>
-      index === 0
-        ? {
-            ...segment,
-            x1: updates.x ?? segment.x1,
-            y1: updates.y ?? segment.y1,
-          }
-        : segment
-    ),
+    segments: nextSegments,
   });
 }
 
-function updateSketchSegment(operation, index, updates, onUpdateOperation) {
+function updateSketchSegment(
+  operation: SketchOperation,
+  index: number,
+  updates: Partial<SketchSegment>,
+  onUpdateOperation: OperationsPanelProps['onUpdateOperation']
+): void {
   const segments = getSketchSegments(operation);
-  const next = segments.map((segment, segmentIndex) =>
-    segmentIndex === index ? { ...segment, ...updates } : segment
-  );
+  const next: SketchSegment[] = segments.map((segment, segmentIndex) => {
+    if (segmentIndex !== index) {
+      return segment;
+    }
+
+    if (segment.type === 'arc') {
+      const arcUpdates = updates as Partial<SketchArcSegment>;
+      return {
+        type: 'arc',
+        x1: arcUpdates.x1 ?? segment.x1,
+        y1: arcUpdates.y1 ?? segment.y1,
+        x2: arcUpdates.x2 ?? segment.x2,
+        y2: arcUpdates.y2 ?? segment.y2,
+        throughX: arcUpdates.throughX ?? segment.throughX,
+        throughY: arcUpdates.throughY ?? segment.throughY,
+      };
+    }
+
+    const lineUpdates = updates as Partial<SketchLineSegment>;
+
+    return {
+      type: 'line',
+      x1: lineUpdates.x1 ?? segment.x1,
+      y1: lineUpdates.y1 ?? segment.y1,
+      x2: lineUpdates.x2 ?? segment.x2,
+      y2: lineUpdates.y2 ?? segment.y2,
+    };
+  });
+
   onUpdateOperation(operation.id, { segments: next });
 }
 
@@ -108,7 +207,7 @@ export default function OperationsPanel({
   onStartSketchEdit,
   onStopSketchEdit,
   onDeleteSelectedSketchSegment,
-}) {
+}: OperationsPanelProps): React.JSX.Element {
   const [repeatCount, setRepeatCount] = useState(1);
   const [repeatOffsetX, setRepeatOffsetX] = useState(10);
   const [repeatOffsetY, setRepeatOffsetY] = useState(0);
@@ -125,9 +224,10 @@ export default function OperationsPanel({
   const selectedCount = selectedOperationIds?.length || 0;
   const sketchStart = selectedOperation?.type === 'sketch' ? getSketchStartPoint(selectedOperation) : null;
   const sketchSegments = selectedOperation?.type === 'sketch' ? getSketchSegments(selectedOperation) : [];
-  const sketchCutOptions = selectedOperation?.type === 'sketch' && selectedOperation.closed
-    ? ['outside', 'inside', 'along']
-    : ['along'];
+  const sketchCutOptions: CutSide[] =
+    selectedOperation?.type === 'sketch' && selectedOperation.closed
+      ? ['outside', 'inside', 'along']
+      : ['along'];
 
   return (
     <div className="panel">

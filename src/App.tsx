@@ -9,9 +9,23 @@ import {
   normalizeTool,
   resolveMaterialId,
 } from './utils/tooling';
+import type {
+  CamProjectFile,
+  HistoryState,
+  MachineSettings,
+  Material,
+  OctoprintSettings,
+  Operation,
+  PastePreview,
+  ToolMaterialProfile,
+  Tool,
+  ZoomRequest,
+  SketchEditState,
+} from './types';
+import type { ElectronBridge } from './types/electron';
 import './App.css';
 
-const DEFAULT_SETTINGS = {
+const DEFAULT_SETTINGS: MachineSettings = {
   workWidth: 300,
   workHeight: 200,
   gridSize: 5,
@@ -29,7 +43,7 @@ const DEFAULT_SETTINGS = {
   circleSegments: 48,
 };
 
-const DEFAULT_TOOLS = [
+const DEFAULT_TOOLS: Tool[] = [
   {
     id: 'tool-3.175mm-endmill',
     name: 'Endmill 3.175mm',
@@ -64,7 +78,7 @@ const DEFAULT_TOOLS = [
   },
 ];
 
-const DEFAULT_MATERIALS = [{ id: 'material-generic', name: 'Generic' }];
+const DEFAULT_MATERIALS: Material[] = [{ id: 'material-generic', name: 'Generic' }];
 
 const TOOLS = [
   { id: 'select', label: 'Select' },
@@ -74,34 +88,79 @@ const TOOLS = [
   { id: 'arc', label: 'Poly-Arc' },
   { id: 'rect', label: 'Cut Rect' },
   { id: 'circle', label: 'Cut Circle' },
-];
+] as const;
+
+type ActiveTool = (typeof TOOLS)[number]['id'];
+
+interface PreferencesData {
+  settings?: Partial<MachineSettings>;
+  materials?: Material[];
+  tools?: Tool[];
+  activeToolId?: string;
+}
+
+interface InitialState {
+  settings: MachineSettings;
+  materials: Material[];
+  tools: Tool[];
+  activeToolId: string;
+}
+
+interface OctoprintSettingsModalProps {
+  isOpen: boolean;
+  settings: OctoprintSettings;
+  onClose: () => void;
+  onSave: (settings: OctoprintSettings) => void;
+}
+
+interface SelectOptions {
+  additive?: boolean;
+  toggle?: boolean;
+}
+
+interface RepeatArgs {
+  count: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+interface MoveSelectedOperationsArgs {
+  ids: string[];
+  sourceOperations: Operation[];
+  dx: number;
+  dy: number;
+}
+
+type OperationsUpdater = Operation[] | ((current: Operation[]) => Operation[]);
+type OperationUpdates = Partial<Operation>;
+type OperationBounds = NonNullable<ReturnType<typeof getOperationBounds>>;
 
 const HISTORY_LIMIT = 200;
 const PREFERENCES_STORAGE_KEY = 'simple-cam.preferences.v1';
 const OCTOPRINT_WEB_STORAGE_KEY = 'simple-cam.octoprint.v1';
-const DEFAULT_OCTOPRINT_SETTINGS = {
+const DEFAULT_OCTOPRINT_SETTINGS: OctoprintSettings = {
   baseUrl: '',
   apiKey: '',
 };
 
-function newId() {
+function newId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
 
-function fileNameFromPath(filePath) {
+function fileNameFromPath(filePath?: string): string | null {
   if (!filePath) return null;
   const parts = filePath.split(/[/\\]/);
   return parts[parts.length - 1] || null;
 }
 
-function offsetOperation(operation, dx, dy) {
-  return moveOperation(operation, dx, dy);
+function offsetOperation(operation: Operation, dx: number, dy: number): Operation {
+  return moveOperation(operation, dx, dy) as Operation;
 }
 
-function loadPreferences() {
+function loadPreferences(): PreferencesData | null {
   if (typeof window === 'undefined' || !window.localStorage) {
     return null;
   }
@@ -109,14 +168,14 @@ function loadPreferences() {
   try {
     const raw = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as PreferencesData) : null;
   } catch {
     return null;
   }
 }
 
-function savePreferences(preferences) {
+function savePreferences(preferences: PreferencesData): void {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
   }
@@ -128,7 +187,7 @@ function savePreferences(preferences) {
   }
 }
 
-function getInitialState() {
+function getInitialState(): InitialState {
   const stored = loadPreferences();
   const materialsRaw =
     Array.isArray(stored?.materials) && stored.materials.length > 0 ? stored.materials : DEFAULT_MATERIALS;
@@ -136,8 +195,10 @@ function getInitialState() {
     normalizeMaterial(material, `material-${index}`)
   );
 
-  const settings = { ...DEFAULT_SETTINGS, ...(stored?.settings || {}) };
-  settings.activeMaterialId = resolveMaterialId(materials, settings.activeMaterialId, DEFAULT_SETTINGS.activeMaterialId);
+  const settings: MachineSettings = { ...DEFAULT_SETTINGS, ...(stored?.settings || {}) };
+  settings.activeMaterialId =
+    resolveMaterialId(materials, settings.activeMaterialId, DEFAULT_SETTINGS.activeMaterialId) ||
+    DEFAULT_SETTINGS.activeMaterialId;
 
   const toolsRaw = Array.isArray(stored?.tools) && stored.tools.length > 0 ? stored.tools : DEFAULT_TOOLS;
   const tools = toolsRaw.map((tool, index) => normalizeTool(tool, `tool-${index}`));
@@ -155,8 +216,8 @@ function getInitialState() {
   };
 }
 
-function computeBounds(operations) {
-  const items = operations.map(getOperationBounds).filter(Boolean);
+function computeBounds(operations: Operation[]): OperationBounds | null {
+  const items = operations.map(getOperationBounds).filter(Boolean) as OperationBounds[];
   if (items.length === 0) return null;
 
   return items.reduce(
@@ -170,25 +231,25 @@ function computeBounds(operations) {
   );
 }
 
-function isEditableElement(target) {
+function isEditableElement(target: EventTarget | null): boolean {
   if (!target || !(target instanceof HTMLElement)) return false;
   const tag = target.tagName?.toLowerCase();
   return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
 }
 
-function operationsChanged(a, b) {
+function operationsChanged(a: Operation[], b: Operation[]): boolean {
   if (a === b) return false;
   if (!Array.isArray(a) || !Array.isArray(b)) return true;
   if (a.length !== b.length) return true;
   return JSON.stringify(a) !== JSON.stringify(b);
 }
 
-function buildGcodeFileName(projectName) {
+function buildGcodeFileName(projectName: string): string {
   const base = (projectName || 'output').replace(/\.(cam|json|gcode)$/i, '');
   return `${base || 'output'}.gcode`;
 }
 
-function normalizeOctoprintSettings(settings) {
+function normalizeOctoprintSettings(settings: Partial<OctoprintSettings> | null | undefined): OctoprintSettings {
   const baseRaw = typeof settings?.baseUrl === 'string' ? settings.baseUrl.trim() : '';
   const hasScheme = /^https?:\/\//i.test(baseRaw);
   return {
@@ -197,7 +258,7 @@ function normalizeOctoprintSettings(settings) {
   };
 }
 
-function loadBrowserOctoprintSettings() {
+function loadBrowserOctoprintSettings(): OctoprintSettings {
   if (typeof window === 'undefined' || !window.localStorage) {
     return DEFAULT_OCTOPRINT_SETTINGS;
   }
@@ -205,14 +266,14 @@ function loadBrowserOctoprintSettings() {
   try {
     const raw = window.localStorage.getItem(OCTOPRINT_WEB_STORAGE_KEY);
     if (!raw) return DEFAULT_OCTOPRINT_SETTINGS;
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Partial<OctoprintSettings>;
     return normalizeOctoprintSettings(parsed);
   } catch {
     return DEFAULT_OCTOPRINT_SETTINGS;
   }
 }
 
-function saveBrowserOctoprintSettings(settings) {
+function saveBrowserOctoprintSettings(settings: Partial<OctoprintSettings>): void {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
   }
@@ -227,8 +288,8 @@ function saveBrowserOctoprintSettings(settings) {
   }
 }
 
-function OctoprintSettingsModal({ isOpen, settings, onClose, onSave }) {
-  const [draft, setDraft] = useState(settings);
+function OctoprintSettingsModal({ isOpen, settings, onClose, onSave }: OctoprintSettingsModalProps): React.JSX.Element | null {
+  const [draft, setDraft] = useState<OctoprintSettings>(settings);
 
   useEffect(() => {
     if (isOpen) {
@@ -284,42 +345,45 @@ function OctoprintSettingsModal({ isOpen, settings, onClose, onSave }) {
   );
 }
 
-export default function App() {
-  const electron = typeof window !== 'undefined' ? window.electron : null;
-  const initialState = useMemo(() => getInitialState(), []);
+export default function App(): React.JSX.Element {
+  const electron: ElectronBridge | null = typeof window !== 'undefined' ? window.electron || null : null;
+  const initialState = useMemo<InitialState>(() => getInitialState(), []);
 
-  const [settings, setSettings] = useState(initialState.settings);
-  const [materials, setMaterials] = useState(initialState.materials);
-  const [activeTool, setActiveTool] = useState('select');
-  const [operationsHistory, setOperationsHistory] = useState({ past: [], present: [], future: [] });
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [clipboard, setClipboard] = useState(null);
-  const [pastePreview, setPastePreview] = useState(null);
+  const [settings, setSettings] = useState<MachineSettings>(initialState.settings);
+  const [materials, setMaterials] = useState<Material[]>(initialState.materials);
+  const [activeTool, setActiveTool] = useState<ActiveTool>('select');
+  const [operationsHistory, setOperationsHistory] = useState<HistoryState<Operation[]>>({
+    past: [],
+    present: [],
+    future: [],
+  });
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [clipboard, setClipboard] = useState<PastePreview | null>(null);
+  const [pastePreview, setPastePreview] = useState<PastePreview | null>(null);
   const [projectName, setProjectName] = useState('project.cam.json');
   const [status, setStatus] = useState('Ready');
-  const [zoomRequest, setZoomRequest] = useState({ token: 0, action: 'reset' });
-  const [tools, setTools] = useState(initialState.tools);
-  const [activeToolId, setActiveToolId] = useState(initialState.activeToolId);
-  const [octoprintSettings, setOctoprintSettings] = useState(DEFAULT_OCTOPRINT_SETTINGS);
+  const [zoomRequest, setZoomRequest] = useState<ZoomRequest>({ token: 0, action: 'reset' });
+  const [tools, setTools] = useState<Tool[]>(initialState.tools);
+  const [activeToolId, setActiveToolId] = useState<string>(initialState.activeToolId);
+  const [octoprintSettings, setOctoprintSettings] = useState<OctoprintSettings>(DEFAULT_OCTOPRINT_SETTINGS);
   const [isOctoprintModalOpen, setIsOctoprintModalOpen] = useState(false);
-  const [sketchEdit, setSketchEdit] = useState({
+  const [sketchEdit, setSketchEdit] = useState<SketchEditState>({
     operationId: null,
     selectedSegmentIndex: null,
   });
 
   const operations = operationsHistory.present;
-  const canUndo = operationsHistory.past.length > 0;
-  const canRedo = operationsHistory.future.length > 0;
 
   const selectedOperations = useMemo(
     () => operations.filter((op) => selectedIds.includes(op.id)),
     [operations, selectedIds]
   );
-  const activeMaterialId = resolveMaterialId(
-    materials,
-    settings.activeMaterialId,
-    DEFAULT_SETTINGS.activeMaterialId
-  );
+  const activeMaterialId =
+    resolveMaterialId(
+      materials,
+      settings.activeMaterialId,
+      DEFAULT_SETTINGS.activeMaterialId
+    ) || DEFAULT_SETTINGS.activeMaterialId;
   const activeMaterial = materials.find((material) => material.id === activeMaterialId) || materials[0] || null;
   const selectedOperation = useMemo(() => {
     if (selectedIds.length !== 1) return null;
@@ -332,7 +396,7 @@ export default function App() {
     Boolean(octoprintSettings.baseUrl && octoprintSettings.baseUrl.trim()) &&
     Boolean(octoprintSettings.apiKey && octoprintSettings.apiKey.trim());
 
-  const commitOperations = useCallback((nextOrUpdater) => {
+  const commitOperations = useCallback((nextOrUpdater: OperationsUpdater) => {
     setOperationsHistory((previous) => {
       const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(previous.present) : nextOrUpdater;
       if (!Array.isArray(next)) {
@@ -356,15 +420,15 @@ export default function App() {
     });
   }, []);
 
-  const setOperationsDirect = useCallback((nextOperations) => {
+  const setOperationsDirect = useCallback((nextOperations: Operation[]) => {
     setOperationsHistory({ past: [], present: nextOperations, future: [] });
   }, []);
 
-  const requestZoom = useCallback((action) => {
+  const requestZoom = useCallback((action: ZoomRequest['action']) => {
     setZoomRequest((prev) => ({ token: prev.token + 1, action }));
   }, []);
 
-  const handleSelectOperation = useCallback((id, options = {}) => {
+  const handleSelectOperation = useCallback((id: string | null, options: SelectOptions = {}) => {
     const additive = Boolean(options.additive);
     const toggle = Boolean(options.toggle);
 
@@ -387,7 +451,7 @@ export default function App() {
     });
   }, []);
 
-  const handleSetSelection = useCallback((ids, options = {}) => {
+  const handleSetSelection = useCallback((ids: string[], options: { additive?: boolean } = {}) => {
     const additive = Boolean(options.additive);
     const unique = Array.from(new Set((ids || []).filter(Boolean)));
 
@@ -400,7 +464,7 @@ export default function App() {
   }, []);
 
   const addOperation = useCallback(
-    (operation) => {
+    (operation: Omit<Operation, 'id'>) => {
       const selectedToolId = operation.toolId || activeToolId || tools[0]?.id || null;
       const selectedMaterialId = resolveMaterialId(
         materials,
@@ -408,7 +472,12 @@ export default function App() {
         activeMaterialId
       );
       const id = newId();
-      const nextOperation = { ...operation, toolId: selectedToolId, materialId: selectedMaterialId, id };
+      const nextOperation = {
+        ...operation,
+        toolId: selectedToolId || undefined,
+        materialId: selectedMaterialId || undefined,
+        id,
+      } as Operation;
       commitOperations((prev) => [...prev, nextOperation]);
       setSelectedIds([id]);
       return id;
@@ -417,8 +486,8 @@ export default function App() {
   );
 
   const updateOperation = useCallback(
-    (id, updates) => {
-      commitOperations((prev) => prev.map((op) => (op.id === id ? { ...op, ...updates } : op)));
+    (id: string, updates: OperationUpdates) => {
+      commitOperations((prev) => prev.map((op) => (op.id === id ? ({ ...op, ...updates } as Operation) : op)));
     },
     [commitOperations]
   );
@@ -451,7 +520,7 @@ export default function App() {
     });
   }, [selectedOperation, updateOperation]);
 
-  const selectSketchSegment = useCallback((segmentIndex) => {
+  const selectSketchSegment = useCallback((segmentIndex: number | null) => {
     setSketchEdit((prev) => ({
       ...prev,
       selectedSegmentIndex: Number.isInteger(segmentIndex) ? segmentIndex : null,
@@ -464,7 +533,7 @@ export default function App() {
     }
 
     const segmentIndex = sketchEdit.selectedSegmentIndex;
-    if (!Number.isInteger(segmentIndex)) {
+    if (segmentIndex === null || !Number.isInteger(segmentIndex)) {
       return;
     }
 
@@ -502,14 +571,14 @@ export default function App() {
     setSettings((prev) => ({ ...prev, activeMaterialId: id }));
   }, []);
 
-  const updateMaterial = useCallback((materialId, updates) => {
+  const updateMaterial = useCallback((materialId: string, updates: Partial<Material>) => {
     setMaterials((prev) =>
       prev.map((material) => (material.id === materialId ? { ...material, ...updates } : material))
     );
   }, []);
 
   const deleteMaterial = useCallback(
-    (materialId) => {
+    (materialId: string) => {
       if (materials.length <= 1) return;
       const fallback = materials.find((material) => material.id !== materialId);
       if (!fallback) return;
@@ -528,27 +597,30 @@ export default function App() {
     [commitOperations, materials]
   );
 
-  const updateToolMaterialProfile = useCallback((toolId, materialId, updates) => {
-    setTools((prev) =>
-      prev.map((tool) => {
-        if (tool.id !== toolId) {
-          return tool;
-        }
+  const updateToolMaterialProfile = useCallback(
+    (toolId: string, materialId: string, updates: Partial<ToolMaterialProfile>) => {
+      setTools((prev) =>
+        prev.map((tool) => {
+          if (tool.id !== toolId) {
+            return tool;
+          }
 
-        const currentProfile = tool.materialProfiles?.[materialId] || {};
-        return {
-          ...tool,
-          materialProfiles: {
-            ...(tool.materialProfiles || {}),
-            [materialId]: {
-              ...currentProfile,
-              ...updates,
+          const currentProfile = tool.materialProfiles?.[materialId] || {};
+          return {
+            ...tool,
+            materialProfiles: {
+              ...(tool.materialProfiles || {}),
+              [materialId]: {
+                ...currentProfile,
+                ...updates,
+              },
             },
-          },
-        };
-      })
-    );
-  }, []);
+          };
+        })
+      );
+    },
+    []
+  );
 
   const applyMaterialToAll = useCallback(() => {
     if (operations.length === 0) {
@@ -565,7 +637,7 @@ export default function App() {
   }, [activeMaterial?.name, activeMaterialId, commitOperations, operations.length]);
 
   const moveSelectedOperations = useCallback(
-    ({ ids, sourceOperations, dx, dy }) => {
+    ({ ids, sourceOperations, dx, dy }: MoveSelectedOperationsArgs) => {
       const selected = Array.isArray(ids) ? ids : [];
       if (selected.length === 0) return;
 
@@ -586,7 +658,7 @@ export default function App() {
   );
 
   const deleteOperation = useCallback(
-    (id) => {
+    (id: string) => {
       commitOperations((prev) => prev.filter((op) => op.id !== id));
       setSelectedIds((prev) => prev.filter((item) => item !== id));
     },
@@ -602,7 +674,7 @@ export default function App() {
   }, [commitOperations, selectedIds]);
 
   const moveOperation = useCallback(
-    (id, direction) => {
+    (id: string, direction: number) => {
       commitOperations((prev) => {
         const index = prev.findIndex((op) => op.id === id);
         if (index < 0) return prev;
@@ -631,12 +703,12 @@ export default function App() {
     setActiveToolId(id);
   }, [activeToolId, tools]);
 
-  const updateTool = useCallback((toolId, updates) => {
+  const updateTool = useCallback((toolId: string, updates: Partial<Tool>) => {
     setTools((prev) => prev.map((tool) => (tool.id === toolId ? { ...tool, ...updates } : tool)));
   }, []);
 
   const deleteTool = useCallback(
-    (toolId) => {
+    (toolId: string) => {
       if (tools.length <= 1) return;
       const fallback = tools.find((tool) => tool.id !== toolId);
       if (!fallback) return;
@@ -653,7 +725,7 @@ export default function App() {
   );
 
   const repeatSelected = useCallback(
-    ({ count, offsetX, offsetY }) => {
+    ({ count, offsetX, offsetY }: RepeatArgs) => {
       if (selectedOperations.length === 0 || !Number.isFinite(count) || count < 1) {
         return;
       }
@@ -662,7 +734,7 @@ export default function App() {
       const dx = Number(offsetX) || 0;
       const dy = Number(offsetY) || 0;
 
-      const clones = [];
+      const clones: Operation[] = [];
       for (let i = 1; i <= repeats; i += 1) {
         selectedOperations.forEach((operation) => {
           clones.push({
@@ -687,10 +759,7 @@ export default function App() {
     const bounds = computeBounds(selectedOperations);
     const anchor = bounds ? { x: bounds.minX, y: bounds.minY } : { x: 0, y: 0 };
 
-    const cloned = selectedOperations.map((operation) => {
-      const { id, ...rest } = operation;
-      return { ...rest };
-    });
+    const cloned = selectedOperations.map((operation) => ({ ...operation }));
 
     setClipboard({ operations: cloned, anchor });
     setStatus(`Copied ${cloned.length} operation(s)`);
@@ -710,7 +779,7 @@ export default function App() {
   }, []);
 
   const placePastedOperations = useCallback(
-    (targetPoint) => {
+    (targetPoint: { x: number; y: number }) => {
       if (!pastePreview?.operations?.length) {
         return;
       }
@@ -718,11 +787,11 @@ export default function App() {
       const dx = targetPoint.x - pastePreview.anchor.x;
       const dy = targetPoint.y - pastePreview.anchor.y;
 
-      const pasted = pastePreview.operations.map((operation) => ({
+      const pasted: Operation[] = pastePreview.operations.map((operation) => ({
         ...offsetOperation(operation, dx, dy),
         id: newId(),
         toolId: operation.toolId || activeToolId,
-        materialId: resolveMaterialId(materials, operation.materialId, activeMaterialId),
+        materialId: resolveMaterialId(materials, operation.materialId, activeMaterialId) || undefined,
       }));
 
       commitOperations((prev) => [...prev, ...pasted]);
@@ -780,31 +849,38 @@ export default function App() {
       return;
     }
 
-    const loaded = result.project || {};
-    const loadedSettings = { ...DEFAULT_SETTINGS, ...(loaded.settings || {}) };
+    const loaded = result.project;
+    if (!loaded) {
+      setStatus('Open failed: project file was empty');
+      return;
+    }
 
-    const loadedMaterialsRaw =
+    const loadedSettings: MachineSettings = { ...DEFAULT_SETTINGS, ...(loaded.settings || {}) };
+
+    const loadedMaterialsRaw: Material[] =
       Array.isArray(loaded.materials) && loaded.materials.length > 0 ? loaded.materials : DEFAULT_MATERIALS;
     const loadedMaterials = loadedMaterialsRaw.map((material, index) =>
       normalizeMaterial(material, `material-${index}`)
     );
-    loadedSettings.activeMaterialId = resolveMaterialId(
-      loadedMaterials,
-      loadedSettings.activeMaterialId,
-      DEFAULT_SETTINGS.activeMaterialId
-    );
+    loadedSettings.activeMaterialId =
+      resolveMaterialId(
+        loadedMaterials,
+        loadedSettings.activeMaterialId,
+        DEFAULT_SETTINGS.activeMaterialId
+      ) || DEFAULT_SETTINGS.activeMaterialId;
 
-    const loadedToolsRaw = Array.isArray(loaded.tools) && loaded.tools.length > 0 ? loaded.tools : DEFAULT_TOOLS;
+    const loadedToolsRaw: Tool[] = Array.isArray(loaded.tools) && loaded.tools.length > 0 ? loaded.tools : DEFAULT_TOOLS;
     const loadedTools = loadedToolsRaw.map((tool, index) => normalizeTool(tool, `tool-${index}`));
     const loadedActiveToolId =
       loaded.activeToolId && loadedTools.some((tool) => tool.id === loaded.activeToolId)
         ? loaded.activeToolId
         : loadedTools[0].id;
 
-    const loadedOperations = Array.isArray(loaded.operations)
-      ? loaded.operations
+    const loadedOperationsSource: Operation[] = Array.isArray(loaded.operations) ? loaded.operations : [];
+    const loadedOperations: Operation[] = loadedOperationsSource.length > 0
+      ? loadedOperationsSource
           .map((item) => sanitizeOperation(item))
-          .filter(Boolean)
+          .filter((item): item is Operation => Boolean(item))
           .map((item) => ({
             ...item,
             id: item.id || newId(),
@@ -812,11 +888,12 @@ export default function App() {
               item.toolId && loadedTools.some((tool) => tool.id === item.toolId)
                 ? item.toolId
                 : loadedActiveToolId,
-            materialId: resolveMaterialId(
-              loadedMaterials,
-              item.materialId,
-              loadedSettings.activeMaterialId
-            ),
+            materialId:
+              resolveMaterialId(
+                loadedMaterials,
+                item.materialId,
+                loadedSettings.activeMaterialId
+              ) || undefined,
           }))
       : [];
 
@@ -839,9 +916,10 @@ export default function App() {
       return;
     }
 
+    const project: CamProjectFile = { version: 1, settings, materials, tools, activeToolId, operations };
     const result = await electron.saveProject({
       suggestedName: projectName,
-      project: { version: 1, settings, materials, tools, activeToolId, operations },
+      project,
     });
 
     if (!result || result.canceled) return;
@@ -884,7 +962,7 @@ export default function App() {
   }, []);
 
   const handleSaveOctoprintSettings = useCallback(
-    async (nextSettings) => {
+    async (nextSettings: OctoprintSettings) => {
       const normalized = normalizeOctoprintSettings(nextSettings);
 
       if (electron?.saveOctoprintSettings) {
@@ -909,7 +987,7 @@ export default function App() {
   );
 
   const handleSendToOctoprint = useCallback(
-    async (runAfterUpload) => {
+    async (runAfterUpload: boolean) => {
       const gcode = generateMarlinGcode({ operations, settings, tools });
       const fileName = buildGcodeFileName(projectName);
 
@@ -974,7 +1052,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadOctoprintSettings() {
+    async function loadOctoprintSettings(): Promise<void> {
       if (electron?.getOctoprintSettings) {
         const result = await electron.getOctoprintSettings();
         if (!cancelled && result?.ok) {
@@ -988,7 +1066,7 @@ export default function App() {
       }
     }
 
-    loadOctoprintSettings();
+    void loadOctoprintSettings();
 
     return () => {
       cancelled = true;
@@ -1010,7 +1088,7 @@ export default function App() {
       electron.onMenuZoomIn?.(() => requestZoom('in')),
       electron.onMenuZoomOut?.(() => requestZoom('out')),
       electron.onMenuZoomReset?.(() => requestZoom('reset')),
-    ].filter(Boolean);
+    ].filter((fn): fn is () => void => Boolean(fn));
 
     return () => {
       unsubs.forEach((fn) => fn());
@@ -1018,7 +1096,7 @@ export default function App() {
   }, [electron, handleExport, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
 
   useEffect(() => {
-    const onKeyDown = (event) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableElement(event.target)) {
         return;
       }
@@ -1120,13 +1198,13 @@ export default function App() {
         <aside className="left-pane">
           <ControlPanel
             settings={settings}
-            onSettingsChange={(updates) => setSettings((prev) => ({ ...prev, ...updates }))}
+            onSettingsChange={(updates: Partial<MachineSettings>) => setSettings((prev) => ({ ...prev, ...updates }))}
             materials={materials}
             tools={tools}
             activeToolId={activeToolId}
             activeMaterialId={activeMaterialId}
             onSelectTool={setActiveToolId}
-            onSelectMaterial={(materialId) =>
+            onSelectMaterial={(materialId: string) =>
               setSettings((prev) => ({ ...prev, activeMaterialId: materialId }))
             }
             onAddMaterial={addMaterial}
@@ -1184,12 +1262,6 @@ export default function App() {
             onDeleteSelection={deleteSelection}
             onMoveOperation={moveOperation}
             onRepeatOperation={repeatSelected}
-            onCopySelection={copySelection}
-            onPasteSelection={beginPastePlacement}
-            onUndo={undo}
-            onRedo={redo}
-            canUndo={canUndo}
-            canRedo={canRedo}
             isEditingSelectedSketch={isEditingSelectedSketch}
             selectedSketchSegmentIndex={sketchEdit.selectedSegmentIndex}
             onStartSketchEdit={startSketchEdit}
