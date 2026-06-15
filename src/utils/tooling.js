@@ -3,11 +3,6 @@ function toPositiveNumber(value, fallback) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
 }
 
-function toFiniteNumber(value, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
-}
-
 function sanitizeId(value) {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
@@ -35,27 +30,24 @@ export function normalizeMaterialProfile(profile) {
     return null;
   }
 
-  const rapidFeedRate = toPositiveNumber(profile.rapidFeedRate, null);
   const cutFeedRate = toPositiveNumber(profile.cutFeedRate, null);
   const plungeFeedRate = toPositiveNumber(profile.plungeFeedRate, null);
-  const drillDepth = toFiniteNumber(profile.drillDepth, null);
+  const drillDepthPerPass = toPositiveNumber(profile.drillDepthPerPass, null);
   const cutDepthPerPass = toPositiveNumber(profile.cutDepthPerPass, null);
 
   if (
-    rapidFeedRate === null &&
     cutFeedRate === null &&
     plungeFeedRate === null &&
-    drillDepth === null &&
+    drillDepthPerPass === null &&
     cutDepthPerPass === null
   ) {
     return null;
   }
 
   return {
-    rapidFeedRate,
     cutFeedRate,
     plungeFeedRate,
-    drillDepth,
+    drillDepthPerPass,
     cutDepthPerPass,
   };
 }
@@ -114,10 +106,10 @@ export function resolveToolPreset(tool, materialId, settings = {}) {
   const profile = getToolMaterialProfile(tool, materialId);
 
   return {
-    rapidFeedRate: profile?.rapidFeedRate ?? tool?.rapidFeedRate ?? settings.rapidFeedRate ?? 2400,
+    rapidFeedRate: tool?.rapidFeedRate ?? settings.rapidFeedRate ?? 2400,
     cutFeedRate: profile?.cutFeedRate ?? tool?.cutFeedRate ?? settings.cutFeedRate ?? 600,
     plungeFeedRate: profile?.plungeFeedRate ?? tool?.plungeFeedRate ?? settings.plungeFeedRate ?? 220,
-    drillDepth: profile?.drillDepth ?? settings.drillDepth ?? -1,
-    cutDepthPerPass: profile?.cutDepthPerPass ?? settings.cutDepthPerPass ?? 1,
+    drillDepthPerPass: profile?.drillDepthPerPass ?? 1,
+    cutDepthPerPass: profile?.cutDepthPerPass ?? 1,
   };
 }

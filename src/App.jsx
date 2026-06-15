@@ -8,7 +8,6 @@ import {
   normalizeMaterial,
   normalizeTool,
   resolveMaterialId,
-  resolveToolPreset,
 } from './utils/tooling';
 import './App.css';
 
@@ -21,9 +20,7 @@ const DEFAULT_SETTINGS = {
   safeZ: 5,
   startEndZ: 15,
   drillDepth: -3,
-  peckDepth: 1,
   cutDepth: -2,
-  cutDepthPerPass: 1,
   rapidFeedRate: 2400,
   cutFeedRate: 600,
   plungeFeedRate: 220,
@@ -42,10 +39,9 @@ const DEFAULT_TOOLS = [
     plungeFeedRate: 220,
     materialProfiles: {
       'material-generic': {
-        rapidFeedRate: 2400,
         cutFeedRate: 600,
         plungeFeedRate: 220,
-        drillDepth: -3,
+        drillDepthPerPass: 1,
         cutDepthPerPass: 1,
       },
     },
@@ -59,10 +55,9 @@ const DEFAULT_TOOLS = [
     plungeFeedRate: 180,
     materialProfiles: {
       'material-generic': {
-        rapidFeedRate: 1800,
         cutFeedRate: 350,
         plungeFeedRate: 180,
-        drillDepth: -3,
+        drillDepthPerPass: 1,
         cutDepthPerPass: 1,
       },
     },
@@ -105,6 +100,7 @@ function fileNameFromPath(filePath) {
 function offsetOperation(operation, dx, dy) {
   return moveOperation(operation, dx, dy);
 }
+
 function loadPreferences() {
   if (typeof window === 'undefined' || !window.localStorage) {
     return null;
@@ -325,12 +321,6 @@ export default function App() {
     DEFAULT_SETTINGS.activeMaterialId
   );
   const activeMaterial = materials.find((material) => material.id === activeMaterialId) || materials[0] || null;
-  const activeToolDefinition = tools.find((tool) => tool.id === activeToolId) || tools[0] || null;
-  const activeToolPreset = useMemo(
-    () => resolveToolPreset(activeToolDefinition, activeMaterialId, settings),
-    [activeMaterialId, activeToolDefinition, settings]
-  );
-
   const selectedOperation = useMemo(() => {
     if (selectedIds.length !== 1) return null;
     return operations.find((op) => op.id === selectedIds[0]) || null;
@@ -792,15 +782,6 @@ export default function App() {
 
     const loaded = result.project || {};
     const loadedSettings = { ...DEFAULT_SETTINGS, ...(loaded.settings || {}) };
-    if (typeof loadedSettings.drillDepth !== 'number' && typeof loadedSettings.peckDepth === 'number') {
-      loadedSettings.drillDepth = loadedSettings.peckDepth;
-    }
-    if (typeof loadedSettings.peckDepth !== 'number') {
-      loadedSettings.peckDepth = Math.max(0.1, Math.abs(loadedSettings.drillDepth || 1));
-    }
-    if (typeof loadedSettings.cutDepthPerPass !== 'number') {
-      loadedSettings.cutDepthPerPass = Math.max(0.1, Math.abs(loadedSettings.cutDepth || 1));
-    }
 
     const loadedMaterialsRaw =
       Array.isArray(loaded.materials) && loaded.materials.length > 0 ? loaded.materials : DEFAULT_MATERIALS;
@@ -1180,7 +1161,7 @@ export default function App() {
             onMoveOperations={moveSelectedOperations}
             activeToolId={activeToolId}
             activeMaterialId={activeMaterialId}
-            defaultDrillDepth={activeToolPreset.drillDepth}
+            defaultDrillDepth={settings.drillDepth}
             zoomRequest={zoomRequest}
             pastePreview={pastePreview}
             onPlacePaste={placePastedOperations}

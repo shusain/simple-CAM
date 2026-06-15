@@ -577,8 +577,8 @@ function appendDrill(lines, operation, settings, tool, useStartEndClearance = fa
   const preset = resolveToolPreset(tool, operation.materialId, settings);
   const rapidFeed = num(preset.rapidFeedRate, 0);
   const plungeFeed = num(preset.plungeFeedRate, 0);
-  const finalDepth = toNegativeDepth(operation.depth, preset.drillDepth);
-  const peckDepth = toPositiveStep(settings.peckDepth, Math.abs(finalDepth));
+  const finalDepth = toNegativeDepth(operation.depth, settings.drillDepth);
+  const peckDepth = toPositiveStep(preset.drillDepthPerPass, Math.abs(finalDepth));
   const pecks = buildIncrementDepths(finalDepth, peckDepth);
   const peckRetractZ = 1;
 

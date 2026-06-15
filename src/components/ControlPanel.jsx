@@ -177,17 +177,6 @@ function ToolManagerModal({
                     </select>
                   </label>
                   <NumberField
-                    label="Rapid feed"
-                    value={materialPreset.rapidFeedRate}
-                    min={1}
-                    step={1}
-                    onChange={(value) =>
-                      onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
-                        rapidFeedRate: Math.max(1, Math.round(value || 1)),
-                      })
-                    }
-                  />
-                  <NumberField
                     label="Cut feed"
                     value={materialPreset.cutFeedRate}
                     min={1}
@@ -210,17 +199,18 @@ function ToolManagerModal({
                     }
                   />
                   <NumberField
-                    label="Drill depth"
-                    value={materialPreset.drillDepth}
+                    label="Drill depth / layer"
+                    value={materialPreset.drillDepthPerPass}
+                    min={0.1}
                     step={0.1}
                     onChange={(value) =>
                       onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
-                        drillDepth: value || 0,
+                        drillDepthPerPass: Math.max(0.1, Math.abs(value) || 0.1),
                       })
                     }
                   />
                   <NumberField
-                    label="Cut depth / pass"
+                    label="Cut depth / layer"
                     value={materialPreset.cutDepthPerPass}
                     min={0.1}
                     step={0.1}
@@ -230,6 +220,11 @@ function ToolManagerModal({
                       })
                     }
                   />
+                  <p className="section-note">
+                    Material presets only control cut feed, plunge feed, drill depth per layer, and cut
+                    depth per layer for this tool. Final operation depth and rapid moves stay under machine
+                    setup/tool defaults.
+                  </p>
                 </>
               ) : null}
             </div>
@@ -516,26 +511,10 @@ export default function ControlPanel({
           onChange={(value) => onSettingsChange({ drillDepth: value || 0 })}
         />
         <NumberField
-          label="Peck depth"
-          value={settings.peckDepth}
-          min={0.1}
-          step={0.1}
-          onChange={(value) => onSettingsChange({ peckDepth: Math.max(0.1, Math.abs(value) || 0.1) })}
-        />
-        <NumberField
           label="Cut depth"
           value={settings.cutDepth}
           step={0.1}
           onChange={(value) => onSettingsChange({ cutDepth: value || 0 })}
-        />
-        <NumberField
-          label="Cut depth / pass"
-          value={settings.cutDepthPerPass}
-          min={0.1}
-          step={0.1}
-          onChange={(value) =>
-            onSettingsChange({ cutDepthPerPass: Math.max(0.1, Math.abs(value) || 0.1) })
-          }
         />
         <button
           type="button"
