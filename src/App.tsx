@@ -42,6 +42,7 @@ import {
   savePreferences,
 } from './app/helpers';
 import { buildProjectFile, hydrateProjectFile } from './app/project';
+import { buildToolpathPreview } from './utils/toolpathPreview';
 import type {
   InitialState,
   MoveSelectedOperationsArgs,
@@ -79,6 +80,7 @@ export default function App(): React.JSX.Element {
     operationId: null,
     selectedSegmentIndex: null,
   });
+  const [showToolpathPreview, setShowToolpathPreview] = useState(true);
 
   const operations = operationsHistory.present;
 
@@ -97,6 +99,10 @@ export default function App(): React.JSX.Element {
     if (selectedIds.length !== 1) return null;
     return operations.find((op) => op.id === selectedIds[0]) || null;
   }, [operations, selectedIds]);
+  const toolpathPreview = useMemo(
+    () => buildToolpathPreview({ operations, settings, tools }),
+    [operations, settings, tools]
+  );
   const isEditingSelectedSketch =
     selectedOperation?.type === 'sketch' && sketchEdit.operationId === selectedOperation.id;
 
@@ -892,6 +898,8 @@ export default function App(): React.JSX.Element {
             operationCount={operations.length}
             onApplyDepthSettingsToAll={applyDepthSettingsToAll}
             onApplyMaterialToAll={applyMaterialToAll}
+            showToolpathPreview={showToolpathPreview}
+            onToggleToolpathPreview={setShowToolpathPreview}
           />
         </aside>
 
@@ -914,6 +922,8 @@ export default function App(): React.JSX.Element {
             sketchEdit={sketchEdit}
             onUpdateOperation={updateOperation}
             onSelectSketchSegment={selectSketchSegment}
+            showToolpathPreview={showToolpathPreview}
+            toolpathPreview={toolpathPreview}
           />
         </main>
 

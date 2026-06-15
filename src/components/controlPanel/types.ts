@@ -68,4 +68,6 @@ export interface ControlPanelProps {
   operationCount: number;
   onApplyDepthSettingsToAll: () => void;
   onApplyMaterialToAll: () => void;
+  showToolpathPreview: boolean;
+  onToggleToolpathPreview: (show: boolean) => void;
 }

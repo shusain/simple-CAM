@@ -1,4 +1,5 @@
 import { clamp, distance, getSketchPathPoints, getSketchSubpaths, normalizeRect } from '../../utils/geometry';
+import type { ToolpathPreview } from '../../utils/toolpathPreview';
 import type { DrawDraft, Operation, Point, SelectBoxState, SketchOperation } from '../../types';
 import {
   buildDraftSketchOperation,
@@ -145,6 +146,92 @@ export function drawOperation(
       ctx.stroke();
     });
   }
+
+  ctx.restore();
+}
+
+export function drawToolpathPreview(
+  ctx: CanvasRenderingContext2D,
+  transform: ViewTransform,
+  preview: ToolpathPreview | null
+): void {
+  if (!preview) return;
+
+  ctx.save();
+
+  preview.segments.forEach((segment) => {
+    if (!Array.isArray(segment.points) || segment.points.length < 2) {
+      return;
+    }
+
+    if (segment.kind === 'rapid') {
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.9)';
+      ctx.lineWidth = 1.25;
+      ctx.setLineDash([8, 6]);
+    } else if (segment.kind === 'tab') {
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.9)';
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([]);
+    }
+
+    ctx.beginPath();
+    const start = worldToCanvas(segment.points[0], transform);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < segment.points.length; i += 1) {
+      const point = worldToCanvas(segment.points[i], transform);
+      ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+  });
+
+  ctx.setLineDash([]);
+  preview.markers.forEach((marker) => {
+    const point = worldToCanvas(marker.point, transform);
+    ctx.beginPath();
+
+    if (marker.kind === 'start') {
+      ctx.fillStyle = '#22c55e';
+      ctx.strokeStyle = '#dcfce7';
+      ctx.lineWidth = 1.5;
+      ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+
+    if (marker.kind === 'end') {
+      ctx.fillStyle = '#ef4444';
+      ctx.strokeStyle = '#fee2e2';
+      ctx.lineWidth = 1.5;
+      ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+
+    if (marker.kind === 'drill') {
+      ctx.strokeStyle = '#f472b6';
+      ctx.lineWidth = 1.8;
+      ctx.arc(point.x, point.y, 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(point.x - 5, point.y);
+      ctx.lineTo(point.x + 5, point.y);
+      ctx.moveTo(point.x, point.y - 5);
+      ctx.lineTo(point.x, point.y + 5);
+      ctx.stroke();
+      return;
+    }
+
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 1.6;
+    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+    ctx.stroke();
+  });
 
   ctx.restore();
 }
@@ -459,6 +546,7 @@ export function renderCanvasScene(args: {
   workHeight: number;
   workWidth: number;
   operations: Operation[];
+  toolpathPreview: ToolpathPreview | null;
   selectedIds: Set<string>;
   pastePreviewOperations: Operation[];
   draft: DrawDraft | null;
@@ -476,6 +564,7 @@ export function renderCanvasScene(args: {
     workHeight,
     workWidth,
     operations,
+    toolpathPreview,
     selectedIds,
     pastePreviewOperations,
     draft,
@@ -509,6 +598,8 @@ export function renderCanvasScene(args: {
   operations.forEach((operation) => {
     drawOperation(ctx, transform, operation, { selected: selectedIds.has(operation.id) });
   });
+
+  drawToolpathPreview(ctx, transform, toolpathPreview);
 
   pastePreviewOperations.forEach((operation) => {
     drawOperation(ctx, transform, operation, { ghost: true });

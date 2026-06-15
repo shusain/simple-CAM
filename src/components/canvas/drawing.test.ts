@@ -5,12 +5,14 @@ import {
   drawMiniMap,
   drawOperation,
   drawSketchEditOverlay,
+  drawToolpathPreview,
   renderCanvasScene,
 } from './drawing';
 import { buildTransform } from './viewport';
 import { makeCircleOperation, makeDrillOperation, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation } from '../../test/factories';
 import type { DrawDraft, Point } from '../../types';
 import type { CanvasTool, SketchArcInsertDraft } from './types';
+import type { ToolpathPreview } from '../../utils/toolpathPreview';
 
 type MockCanvasContext = {
   save: ReturnType<typeof vi.fn>;
@@ -178,6 +180,30 @@ describe('canvas drawing helpers', () => {
     expect(ctx.stroke).toHaveBeenCalled();
   });
 
+  it('draws toolpath preview segments and markers', () => {
+    const ctx = createMockContext();
+    const transform = createTransform();
+    const preview: ToolpathPreview = {
+      segments: [
+        { kind: 'rapid', operationId: null, operationType: 'job', points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] },
+        { kind: 'cut', operationId: 'line-1', operationType: 'line', points: [{ x: 5, y: 5 }, { x: 12, y: 5 }] },
+        { kind: 'tab', operationId: 'rect-1', operationType: 'rect', points: [{ x: 6, y: 5 }, { x: 8, y: 5 }] },
+      ],
+      markers: [
+        { kind: 'start', operationId: null, operationType: 'job', point: { x: 0, y: 0 } },
+        { kind: 'plunge', operationId: 'line-1', operationType: 'line', point: { x: 5, y: 5 } },
+        { kind: 'drill', operationId: 'drill-1', operationType: 'drill', point: { x: 2, y: 2 } },
+        { kind: 'end', operationId: null, operationType: 'job', point: { x: 10, y: 10 } },
+      ],
+    };
+
+    drawToolpathPreview(ctx, transform, preview);
+
+    expect(ctx.setLineDash).toHaveBeenCalledWith([8, 6]);
+    expect(ctx.arc).toHaveBeenCalled();
+    expect(ctx.stroke).toHaveBeenCalled();
+  });
+
   it('draws the minimap and renders a full canvas scene', () => {
     const ctx = createMockContext();
     const transform = createTransform();
@@ -202,6 +228,7 @@ describe('canvas drawing helpers', () => {
       workHeight: 80,
       workWidth: 100,
       operations,
+      toolpathPreview: null,
       selectedIds: new Set([operations[0].id]),
       pastePreviewOperations: [makeLineOperation({ id: 'line-ghost' })],
       draft: { type: 'line', start: { x: 0, y: 0 }, current: { x: 10, y: 10 } },
@@ -235,6 +262,7 @@ describe('canvas drawing helpers', () => {
         workHeight: 80,
         workWidth: 100,
         operations: [],
+        toolpathPreview: null,
         selectedIds: new Set(),
         pastePreviewOperations: [],
         draft: null,

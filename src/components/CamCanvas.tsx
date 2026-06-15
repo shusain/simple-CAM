@@ -58,6 +58,8 @@ export default function CamCanvas({
   sketchEdit,
   onUpdateOperation,
   onSelectSketchSegment,
+  showToolpathPreview,
+  toolpathPreview,
 }: CamCanvasProps): React.JSX.Element {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -161,6 +163,7 @@ export default function CamCanvas({
       workHeight: settings.workHeight,
       workWidth: settings.workWidth,
       operations,
+      toolpathPreview: showToolpathPreview ? toolpathPreview : null,
       selectedIds: selectedSet,
       pastePreviewOperations,
       draft,
@@ -184,6 +187,8 @@ export default function CamCanvas({
     settings.gridSize,
     settings.workHeight,
     settings.workWidth,
+    showToolpathPreview,
+    toolpathPreview,
     transform,
   ]);
 
