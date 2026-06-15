@@ -43,6 +43,49 @@ function strokeRoundedRect(
   ctx.stroke();
 }
 
+function drawDirectionArrows(
+  ctx: CanvasRenderingContext2D,
+  transform: ViewTransform,
+  points: Point[],
+  color: string
+): void {
+  const arrowLength = 8;
+  const arrowWidth = 4;
+
+  ctx.save();
+  ctx.fillStyle = color;
+
+  for (let i = 1; i < points.length; i += 1) {
+    const start = worldToCanvas(points[i - 1], transform);
+    const end = worldToCanvas(points[i], transform);
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const segmentLength = Math.sqrt(dx * dx + dy * dy);
+
+    if (segmentLength < 20) {
+      continue;
+    }
+
+    const ux = dx / segmentLength;
+    const uy = dy / segmentLength;
+    const midX = start.x + dx * 0.6;
+    const midY = start.y + dy * 0.6;
+    const baseX = midX - ux * arrowLength;
+    const baseY = midY - uy * arrowLength;
+    const perpX = -uy;
+    const perpY = ux;
+
+    ctx.beginPath();
+    ctx.moveTo(midX, midY);
+    ctx.lineTo(baseX + perpX * arrowWidth, baseY + perpY * arrowWidth);
+    ctx.lineTo(baseX - perpX * arrowWidth, baseY - perpY * arrowWidth);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 export function drawGrid(ctx: CanvasRenderingContext2D, transform: ViewTransform, gridSize: number): void {
   const step = Math.max(0.1, gridSize || 1);
   const startX = Math.floor(transform.left / step) * step;
@@ -164,18 +207,22 @@ export function drawToolpathPreview(
       return;
     }
 
+    let arrowColor = 'rgba(34, 211, 238, 0.9)';
     if (segment.kind === 'rapid') {
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.9)';
       ctx.lineWidth = 1.25;
       ctx.setLineDash([8, 6]);
+      arrowColor = 'rgba(56, 189, 248, 0.95)';
     } else if (segment.kind === 'tab') {
       ctx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
       ctx.lineWidth = 4;
       ctx.setLineDash([]);
+      arrowColor = 'rgba(250, 204, 21, 0.95)';
     } else {
       ctx.strokeStyle = 'rgba(34, 211, 238, 0.9)';
       ctx.lineWidth = 2.2;
       ctx.setLineDash([]);
+      arrowColor = 'rgba(34, 211, 238, 0.95)';
     }
 
     ctx.beginPath();
@@ -186,6 +233,10 @@ export function drawToolpathPreview(
       ctx.lineTo(point.x, point.y);
     }
     ctx.stroke();
+
+    if (segment.kind !== 'tab') {
+      drawDirectionArrows(ctx, transform, segment.points, arrowColor);
+    }
   });
 
   ctx.setLineDash([]);

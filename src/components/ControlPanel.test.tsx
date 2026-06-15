@@ -41,8 +41,6 @@ function buildProps(overrides: Partial<ControlPanelProps> = {}): ControlPanelPro
     operationCount: 2,
     onApplyDepthSettingsToAll: vi.fn(),
     onApplyMaterialToAll: vi.fn(),
-    showToolpathPreview: true,
-    onToggleToolpathPreview: vi.fn(),
     ...overrides,
   };
 }
@@ -71,7 +69,6 @@ describe('ControlPanel', () => {
     const onSettingsChange = vi.fn();
     const onSelectTool = vi.fn();
     const onSelectMaterial = vi.fn();
-    const onToggleToolpathPreview = vi.fn();
 
     render(
       <ControlPanel
@@ -79,7 +76,6 @@ describe('ControlPanel', () => {
           onSettingsChange,
           onSelectTool,
           onSelectMaterial,
-          onToggleToolpathPreview,
         })}
       />
     );
@@ -87,7 +83,6 @@ describe('ControlPanel', () => {
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '5' } });
     fireEvent.change(screen.getByLabelText('Grid size'), { target: { value: '0' } });
     fireEvent.click(screen.getByLabelText('Snap to grid'));
-    fireEvent.click(screen.getByLabelText('Show toolpath preview'));
     fireEvent.change(screen.getByLabelText('Active tool'), { target: { value: 'tool-2' } });
     fireEvent.change(screen.getByLabelText('Active material'), { target: { value: 'material-2' } });
     fireEvent.change(screen.getByLabelText('Circle segments'), { target: { value: '3' } });
@@ -95,20 +90,9 @@ describe('ControlPanel', () => {
     expect(onSettingsChange).toHaveBeenCalledWith({ workWidth: 10 });
     expect(onSettingsChange).toHaveBeenCalledWith({ gridSize: 0.1 });
     expect(onSettingsChange).toHaveBeenCalledWith({ snapEnabled: false });
-    expect(onToggleToolpathPreview).toHaveBeenCalledWith(false);
     expect(onSelectTool).toHaveBeenCalledWith('tool-2');
     expect(onSelectMaterial).toHaveBeenCalledWith('material-2');
     expect(onSettingsChange).toHaveBeenCalledWith({ circleSegments: 8 });
-  });
-
-  it('toggles the toolpath preview visibility', () => {
-    const onToggleToolpathPreview = vi.fn();
-
-    render(<ControlPanel {...buildProps({ onToggleToolpathPreview })} />);
-
-    fireEvent.click(screen.getByLabelText('Show toolpath preview'));
-
-    expect(onToggleToolpathPreview).toHaveBeenCalledWith(false);
   });
 
   it('updates the remaining machine setup and feed fields', () => {

@@ -238,15 +238,21 @@ export function slicePathByRange(pathPoints: Point[], range: TabRange): Point[] 
 export function buildToolpathPreview({ operations, settings, tools }: BuildToolpathPreviewArgs): ToolpathPreview {
   const segments: ToolpathPreviewSegment[] = [];
   const markers: ToolpathPreviewMarker[] = [];
-  let previousEndPoint: Point | null = null;
-  let firstPoint: Point | null = null;
+  const home = { x: 0, y: 0 };
+  let previousEndPoint: Point | null = operations.length > 0 ? home : null;
+
+  if (operations.length > 0) {
+    markers.push({
+      kind: 'start',
+      operationId: null,
+      operationType: 'job',
+      point: home,
+    });
+  }
 
   operations.forEach((operation) => {
     if (operation.type === 'drill') {
       const point = { x: operation.x, y: operation.y };
-      if (!firstPoint) {
-        firstPoint = point;
-      }
       if (previousEndPoint && !pointsEqual(previousEndPoint, point)) {
         segments.push({
           kind: 'rapid',
@@ -275,9 +281,6 @@ export function buildToolpathPreview({ operations, settings, tools }: BuildToolp
 
       const startPoint = plannedPath.path[0];
       const endPoint = plannedPath.path[plannedPath.path.length - 1];
-      if (!firstPoint) {
-        firstPoint = startPoint;
-      }
       if (previousEndPoint && !pointsEqual(previousEndPoint, startPoint)) {
         segments.push({
           kind: 'rapid',
@@ -316,17 +319,7 @@ export function buildToolpathPreview({ operations, settings, tools }: BuildToolp
     });
   });
 
-  if (firstPoint) {
-    markers.unshift({
-      kind: 'start',
-      operationId: null,
-      operationType: 'job',
-      point: firstPoint,
-    });
-  }
-
   if (previousEndPoint) {
-    const home = { x: 0, y: 0 };
     if (!pointsEqual(previousEndPoint, home)) {
       segments.push({
         kind: 'rapid',

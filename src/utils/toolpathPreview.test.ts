@@ -49,11 +49,11 @@ describe('toolpathPreview', () => {
       tools: [makeTool({ diameter: 2 })],
     });
 
-    expect(preview.markers[0]).toMatchObject({ kind: 'start', point: { x: 2, y: 2 } });
+    expect(preview.markers[0]).toMatchObject({ kind: 'start', point: { x: 0, y: 0 } });
     expect(preview.markers.some((marker) => marker.kind === 'drill')).toBe(true);
     expect(preview.markers.some((marker) => marker.kind === 'plunge' && marker.operationId === 'rect-tabs')).toBe(true);
     expect(preview.markers[preview.markers.length - 1]).toMatchObject({ kind: 'end', point: { x: 0, y: 0 } });
-    expect(preview.segments.some((segment) => segment.kind === 'rapid')).toBe(true);
+    expect(preview.segments.some((segment) => segment.kind === 'rapid' && segment.points[0]?.x === 0 && segment.points[0]?.y === 0)).toBe(true);
     expect(preview.segments.some((segment) => segment.kind === 'tab' && segment.operationId === 'rect-tabs')).toBe(true);
     expect(preview.segments.some((segment) => segment.kind === 'cut' && segment.operationId === 'line-2')).toBe(true);
   });

@@ -856,6 +856,13 @@ export default function App(): React.JSX.Element {
           ))}
         </div>
         <div className="topbar-view-controls">
+          <button
+            type="button"
+            className={`tool-button ${showToolpathPreview ? 'active' : ''}`}
+            onClick={() => setShowToolpathPreview((current) => !current)}
+          >
+            Preview
+          </button>
           <button type="button" className="tool-button" onClick={() => requestZoom('out')}>
             Zoom -
           </button>
@@ -898,8 +905,6 @@ export default function App(): React.JSX.Element {
             operationCount={operations.length}
             onApplyDepthSettingsToAll={applyDepthSettingsToAll}
             onApplyMaterialToAll={applyMaterialToAll}
-            showToolpathPreview={showToolpathPreview}
-            onToggleToolpathPreview={setShowToolpathPreview}
           />
         </aside>
 

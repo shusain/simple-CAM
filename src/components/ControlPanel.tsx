@@ -31,8 +31,6 @@ export default function ControlPanel({
   operationCount,
   onApplyDepthSettingsToAll,
   onApplyMaterialToAll,
-  showToolpathPreview,
-  onToggleToolpathPreview,
 }: ControlPanelProps): React.JSX.Element {
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
@@ -133,21 +131,6 @@ export default function ControlPanel({
             onChange={(event) => onSettingsChange({ snapEnabled: event.target.checked })}
           />
         </label>
-      </div>
-
-      <div className="section-block">
-        <div className="section-header">Preview</div>
-        <label className="field-row checkbox-row">
-          <span>Show toolpath preview</span>
-          <input
-            type="checkbox"
-            checked={showToolpathPreview}
-            onChange={(event) => onToggleToolpathPreview(event.target.checked)}
-          />
-        </label>
-        <p className="section-note">
-          Shows the current planned XY tool-center path, rapid links, and retaining tab locations.
-        </p>
       </div>
 
       <div className="section-block">
