@@ -161,7 +161,7 @@ describe('ControlPanel', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Tool Manager' }));
-    const modal = screen.getByText('Tool Manager').closest('.modal-card') ?? document.body;
+    const modal = (screen.getByText('Tool Manager').closest('.modal-card') ?? document.body) as HTMLElement;
 
     fireEvent.click(within(modal).getByRole('button', { name: 'FinisherØ 1.5' }));
     fireEvent.click(within(modal).getByRole('button', { name: 'Add Tool' }));
@@ -198,7 +198,7 @@ describe('ControlPanel', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Material Manager' }));
-    const modal = screen.getByText('Material Manager').closest('.modal-card') ?? document.body;
+    const modal = (screen.getByText('Material Manager').closest('.modal-card') ?? document.body) as HTMLElement;
 
     fireEvent.click(within(modal).getByRole('button', { name: 'Aluminum' }));
     fireEvent.click(within(modal).getByRole('button', { name: 'Add Material' }));

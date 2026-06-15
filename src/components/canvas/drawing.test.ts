@@ -12,7 +12,7 @@ import { makeCircleOperation, makeDrillOperation, makeLineOperation, makeRectOpe
 import type { DrawDraft, Point } from '../../types';
 import type { CanvasTool, SketchArcInsertDraft } from './types';
 
-interface MockCanvasContext extends Partial<CanvasRenderingContext2D> {
+type MockCanvasContext = {
   save: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
   beginPath: ReturnType<typeof vi.fn>;
@@ -33,7 +33,7 @@ interface MockCanvasContext extends Partial<CanvasRenderingContext2D> {
   lineWidth: number;
   globalAlpha: number;
   font: string;
-}
+};
 
 function createMockContext(): CanvasRenderingContext2D {
   const ctx: MockCanvasContext = {
@@ -59,7 +59,7 @@ function createMockContext(): CanvasRenderingContext2D {
     font: '',
   };
 
-  return ctx as CanvasRenderingContext2D;
+  return ctx as unknown as CanvasRenderingContext2D;
 }
 
 function createTransform() {

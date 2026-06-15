@@ -52,6 +52,7 @@ describe('canvas sketchEditing helpers', () => {
       startPoint: { x: 0, y: 0 },
       current: { x: 5, y: 0 },
       segments: [],
+      pendingArcEnd: null,
     };
 
     expect(getDraftSketchCurrentPoint(draft)).toEqual({ x: 0, y: 0 });
@@ -61,13 +62,15 @@ describe('canvas sketchEditing helpers', () => {
     });
 
     const arcDraft: DrawDraft = {
-      ...draft,
+      type: 'sketch',
+      startPoint: { x: 0, y: 0 },
       segments: [{ type: 'line', x1: 0, y1: 0, x2: 5, y2: 0 }],
       current: { x: 7, y: 3 },
       pendingArcEnd: { x: 10, y: 0 },
     };
     expect(getDraftSketchCurrentPoint(arcDraft)).toEqual({ x: 5, y: 0 });
-    expect(buildDraftSketchOperation(arcDraft, true)?.segments.at(-1)).toMatchObject({
+    const preview = buildDraftSketchOperation(arcDraft, true);
+    expect(preview?.segments[preview.segments.length - 1]).toMatchObject({
       type: 'arc',
       x1: 5,
       y1: 0,

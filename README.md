@@ -77,6 +77,8 @@ Run the suite with coverage output:
 npm run test:coverage
 ```
 
+The GitHub Actions CI workflow runs `typecheck`, `test:coverage`, and `build` on pushes to `main` and on pull requests.
+
 ## Launch (production mode)
 
 Builds first, then opens Electron:
