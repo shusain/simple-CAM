@@ -53,4 +53,23 @@ describe('App', () => {
     expect(screen.getByTestId('cam-canvas')).toHaveTextContent('preview-off');
     expect(camCanvasMock).toHaveBeenLastCalledWith(expect.objectContaining({ showToolpathPreview: false }));
   });
+
+  it('shows sketch-first topbar tools outside of sketch edit mode', () => {
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: 'New Sketch' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Poly-Arc' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cut Rect' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cut Circle' })).toBeInTheDocument();
+  });
+
+  it('creates a sketch and enters sketch edit tools when clicking New Sketch', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'New Sketch' }));
+
+    expect(screen.getByRole('button', { name: 'Poly-Line' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Poly-Arc' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Sketch' })).not.toBeInTheDocument();
+  });
 });

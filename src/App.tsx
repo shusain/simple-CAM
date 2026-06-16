@@ -13,6 +13,7 @@ import type {
   OctoprintSettings,
   Operation,
   PastePreview,
+  SketchOperation,
   ToolMaterialProfile,
   Tool,
   ZoomRequest,
@@ -53,6 +54,11 @@ import type {
   SelectOptions,
 } from './app/types';
 import './App.css';
+
+interface VisibleTool {
+  id: ActiveTool;
+  label: string;
+}
 
 export default function App(): React.JSX.Element {
   const electron: ElectronBridge | null = typeof window !== 'undefined' ? window.electron || null : null;
@@ -105,6 +111,23 @@ export default function App(): React.JSX.Element {
   );
   const isEditingSelectedSketch =
     selectedOperation?.type === 'sketch' && sketchEdit.operationId === selectedOperation.id;
+  const visibleTools = useMemo<VisibleTool[]>(() => {
+    if (isEditingSelectedSketch) {
+      return TOOLS
+        .filter((tool) => ['select', 'sketch', 'arc'].includes(tool.id))
+        .map((tool) => ({
+          id: tool.id,
+          label: tool.id === 'sketch' ? 'Poly-Line' : tool.id === 'arc' ? 'Poly-Arc' : tool.label,
+        }));
+    }
+
+    return TOOLS
+      .filter((tool) => tool.id !== 'arc')
+      .map((tool) => ({
+        id: tool.id,
+        label: tool.id === 'sketch' ? 'New Sketch' : tool.label,
+      }));
+  }, [isEditingSelectedSketch]);
 
   const hasOctoprintSettings =
     Boolean(octoprintSettings.baseUrl && octoprintSettings.baseUrl.trim()) &&
@@ -217,6 +240,39 @@ export default function App(): React.JSX.Element {
     });
     setActiveTool('select');
   }, [selectedOperation]);
+
+  const beginNewSketch = useCallback(() => {
+    const operation: Omit<SketchOperation, 'id'> = {
+      type: 'sketch',
+      segments: [],
+      closed: false,
+      cutSide: 'along',
+      tabsEnabled: false,
+      tabCount: 2,
+      tabWidth: 1,
+      tabHeight: 1,
+      depth: settings.cutDepth,
+    };
+    const id = addOperation(operation);
+
+    setSketchEdit({
+      operationId: id,
+      selectedSegmentIndex: null,
+    });
+    setActiveTool('sketch');
+  }, [addOperation, settings.cutDepth]);
+
+  const handleToolButtonClick = useCallback(
+    (toolId: ActiveTool) => {
+      if (!isEditingSelectedSketch && toolId === 'sketch') {
+        beginNewSketch();
+        return;
+      }
+
+      setActiveTool(toolId);
+    },
+    [beginNewSketch, isEditingSelectedSketch]
+  );
 
   const stopSketchEdit = useCallback(() => {
     const editingOperation = operations.find(
@@ -841,12 +897,12 @@ export default function App(): React.JSX.Element {
           <span className="topbar-subtitle">MPCNC / Marlin pattern editor</span>
         </div>
         <div className="topbar-tools">
-          {(isEditingSelectedSketch ? TOOLS.filter((tool) => ['select', 'sketch', 'arc'].includes(tool.id)) : TOOLS).map((tool) => (
+          {visibleTools.map((tool) => (
             <button
               key={tool.id}
               type="button"
               className={`tool-button ${activeTool === tool.id ? 'active' : ''}`}
-              onClick={() => setActiveTool(tool.id)}
+              onClick={() => handleToolButtonClick(tool.id)}
             >
               {tool.label}
             </button>
