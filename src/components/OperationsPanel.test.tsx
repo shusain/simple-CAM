@@ -128,6 +128,32 @@ describe('OperationsPanel', () => {
     expect(onDeleteSelectedSketchSegment).toHaveBeenCalledTimes(1);
   });
 
+  it('shows sketch integrity details for open and disconnected sketches', () => {
+    const sketch = makeSketchOperation({
+      id: 'sketch-integrity',
+      closed: false,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 5, y2: 0 },
+        { type: 'line', x1: 20, y1: 0, x2: 25, y2: 0 },
+      ],
+    });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [sketch],
+          selectedOperation: sketch,
+          selectedOperationIds: [sketch.id],
+        })}
+      />
+    );
+
+    expect(screen.getByDisplayValue('Open')).toBeInTheDocument();
+    expect(screen.getByLabelText('Subpaths')).toHaveValue(2);
+    expect(screen.getByText(/disconnected subpaths/i)).toBeInTheDocument();
+    expect(screen.getByText(/start and end are/i)).toBeInTheDocument();
+  });
+
   it('repeats or deletes multi-selection when no single operation is active', () => {
     const rect = makeRectOperation({ id: 'rect-a' });
     const circle = makeCircleOperation({ id: 'circle-b' });

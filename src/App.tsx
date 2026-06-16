@@ -4,7 +4,7 @@ import ControlPanel from './components/ControlPanel';
 import OctoprintSettingsModal from './components/OctoprintSettingsModal';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
-import { getOperationBounds, isClosedSketchPath, moveOperation } from './utils/geometry';
+import { deriveSketchState, getOperationBounds, moveOperation } from './utils/geometry';
 import { resolveMaterialId } from './utils/tooling';
 import type {
   HistoryState,
@@ -219,20 +219,21 @@ export default function App(): React.JSX.Element {
   }, [selectedOperation]);
 
   const stopSketchEdit = useCallback(() => {
-    if (selectedOperation?.type === 'sketch') {
-      const closed = isClosedSketchPath(selectedOperation);
-      updateOperation(selectedOperation.id, {
-        closed,
-        cutSide: closed ? selectedOperation.cutSide || 'outside' : 'along',
-        tabsEnabled: closed ? selectedOperation.tabsEnabled : false,
-      });
+    const editingOperation = operations.find(
+      (operation): operation is Extract<Operation, { type: 'sketch' }> =>
+        operation.id === sketchEdit.operationId && operation.type === 'sketch'
+    );
+
+    if (editingOperation) {
+      const nextState = deriveSketchState(editingOperation);
+      updateOperation(editingOperation.id, nextState);
     }
 
     setSketchEdit({
       operationId: null,
       selectedSegmentIndex: null,
     });
-  }, [selectedOperation, updateOperation]);
+  }, [operations, sketchEdit.operationId, updateOperation]);
 
   const selectSketchSegment = useCallback((segmentIndex: number | null) => {
     setSketchEdit((prev) => ({
@@ -254,11 +255,7 @@ export default function App(): React.JSX.Element {
     const segments = Array.isArray(selectedOperation.segments) ? selectedOperation.segments : [];
     const nextSegments = segments.filter((_, index) => index !== segmentIndex);
 
-    updateOperation(selectedOperation.id, {
-      segments: nextSegments,
-      closed: false,
-      tabsEnabled: false,
-    });
+    updateOperation(selectedOperation.id, deriveSketchState(selectedOperation, nextSegments));
     setSketchEdit((prev) => ({
       ...prev,
       selectedSegmentIndex: nextSegments.length === 0 ? null : Math.min(segmentIndex, nextSegments.length - 1),

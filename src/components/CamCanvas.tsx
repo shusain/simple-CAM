@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   clamp,
+  deriveSketchState,
   distance,
   getOperationBounds,
   getSketchSegments,
@@ -367,11 +368,10 @@ export default function CamCanvas({
           });
         } else {
           const newSegment = buildStandaloneSegment(sketchArcInsertDraft.startPoint, point, 'line');
-          onUpdateOperation(editingSketchOperation.id, {
-            segments: [...getSketchSegments(editingSketchOperation), newSegment],
-            closed: false,
-            tabsEnabled: false,
-          });
+          onUpdateOperation(
+            editingSketchOperation.id,
+            deriveSketchState(editingSketchOperation, [...getSketchSegments(editingSketchOperation), newSegment])
+          );
           setSketchArcInsertDraft(null);
         }
         return;
@@ -395,11 +395,10 @@ export default function CamCanvas({
             'arc',
             point
           );
-          onUpdateOperation(editingSketchOperation.id, {
-            segments: [...getSketchSegments(editingSketchOperation), newSegment],
-            closed: false,
-            tabsEnabled: false,
-          });
+          onUpdateOperation(
+            editingSketchOperation.id,
+            deriveSketchState(editingSketchOperation, [...getSketchSegments(editingSketchOperation), newSegment])
+          );
           setSketchArcInsertDraft(null);
         }
         return;
@@ -635,9 +634,7 @@ export default function CamCanvas({
 
     if (interaction.mode === 'drag-handle' && editingSketchOperation) {
       const updated = updateSketchHandle(editingSketchOperation, interaction.handle, point);
-      onUpdateOperation(editingSketchOperation.id, {
-        segments: updated.segments,
-      });
+      onUpdateOperation(editingSketchOperation.id, deriveSketchState(updated, updated.segments));
       return;
     }
 

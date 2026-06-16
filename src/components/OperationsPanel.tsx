@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getSketchSegments, getSketchStartPoint } from '../utils/geometry';
+import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
 import type {
   CutSide,
   Operation,
@@ -48,6 +48,7 @@ export default function OperationsPanel({
   const selectedCount = selectedOperationIds?.length || 0;
   const sketchStart = selectedOperation?.type === 'sketch' ? getSketchStartPoint(selectedOperation) : null;
   const sketchSegments = selectedOperation?.type === 'sketch' ? getSketchSegments(selectedOperation) : [];
+  const sketchIntegrity = selectedOperation?.type === 'sketch' ? analyzeSketchIntegrity(selectedOperation) : null;
   const sketchCutOptions: CutSide[] =
     selectedOperation?.type === 'sketch' && selectedOperation.closed
       ? ['outside', 'inside', 'along']
@@ -242,6 +243,54 @@ export default function OperationsPanel({
                   disabled={sketchSegments.length < 2 || !sketchStart}
                 />
               </label>
+              {sketchIntegrity ? (
+                <>
+                  <h3>Sketch integrity</h3>
+                  <label className="field-row">
+                    <span>Detected path</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        sketchIntegrity.detectedClosed
+                          ? 'Closed'
+                          : sketchIntegrity.segmentCount === 0
+                            ? 'Empty'
+                            : 'Open'
+                      }
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>Subpaths</span>
+                    <input type="number" readOnly value={sketchIntegrity.subpathCount} />
+                  </label>
+                  <label className="field-row">
+                    <span>Open gap (mm)</span>
+                    <input
+                      type="number"
+                      readOnly
+                      value={sketchIntegrity.openGap === null ? 0 : Number(sketchIntegrity.openGap.toFixed(3))}
+                    />
+                  </label>
+                  {sketchIntegrity.detectedClosed !== sketchIntegrity.storedClosed ? (
+                    <p className="hint-text">
+                      Stored closed state does not match detected geometry. Review the path before generating
+                      toolpaths.
+                    </p>
+                  ) : null}
+                  {sketchIntegrity.issues.length > 0 ? (
+                    <div className="button-column">
+                      {sketchIntegrity.issues.map((issue) => (
+                        <p key={`${selectedOperation.id}-${issue.code}`} className="hint-text">
+                          {issue.message}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="hint-text">No integrity issues detected in the current sketch geometry.</p>
+                  )}
+                </>
+              ) : null}
               {sketchSegments.length > 0 ? (
                 <>
                   <h3>Sketch edit</h3>
