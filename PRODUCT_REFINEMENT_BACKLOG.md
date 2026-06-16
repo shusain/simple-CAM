@@ -27,6 +27,37 @@ Completed:
 - Retaining tab highlighting
 - Preview toggle in the top view controls
 
+### Sketch-first drawing workflow
+
+Completed:
+- `New Sketch` flow that enters sketch edit mode immediately
+- Local `Poly-Line` / `Poly-Arc` tools while editing a sketch
+- Chained line/arc segment placement with close-on-start, `Enter`, `Esc`, and double-click finish
+- Segment deletion and replacement flow during sketch editing
+- Tool-aware canvas helper text instead of static selection-only guidance
+
+Remaining follow-up:
+- Stronger edit-mode affordances in the side panels and toolbar
+- Optional explicit prompt/choice for leaving a sketch open vs closing it when relevant
+
+### Transform hotkeys and modal numeric transform entry
+
+Completed:
+- `G`, `R`, and `S` transform entry for selected operations
+- Live canvas preview while transforming
+- `X` / `Y` axis locks for move and scale
+- Numeric transform entry with `Enter` confirm and `Esc` cancel
+- Status/canvas guidance while a transform is active
+- `Ctrl+number` tool switching to avoid conflicts with transform hotkeys
+
+Current behavior notes:
+- Rotating rectangles converts them to sketch geometry because native rectangles are axis-aligned
+- Non-uniformly scaling circles converts them to sketch geometry because there is no ellipse operation yet
+
+Remaining follow-up:
+- Extend transform workflow to sketch point/segment editing directly, not just whole operations
+- Decide whether direct canvas gizmos/handles are needed in addition to keyboard-first transforms
+
 ## P0: Alpha Hardening
 
 ### 1. Sketch closure and geometry integrity checks
@@ -59,12 +90,28 @@ Acceptance notes:
 - It should be obvious when the user is creating/editing a sketch versus creating a standalone operation
 - Sketch segment tools should feel local to the active sketch editing context
 
+Status:
+- Core workflow is implemented
+- Remaining work is now tracked under `Better sketch editing mode`
+
 ## P1: Core Workflow Refinements
 
 ### 3. Blender-style transform hotkeys
 
 Why it matters:
 Fast keyboard-driven transforms will make geometry editing much more efficient, especially for repeated adjustments.
+
+Implementation breakdown:
+- Phase 1: Make helper/status text tool-aware and add non-conflicting tool hotkeys for sketch/select placement flow
+  Status: complete
+- Phase 2: Add transform state handling for `G`, `R`, and `S` with live preview and explicit confirm/cancel
+  Status: complete
+- Phase 3: Add axis locks with `X` / `Y`, plus on-screen transform state feedback while active
+  Status: complete for move/scale; not applicable to rotate
+- Phase 4: Add numeric entry during active transforms, with `Enter` to confirm and `Esc` to cancel
+  Status: complete
+- Phase 5: Expand the same transform flow to multi-select and sketch point editing without conflicting with text inputs
+  Status: complete for multi-select operation transforms; sketch point/segment transforms still pending
 
 Scope:
 - Add `G` for grab/move, `R` for rotate, and `S` for scale
@@ -75,6 +122,10 @@ Scope:
 Acceptance notes:
 - Transform state should be clear while active
 - Hotkeys should not conflict with text inputs or existing editing shortcuts
+
+Status:
+- Mostly complete for operation-level transforms
+- Remaining work is direct sketch point/segment transform support
 
 ### 4. Numeric geometry editing
 
@@ -92,6 +143,10 @@ Acceptance notes:
 - Inputs should respect current units and snapping behavior
 - Numeric entry UX should feel deliberate rather than browser-default and fiddly
 
+Status:
+- Modal numeric transform entry is implemented during `G` / `R` / `S`
+- Direct panel-based numeric editing is still the main remaining work
+
 ### 5. Better sketch editing mode
 
 Why it matters:
@@ -106,6 +161,10 @@ Scope:
 Acceptance notes:
 - Editing mode should make it obvious that drill/cut creation is temporarily unavailable
 - Adding replacement segments after deletion should feel predictable
+
+Status:
+- Segment creation/deletion/replacement flow is in much better shape
+- Remaining work is mostly UI clarity and more deliberate edit-mode controls
 
 ### 6. Batch operation editing
 
@@ -220,11 +279,11 @@ Acceptance notes:
 ## Suggested Near-Term Sequence
 
 1. Sketch closure and integrity checks
-2. Sketch-first drawing workflow
-3. Blender-style transform hotkeys
-4. Numeric geometry editing with better input controls
-5. Better sketch editing mode
-6. Batch operation editing
+2. Numeric geometry editing with better input controls
+3. Better sketch editing mode
+4. Batch operation editing
+5. Better operation summaries
+6. Pocketing and area clearing
 
 ## User-Requested Priorities
 

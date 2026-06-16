@@ -227,6 +227,25 @@ export function buildNextArcInsertDraft(
   };
 }
 
+export function switchSketchInsertDraftMode(
+  draft: SketchArcInsertDraft | null,
+  mode: SketchInsertTool
+): SketchArcInsertDraft | null {
+  if (!draft) {
+    return null;
+  }
+
+  if (draft.mode === mode) {
+    return draft;
+  }
+
+  return {
+    mode,
+    startPoint: draft.startPoint,
+    chainStartPoint: draft.chainStartPoint,
+  };
+}
+
 export function getSketchSegmentOperations(operation: SketchOperation): SketchSegmentOperationItem[] {
   const segments = getSketchSegments(operation);
   if (segments.length === 0) {

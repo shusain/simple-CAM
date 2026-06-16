@@ -72,4 +72,26 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Poly-Arc' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New Sketch' })).not.toBeInTheDocument();
   });
+
+  it('starts a new sketch from ctrl+number and exposes sketch edit tools', () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true });
+
+    expect(screen.getByRole('button', { name: 'Poly-Line' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Poly-Arc' })).toBeInTheDocument();
+  });
+
+  it('switches between sketch edit tools with ctrl+number hotkeys', () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true });
+    fireEvent.keyDown(window, { key: '3', ctrlKey: true });
+
+    expect(screen.getByRole('button', { name: 'Poly-Arc' })).toHaveClass('active');
+
+    fireEvent.keyDown(window, { key: '1', ctrlKey: true });
+
+    expect(screen.getByRole('button', { name: 'Select' })).toHaveClass('active');
+  });
 });
