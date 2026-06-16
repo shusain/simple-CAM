@@ -188,6 +188,24 @@ describe('geometry', () => {
     });
   });
 
+  it('preserves an explicit along-path cut side for sketches that were already closed', () => {
+    const importedClosedSketch = makeSketchOperation({
+      closed: true,
+      cutSide: 'along',
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 10, y1: 0, x2: 10, y2: 10 },
+        { type: 'line', x1: 10, y1: 10, x2: 0, y2: 10 },
+        { type: 'line', x1: 0, y1: 10, x2: 0, y2: 0 },
+      ],
+    });
+
+    expect(deriveSketchState(importedClosedSketch)).toMatchObject({
+      closed: true,
+      cutSide: 'along',
+    });
+  });
+
   it('computes bounds and hit testing for representative operations', () => {
     const rect = makeRectOperation({ x: 5, y: 10, width: 20, height: 4 });
     const line = makeLineOperation({ x1: 0, y1: 0, x2: 10, y2: 0 });

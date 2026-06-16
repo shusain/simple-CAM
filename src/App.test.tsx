@@ -13,7 +13,16 @@ vi.mock('./components/CamCanvas', () => ({
 }));
 
 vi.mock('./components/ControlPanel', () => ({
-  default: () => <div data-testid="control-panel" />,
+  default: (props: { onImportSvg: () => void; onImportDxf: () => void }) => (
+    <div data-testid="control-panel">
+      <button type="button" onClick={props.onImportSvg}>
+        Import SVG
+      </button>
+      <button type="button" onClick={props.onImportDxf}>
+        Import DXF
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('./components/OperationsPanel', () => ({
@@ -34,6 +43,7 @@ describe('App', () => {
   beforeEach(() => {
     camCanvasMock.mockClear();
     buildToolpathPreviewMock.mockClear();
+    delete (window as Window & { electron?: unknown }).electron;
   });
 
   it('renders the preview toggle in the view controls and toggles canvas preview state', () => {
@@ -72,6 +82,7 @@ describe('App', () => {
 
     expect(screen.getByRole('button', { name: 'Poly-Line' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Poly-Arc' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish sketch edit' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel Sketch' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New Sketch' })).not.toBeInTheDocument();
   });
@@ -116,5 +127,26 @@ describe('App', () => {
     fireEvent.keyDown(window, { key: '1', ctrlKey: true });
 
     expect(screen.getByRole('button', { name: 'Select' })).toHaveClass('active');
+  });
+
+  it('prompts for the import cut mode after selecting an SVG file', async () => {
+    (window as Window & { electron?: unknown }).electron = {
+      openSvgImport: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePath: '/tmp/sample.svg',
+        contents: '<svg><rect x="0" y="0" width="10" height="5" /></svg>',
+      }),
+    };
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import SVG' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Choose import cut type' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cut outside' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Choose import cut type' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Imported 1 sketch path\(s\) from sample\.svg/i)).toBeInTheDocument();
   });
 });

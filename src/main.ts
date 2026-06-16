@@ -81,6 +81,16 @@ function createAppMenu(): void {
           click: () => sendMenuEvent('menu:open'),
         },
         {
+          label: 'Import SVG',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => sendMenuEvent('menu:importSvg'),
+        },
+        {
+          label: 'Import DXF',
+          accelerator: 'CmdOrCtrl+Shift+D',
+          click: () => sendMenuEvent('menu:importDxf'),
+        },
+        {
           label: 'Save Project',
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuEvent('menu:save'),
@@ -205,6 +215,59 @@ ipcMain.handle('project:open', async (): Promise<OpenProjectResult> => {
     return {
       canceled: false,
       error: error instanceof Error ? error.message : 'Unknown error while opening project',
+    };
+  }
+});
+
+ipcMain.handle('import:svg:open', async () => {
+  try {
+    const { canceled, filePaths } = await showOpenDialog({
+      title: 'Import SVG',
+      filters: [
+        { name: 'SVG', extensions: ['svg'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = filePaths[0];
+    const contents = await fs.readFile(filePath, 'utf8');
+    return { canceled: false, filePath, contents };
+  } catch (error) {
+    return {
+      canceled: false,
+      error: error instanceof Error ? error.message : 'Unknown error while importing SVG',
+    };
+  }
+});
+
+ipcMain.handle('import:dxf:open', async () => {
+  try {
+    const { canceled, filePaths } = await showOpenDialog({
+      title: 'Import DXF',
+      filters: [
+        { name: 'DXF', extensions: ['dxf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = filePaths[0];
+    const contents = await fs.readFile(filePath, 'utf8');
+
+    return { canceled: false, filePath, contents };
+  } catch (error) {
+    return {
+      canceled: false,
+      error: error instanceof Error ? error.message : 'Unknown error while importing DXF',
     };
   }
 });

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FileOutput, FilePlus2, FolderOpen, Save } from 'lucide-react';
+import { FileInput, FileOutput, FilePlus2, FolderOpen, Save } from 'lucide-react';
 import { resolveToolPreset } from '../utils/tooling';
 import NumberField from './controlPanel/NumberField';
 import MaterialManagerModal from './controlPanel/MaterialManagerModal';
@@ -24,6 +24,8 @@ export default function ControlPanel({
   onDeleteTool,
   onNewProject,
   onOpenProject,
+  onImportSvg,
+  onImportDxf,
   onSaveProject,
   onExportGcode,
   canSendToOctoprint,
@@ -53,20 +55,41 @@ export default function ControlPanel({
           <button type="button" className="icon-button" aria-label="Open project" title="Open project" onClick={onOpenProject}>
             <FolderOpen aria-hidden="true" size={18} />
           </button>
-          <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
-            <Save aria-hidden="true" size={18} />
+          <button
+            type="button"
+            className="icon-button import-svg-button"
+            aria-label="Import SVG"
+            title="Import SVG"
+            onClick={onImportSvg}
+          >
+            <FileInput aria-hidden="true" size={18} />
           </button>
           <button
             type="button"
-            className="icon-button accent"
+            className="icon-button import-dxf-button"
+            aria-label="Import DXF"
+            title="Import DXF"
+            onClick={onImportDxf}
+          >
+            <FileInput aria-hidden="true" size={18} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
+            <Save aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="button-column">
+          <button
+            type="button"
+            className="accent"
             aria-label="Export G-code"
             title="Export G-code"
             onClick={onExportGcode}
           >
-            <FileOutput aria-hidden="true" size={18} />
+            <span className="tool-button-content">
+              <FileOutput aria-hidden="true" size={16} />
+              <span>Export G-code</span>
+            </span>
           </button>
-        </div>
-        <div className="button-column">
           {canSendToOctoprint ? (
             <>
               <button type="button" onClick={onSendToOctoprint}>

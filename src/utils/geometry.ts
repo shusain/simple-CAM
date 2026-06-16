@@ -200,6 +200,7 @@ function rectToSketchSegments(operation: Extract<Operation, { type: 'rect' }>): 
 function buildSketchFromSegments(source: Operation, segments: SketchSegment[], closed: boolean): SketchOperation {
   const tabsEnabled = 'tabsEnabled' in source ? Boolean(source.tabsEnabled) && closed : false;
   const cutSide = 'cutSide' in source ? normalizeCutSideValue(source.cutSide, closed ? 'outside' : 'along') : closed ? 'outside' : 'along';
+  const preserveClosedCutSide = 'closed' in source ? Boolean(source.closed) : false;
   return {
     id: source.id,
     type: 'sketch',
@@ -208,7 +209,7 @@ function buildSketchFromSegments(source: Operation, segments: SketchSegment[], c
     materialId: source.materialId,
     segments,
     closed,
-    cutSide: closed ? cutSide === 'along' ? 'outside' : cutSide : 'along',
+    cutSide: closed ? preserveClosedCutSide ? cutSide : cutSide === 'along' ? 'outside' : cutSide : 'along',
     tabsEnabled,
     tabCount: 'tabCount' in source ? Math.max(1, Number(source.tabCount) || 1) : 2,
     tabWidth: 'tabWidth' in source ? Math.max(0.1, Number(source.tabWidth) || 1) : 1,
@@ -702,8 +703,13 @@ export function deriveSketchState(
   };
   const closed = isClosedSketchPath(nextOperation);
   const currentCutSide = operation.cutSide;
+  const wasClosed = Boolean(operation.closed);
   const cutSide: CutSide = closed
-    ? currentCutSide === 'inside' || currentCutSide === 'outside' ? currentCutSide : 'outside'
+    ? currentCutSide === 'inside' || currentCutSide === 'outside'
+      ? currentCutSide
+      : wasClosed
+        ? 'along'
+        : 'outside'
     : 'along';
 
   return {

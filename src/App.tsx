@@ -9,6 +9,7 @@ import {
   RectangleHorizontal,
   Ruler,
   ScanSearch,
+  Save,
   Target,
   Workflow,
   XCircle,
@@ -21,6 +22,7 @@ import { generateMarlinGcode } from './utils/gcode';
 import { deriveSketchState, getOperationBounds, getSketchSegments, moveOperation } from './utils/geometry';
 import { getDefaultPocketStepOver } from './utils/pocketing';
 import { resolveMaterialId } from './utils/tooling';
+import { importSvgToSketchOperations } from './utils/importSvg';
 import type {
   HistoryState,
   MachineSettings,
@@ -68,6 +70,8 @@ import {
   normalizeTransformAxis,
 } from './app/transforms';
 import { buildToolpathPreview } from './utils/toolpathPreview';
+import { importDxfToSketchOperations } from './utils/importDxf';
+import type { ImportCutMode } from './utils/importCommon';
 import type {
   InitialState,
   MoveSelectedOperationsArgs,
@@ -87,6 +91,12 @@ interface VisibleTool {
 interface ToolbarButtonMeta {
   icon: React.JSX.Element;
   title?: string;
+}
+
+interface PendingImport {
+  kind: 'svg' | 'dxf';
+  filePath?: string;
+  contents: string;
 }
 
 function getToolButtonMeta(toolId: ActiveTool, hotkey: number): ToolbarButtonMeta {
@@ -139,6 +149,7 @@ export default function App(): React.JSX.Element {
   });
   const [showToolpathPreview, setShowToolpathPreview] = useState(true);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const canvasPointerRef = useRef<Point | null>(null);
 
   const operations = operationsHistory.present;
@@ -251,6 +262,28 @@ export default function App(): React.JSX.Element {
   const setOperationsDirect = useCallback((nextOperations: Operation[]) => {
     setOperationsHistory({ past: [], present: nextOperations, future: [] });
   }, []);
+
+  const completeImportedOperations = useCallback(
+    (
+      importKind: 'svg' | 'dxf',
+      filePath: string | undefined,
+      imported: { operations: SketchOperation[]; warnings: string[] }
+    ) => {
+      if (imported.operations.length === 0) {
+        setStatus(imported.warnings[0] || `${importKind.toUpperCase()} import failed: no usable geometry found`);
+        return;
+      }
+
+      commitOperations((previous) => [...previous, ...imported.operations]);
+      setSelectedIds(imported.operations.map((operation) => operation.id));
+      setActiveTool('select');
+      const filename = fileNameFromPath(filePath) || importKind.toUpperCase();
+      const warningText =
+        imported.warnings.length > 0 ? ` (${imported.warnings.length} warning(s))` : '';
+      setStatus(`Imported ${imported.operations.length} sketch path(s) from ${filename}${warningText}`);
+    },
+    [commitOperations]
+  );
 
   const requestZoom = useCallback((action: ZoomRequest['action']) => {
     setZoomRequest((prev) => ({ token: prev.token + 1, action }));
@@ -859,6 +892,95 @@ export default function App(): React.JSX.Element {
     setStatus(`Opened ${hydrated.operations.length} operation(s)`);
   }, [electron, setOperationsDirect]);
 
+  const handleImportSvg = useCallback(async () => {
+    if (!electron?.openSvgImport) {
+      setStatus('SVG import is available in desktop mode only');
+      return;
+    }
+
+    const result = await electron.openSvgImport();
+    if (!result || result.canceled) {
+      return;
+    }
+    if (result.error) {
+      setStatus(`SVG import failed: ${result.error}`);
+      return;
+    }
+    if (!result.contents) {
+      setStatus('SVG import failed: file contents were empty');
+      return;
+    }
+
+    setPendingImport({
+      kind: 'svg',
+      filePath: result.filePath,
+      contents: result.contents,
+    });
+  }, [electron]);
+
+  const handleImportDxf = useCallback(async () => {
+    if (!electron?.openDxfImport) {
+      setStatus('DXF import is available in desktop mode only');
+      return;
+    }
+
+    const result = await electron.openDxfImport();
+    if (!result || result.canceled) {
+      return;
+    }
+    if (result.error) {
+      setStatus(`DXF import failed: ${result.error}`);
+      return;
+    }
+    if (!result.contents) {
+      setStatus('DXF import failed: file contents were empty');
+      return;
+    }
+
+    setPendingImport({
+      kind: 'dxf',
+      filePath: result.filePath,
+      contents: result.contents,
+    });
+  }, [electron]);
+
+  const runPendingImport = useCallback(
+    (cutMode: ImportCutMode) => {
+      if (!pendingImport) {
+        return;
+      }
+
+      const commonOptions = {
+        createId: newId,
+        depth: settings.cutDepth,
+        closedPathMode: cutMode,
+        toolId: activeToolId,
+        toolDiameter: tools.find((tool) => tool.id === activeToolId)?.diameter,
+        materialId: activeMaterialId,
+      };
+
+      const imported =
+        pendingImport.kind === 'svg'
+          ? importSvgToSketchOperations(pendingImport.contents, {
+              ...commonOptions,
+              circleSegments: settings.circleSegments,
+            })
+          : importDxfToSketchOperations(pendingImport.contents, commonOptions);
+
+      setPendingImport(null);
+      completeImportedOperations(pendingImport.kind, pendingImport.filePath, imported);
+    },
+    [
+      activeMaterialId,
+      activeToolId,
+      completeImportedOperations,
+      pendingImport,
+      settings.circleSegments,
+      settings.cutDepth,
+      tools,
+    ]
+  );
+
   const handleSave = useCallback(async () => {
     if (!electron?.saveProject) {
       setStatus('Save is available in desktop mode only');
@@ -1046,6 +1168,8 @@ export default function App(): React.JSX.Element {
     const unsubs = [
       electron.onMenuNew?.(handleNew),
       electron.onMenuOpen?.(handleOpen),
+      electron.onMenuImportSvg?.(handleImportSvg),
+      electron.onMenuImportDxf?.(handleImportDxf),
       electron.onMenuSave?.(handleSave),
       electron.onMenuExportGcode?.(handleExport),
       electron.onMenuOctoprintSettings?.(openOctoprintSettings),
@@ -1057,7 +1181,7 @@ export default function App(): React.JSX.Element {
     return () => {
       unsubs.forEach((fn) => fn());
     };
-  }, [electron, handleExport, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
+  }, [electron, handleExport, handleImportDxf, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1250,26 +1374,38 @@ export default function App(): React.JSX.Element {
               <button
                 key={tool.id}
                 type="button"
-                className={`tool-button ${activeTool === tool.id ? 'active' : ''}`}
+                className={`tool-button icon-only-toolbar-button ${activeTool === tool.id ? 'active' : ''}`}
+                aria-label={tool.label}
                 title={meta.title}
                 onClick={() => handleToolButtonClick(tool.id)}
               >
-                <span className="tool-button-content">
-                  {meta.icon}
-                  <span>{tool.label}</span>
-                </span>
+                {meta.icon}
               </button>
             );
           })}
-          {canCancelSketchCreation ? (
+          {isEditingSelectedSketch ? (
             <>
               <span className="topbar-tools-divider" aria-hidden="true" />
-              <button type="button" className="tool-button danger" title="Cancel in-progress sketch" onClick={cancelSketchCreation}>
-                <span className="tool-button-content">
-                  <XCircle aria-hidden="true" size={16} />
-                  <span>Cancel Sketch</span>
-                </span>
+              <button
+                type="button"
+                className="tool-button icon-only-toolbar-button save-sketch-button"
+                aria-label="Finish sketch edit"
+                title="Finish sketch edit"
+                onClick={stopSketchEdit}
+              >
+                <Save aria-hidden="true" size={16} />
               </button>
+              {canCancelSketchCreation ? (
+                <button
+                  type="button"
+                  className="tool-button danger icon-only-toolbar-button"
+                  aria-label="Cancel Sketch"
+                  title="Cancel in-progress sketch"
+                  onClick={cancelSketchCreation}
+                >
+                  <XCircle aria-hidden="true" size={16} />
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -1277,6 +1413,7 @@ export default function App(): React.JSX.Element {
           <button
             type="button"
             className={`tool-button ${showToolpathPreview ? 'active' : ''}`}
+            aria-label="Preview"
             title="Preview toolpaths"
             onClick={() => setShowToolpathPreview((current) => !current)}
           >
@@ -1285,19 +1422,13 @@ export default function App(): React.JSX.Element {
               <span>Preview</span>
             </span>
           </button>
-          <button type="button" className="tool-button" title="Zoom out" onClick={() => requestZoom('out')}>
-            <span className="tool-button-content">
-              <Minus aria-hidden="true" size={16} />
-              <span>Zoom -</span>
-            </span>
+          <button type="button" className="tool-button icon-only-toolbar-button" aria-label="Zoom out" title="Zoom out" onClick={() => requestZoom('out')}>
+            <Minus aria-hidden="true" size={16} />
           </button>
-          <button type="button" className="tool-button" title="Zoom in" onClick={() => requestZoom('in')}>
-            <span className="tool-button-content">
-              <Plus aria-hidden="true" size={16} />
-              <span>Zoom +</span>
-            </span>
+          <button type="button" className="tool-button icon-only-toolbar-button" aria-label="Zoom in" title="Zoom in" onClick={() => requestZoom('in')}>
+            <Plus aria-hidden="true" size={16} />
           </button>
-          <button type="button" className="tool-button" title="Fit workspace in view" onClick={() => requestZoom('reset')}>
+          <button type="button" className="tool-button" aria-label="Fit" title="Fit workspace in view" onClick={() => requestZoom('reset')}>
             <span className="tool-button-content">
               <ScanSearch aria-hidden="true" size={16} />
               <span>Fit</span>
@@ -1328,6 +1459,8 @@ export default function App(): React.JSX.Element {
             onDeleteTool={deleteTool}
             onNewProject={handleNew}
             onOpenProject={handleOpen}
+            onImportSvg={handleImportSvg}
+            onImportDxf={handleImportDxf}
             onSaveProject={handleSave}
             onExportGcode={handleExport}
             canSendToOctoprint={hasOctoprintSettings}
@@ -1397,6 +1530,42 @@ export default function App(): React.JSX.Element {
         onClose={() => setIsOctoprintModalOpen(false)}
         onSave={handleSaveOctoprintSettings}
       />
+
+      {pendingImport ? (
+        <div className="modal-backdrop" onClick={() => setPendingImport(null)}>
+          <div
+            className="modal-card import-cut-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-cut-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3 id="import-cut-modal-title">Choose import cut type</h3>
+              <button type="button" onClick={() => setPendingImport(null)}>
+                Cancel
+              </button>
+            </div>
+            <p className="section-note">
+              {pendingImport.kind.toUpperCase()} file selected. Choose how closed imported paths should be converted before the import runs.
+            </p>
+            <div className="import-cut-actions">
+              <button type="button" onClick={() => runPendingImport('along')}>
+                Along path
+              </button>
+              <button type="button" onClick={() => runPendingImport('outside')}>
+                Cut outside
+              </button>
+              <button type="button" onClick={() => runPendingImport('inside')}>
+                Cut inside
+              </button>
+              <button type="button" className="accent" onClick={() => runPendingImport('pocket')}>
+                Clear area
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <footer className="statusbar">
         <span>{transformHint || status}</span>
