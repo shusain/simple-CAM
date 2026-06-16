@@ -66,6 +66,7 @@ export interface SketchSegmentOperationItem {
 export interface SketchArcInsertDraft {
   mode: SketchInsertTool;
   startPoint: Point;
+  chainStartPoint?: Point;
   endPoint?: Point;
 }
 

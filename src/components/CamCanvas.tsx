@@ -26,6 +26,8 @@ import type {
 import { buildTransform, canvasToWorld, clampCenter } from './canvas/viewport';
 import { renderCanvasScene } from './canvas/drawing';
 import {
+  buildNextArcInsertDraft,
+  buildNextLineInsertDraft,
   buildStandaloneSegment,
   createEmptyInteractionState,
   defocusActiveEditor,
@@ -272,12 +274,27 @@ export default function CamCanvas({
           onSelectOperation(id);
         }
         setDraft(null);
+        return;
+      }
+
+      if (event.key === 'Enter' && editingSketchOperation && sketchArcInsertDraft) {
+        event.preventDefault();
+        setSketchArcInsertDraft(null);
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeMaterialId, activeToolId, draft, onAddOperation, onSelectOperation, settings.cutDepth]);
+  }, [
+    activeMaterialId,
+    activeToolId,
+    draft,
+    editingSketchOperation,
+    onAddOperation,
+    onSelectOperation,
+    settings.cutDepth,
+    sketchArcInsertDraft,
+  ]);
 
   function getPointerPoint(event: React.PointerEvent<HTMLCanvasElement>, snap = true): Point {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -361,45 +378,47 @@ export default function CamCanvas({
       }
 
       if (activeTool === 'sketch') {
-        if (!sketchArcInsertDraft?.startPoint) {
-          setSketchArcInsertDraft({
-            mode: 'sketch',
-            startPoint: point,
-          });
-        } else {
-          const newSegment = buildStandaloneSegment(sketchArcInsertDraft.startPoint, point, 'line');
+        const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
+        const nextInsert = buildNextLineInsertDraft(sketchArcInsertDraft, point, closeToleranceMm);
+
+        if (nextInsert.newSegment) {
           onUpdateOperation(
             editingSketchOperation.id,
-            deriveSketchState(editingSketchOperation, [...getSketchSegments(editingSketchOperation), newSegment])
+            deriveSketchState(editingSketchOperation, [
+              ...getSketchSegments(editingSketchOperation),
+              nextInsert.newSegment,
+            ])
           );
-          setSketchArcInsertDraft(null);
+          if (event.detail >= 2) {
+            setSketchArcInsertDraft(null);
+          } else {
+            setSketchArcInsertDraft(nextInsert.nextDraft);
+          }
+        } else {
+          setSketchArcInsertDraft(nextInsert.nextDraft);
         }
         return;
       }
 
       if (activeTool === 'arc') {
-        if (!sketchArcInsertDraft?.startPoint) {
-          setSketchArcInsertDraft({
-            mode: 'arc',
-            startPoint: point,
-          });
-        } else if (!sketchArcInsertDraft?.endPoint) {
-          setSketchArcInsertDraft({
-            ...sketchArcInsertDraft,
-            endPoint: point,
-          });
-        } else {
-          const newSegment = buildStandaloneSegment(
-            sketchArcInsertDraft.startPoint,
-            sketchArcInsertDraft.endPoint,
-            'arc',
-            point
-          );
+        const closeToleranceMm = Math.max(1.5, 10 / transform.scale);
+        const nextInsert = buildNextArcInsertDraft(sketchArcInsertDraft, point, closeToleranceMm);
+
+        if (nextInsert.newSegment) {
           onUpdateOperation(
             editingSketchOperation.id,
-            deriveSketchState(editingSketchOperation, [...getSketchSegments(editingSketchOperation), newSegment])
+            deriveSketchState(editingSketchOperation, [
+              ...getSketchSegments(editingSketchOperation),
+              nextInsert.newSegment,
+            ])
           );
-          setSketchArcInsertDraft(null);
+          if (event.detail >= 2) {
+            setSketchArcInsertDraft(null);
+          } else {
+            setSketchArcInsertDraft(nextInsert.nextDraft);
+          }
+        } else {
+          setSketchArcInsertDraft(nextInsert.nextDraft);
         }
         return;
       }
@@ -818,6 +837,17 @@ export default function CamCanvas({
           <span>
             Sketch: line mode clicks add segments, arc mode uses end click + bulge click, click first point to
             close, Enter to finish open
+          </span>
+        ) : null}
+        {activeTool === 'sketch' && !editingSketchOperation && draft?.type !== 'sketch' ? (
+          <span>
+            New sketch: click to place the first point, continue clicking to build the path, then click the first
+            point again to close it
+          </span>
+        ) : null}
+        {isSketchTool(activeTool) && editingSketchOperation ? (
+          <span>
+            Sketch edit mode: use `Poly-Line` or `Poly-Arc` to add replacement segments to the selected sketch
           </span>
         ) : null}
         {pastePreview ? <span>Paste mode: click to place copied operations (Esc to cancel)</span> : null}

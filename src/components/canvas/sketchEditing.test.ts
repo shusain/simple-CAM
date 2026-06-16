@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildNextArcInsertDraft,
+  buildNextLineInsertDraft,
   buildDraftSketchOperation,
   buildStandaloneSegment,
   createEmptyInteractionState,
@@ -107,6 +109,86 @@ describe('canvas sketchEditing helpers', () => {
       ],
     });
     expect(getSketchSegmentOperations(sketch)).toHaveLength(2);
+  });
+
+  it('chains edit-mode poly-line inserts until closed or cancelled', () => {
+    const started = buildNextLineInsertDraft(null, { x: 1, y: 1 }, 1.5);
+    expect(started).toEqual({
+      nextDraft: {
+        mode: 'sketch',
+        startPoint: { x: 1, y: 1 },
+        chainStartPoint: { x: 1, y: 1 },
+      },
+      newSegment: null,
+    });
+
+    const continued = buildNextLineInsertDraft(started.nextDraft, { x: 4, y: 1 }, 1.5);
+    expect(continued.newSegment).toMatchObject({ type: 'line', x1: 1, y1: 1, x2: 4, y2: 1 });
+    expect(continued.nextDraft).toMatchObject({
+      mode: 'sketch',
+      startPoint: { x: 4, y: 1 },
+      chainStartPoint: { x: 1, y: 1 },
+    });
+
+    const closed = buildNextLineInsertDraft(continued.nextDraft, { x: 1.2, y: 1.1 }, 1.5);
+    expect(closed.newSegment).toMatchObject({ type: 'line', x1: 4, y1: 1, x2: 1, y2: 1 });
+    expect(closed.nextDraft).toBeNull();
+  });
+
+  it('chains edit-mode poly-arc inserts until closed or cancelled', () => {
+    const started = buildNextArcInsertDraft(null, { x: 1, y: 1 }, 1.5);
+    expect(started).toEqual({
+      nextDraft: {
+        mode: 'arc',
+        startPoint: { x: 1, y: 1 },
+        chainStartPoint: { x: 1, y: 1 },
+      },
+      newSegment: null,
+    });
+
+    const pickedEnd = buildNextArcInsertDraft(started.nextDraft, { x: 4, y: 1 }, 1.5);
+    expect(pickedEnd.nextDraft).toMatchObject({
+      mode: 'arc',
+      startPoint: { x: 1, y: 1 },
+      endPoint: { x: 4, y: 1 },
+      chainStartPoint: { x: 1, y: 1 },
+    });
+
+    const continued = buildNextArcInsertDraft(pickedEnd.nextDraft, { x: 2.5, y: 3 }, 1.5);
+    expect(continued.newSegment).toMatchObject({
+      type: 'arc',
+      x1: 1,
+      y1: 1,
+      x2: 4,
+      y2: 1,
+      throughX: 2.5,
+      throughY: 3,
+    });
+    expect(continued.nextDraft).toMatchObject({
+      mode: 'arc',
+      startPoint: { x: 4, y: 1 },
+      chainStartPoint: { x: 1, y: 1 },
+    });
+
+    const pickedCloseEnd = buildNextArcInsertDraft(continued.nextDraft, { x: 1.1, y: 1.2 }, 1.5);
+    expect(pickedCloseEnd.nextDraft).toMatchObject({
+      mode: 'arc',
+      startPoint: { x: 4, y: 1 },
+      endPoint: { x: 1, y: 1 },
+      chainStartPoint: { x: 1, y: 1 },
+    });
+
+    const closed = buildNextArcInsertDraft(pickedCloseEnd.nextDraft, { x: 2, y: -1 }, 1.5);
+    expect(closed.newSegment).toMatchObject({
+      type: 'arc',
+      x1: 4,
+      y1: 1,
+      x2: 1,
+      y2: 1,
+      throughX: 2,
+      throughY: -1,
+    });
+    expect(closed.nextDraft).toBeNull();
   });
 
   it('creates handles, display map, and hit detection for sketch elements', () => {

@@ -133,6 +133,100 @@ export function buildStandaloneSegment(
   };
 }
 
+export function buildNextLineInsertDraft(
+  draft: SketchArcInsertDraft | null,
+  point: Point,
+  closeTolerance: number
+): { nextDraft: SketchArcInsertDraft | null; newSegment: SketchSegment | null } {
+  if (!draft?.startPoint) {
+    return {
+      nextDraft: {
+        mode: 'sketch',
+        startPoint: point,
+        chainStartPoint: point,
+      },
+      newSegment: null,
+    };
+  }
+
+  const chainStartPoint = draft.chainStartPoint || draft.startPoint;
+  const closeToCurrent = distance(point, draft.startPoint) <= 0.05;
+  if (closeToCurrent) {
+    return { nextDraft: draft, newSegment: null };
+  }
+
+  const canCloseToChainStart =
+    distance(point, chainStartPoint) <= closeTolerance && distance(draft.startPoint, chainStartPoint) > 0.05;
+  if (canCloseToChainStart) {
+    return {
+      nextDraft: null,
+      newSegment: buildStandaloneSegment(draft.startPoint, chainStartPoint, 'line'),
+    };
+  }
+
+  return {
+    nextDraft: {
+      mode: 'sketch',
+      startPoint: point,
+      chainStartPoint,
+    },
+    newSegment: buildStandaloneSegment(draft.startPoint, point, 'line'),
+  };
+}
+
+export function buildNextArcInsertDraft(
+  draft: SketchArcInsertDraft | null,
+  point: Point,
+  closeTolerance: number
+): { nextDraft: SketchArcInsertDraft | null; newSegment: SketchSegment | null } {
+  if (!draft?.startPoint) {
+    return {
+      nextDraft: {
+        mode: 'arc',
+        startPoint: point,
+        chainStartPoint: point,
+      },
+      newSegment: null,
+    };
+  }
+
+  const chainStartPoint = draft.chainStartPoint || draft.startPoint;
+  if (!draft.endPoint) {
+    const closeToCurrent = distance(point, draft.startPoint) <= 0.05;
+    if (closeToCurrent) {
+      return { nextDraft: draft, newSegment: null };
+    }
+
+    const targetPoint =
+      distance(point, chainStartPoint) <= closeTolerance && distance(draft.startPoint, chainStartPoint) > 0.05
+        ? chainStartPoint
+        : point;
+
+    return {
+      nextDraft: {
+        ...draft,
+        endPoint: targetPoint,
+        chainStartPoint,
+      },
+      newSegment: null,
+    };
+  }
+
+  const newSegment = buildStandaloneSegment(draft.startPoint, draft.endPoint, 'arc', point);
+  const closesChain = distance(draft.endPoint, chainStartPoint) <= closeTolerance;
+
+  return {
+    nextDraft: closesChain
+      ? null
+      : {
+          mode: 'arc',
+          startPoint: draft.endPoint,
+          chainStartPoint,
+        },
+    newSegment,
+  };
+}
+
 export function getSketchSegmentOperations(operation: SketchOperation): SketchSegmentOperationItem[] {
   const segments = getSketchSegments(operation);
   if (segments.length === 0) {
