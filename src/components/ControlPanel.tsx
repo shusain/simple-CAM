@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { FileOutput, FilePlus2, FolderOpen, Save } from 'lucide-react';
 import { resolveToolPreset } from '../utils/tooling';
 import NumberField from './controlPanel/NumberField';
 import MaterialManagerModal from './controlPanel/MaterialManagerModal';
@@ -45,19 +46,27 @@ export default function ControlPanel({
     <div className="panel">
       <div className="section-block">
         <div className="section-header">Project</div>
+        <div className="project-action-row" aria-label="Project actions">
+          <button type="button" className="icon-button" aria-label="New project" title="New project" onClick={onNewProject}>
+            <FilePlus2 aria-hidden="true" size={18} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Open project" title="Open project" onClick={onOpenProject}>
+            <FolderOpen aria-hidden="true" size={18} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
+            <Save aria-hidden="true" size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-button accent"
+            aria-label="Export G-code"
+            title="Export G-code"
+            onClick={onExportGcode}
+          >
+            <FileOutput aria-hidden="true" size={18} />
+          </button>
+        </div>
         <div className="button-column">
-          <button type="button" onClick={onNewProject}>
-            New
-          </button>
-          <button type="button" onClick={onOpenProject}>
-            Open
-          </button>
-          <button type="button" onClick={onSaveProject}>
-            Save
-          </button>
-          <button type="button" className="accent" onClick={onExportGcode}>
-            Export G-code
-          </button>
           {canSendToOctoprint ? (
             <>
               <button type="button" onClick={onSendToOctoprint}>
@@ -69,48 +78,6 @@ export default function ControlPanel({
             </>
           ) : null}
         </div>
-      </div>
-
-      <div className="section-block">
-        <div className="section-header">Work area</div>
-        <p className="section-note">Distance units are millimeters.</p>
-        <NumberField
-          label="Width"
-          value={settings.workWidth}
-          min={10}
-          step={1}
-          onChange={(value) => onSettingsChange({ workWidth: Math.max(10, value || 10) })}
-        />
-        <NumberField
-          label="Height"
-          value={settings.workHeight}
-          min={10}
-          step={1}
-          onChange={(value) => onSettingsChange({ workHeight: Math.max(10, value || 10) })}
-        />
-      </div>
-
-      <div className="section-block">
-        <div className="section-header">Tools</div>
-        <label className="field-row">
-          <span>Active tool</span>
-          <select value={activeToolId} onChange={(event) => onSelectTool(event.target.value)}>
-            {tools.map((tool) => (
-              <option key={tool.id} value={tool.id}>
-                {tool.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {activeTool ? (
-          <p className="section-note">
-            Ø {activeTool.diameter} | {activeMaterial?.name || 'Material'} | Cut {activePreset.cutFeedRate} |
-            {' '}Plunge {activePreset.plungeFeedRate}
-          </p>
-        ) : null}
-        <button type="button" onClick={() => setIsToolModalOpen(true)}>
-          Open Tool Manager
-        </button>
       </div>
 
       <div className="section-block">
@@ -157,15 +124,33 @@ export default function ControlPanel({
         <button
           type="button"
           className="accent"
+          title="Assigns the active material to every operation so each tool uses its material-specific feeds and stepdown settings."
           onClick={onApplyMaterialToAll}
           disabled={operationCount === 0}
         >
           Apply material to all operations
         </button>
-        <p className="section-note">
-          Assigns the active material to every operation so each tool uses its material-specific feeds and
-          stepdown settings.
-        </p>
+
+        <div className="subsection-title">Tool</div>
+        <label className="field-row">
+          <span>Active tool</span>
+          <select value={activeToolId} onChange={(event) => onSelectTool(event.target.value)}>
+            {tools.map((tool) => (
+              <option key={tool.id} value={tool.id}>
+                {tool.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {activeTool ? (
+          <p className="section-note">
+            Ø {activeTool.diameter} | {activeMaterial?.name || 'Material'} | Cut {activePreset.cutFeedRate} |
+            {' '}Plunge {activePreset.plungeFeedRate}
+          </p>
+        ) : null}
+        <button type="button" onClick={() => setIsToolModalOpen(true)}>
+          Open Tool Manager
+        </button>
 
         <div className="subsection-title">Depth and Z</div>
         <NumberField
@@ -195,15 +180,12 @@ export default function ControlPanel({
         <button
           type="button"
           className="accent"
+          title="Updates all drill operations to the current drill depth and all cut operations to the current cut depth."
           onClick={onApplyDepthSettingsToAll}
           disabled={operationCount === 0}
         >
           Apply depths to all operations
         </button>
-        <p className="section-note">
-          Updates all drill operations to the current drill depth and all cut operations to the current cut
-          depth.
-        </p>
 
         <div className="subsection-title">Feeds</div>
         <NumberField
@@ -250,6 +232,25 @@ export default function ControlPanel({
           min={0}
           step={100}
           onChange={(value) => onSettingsChange({ spindleSpeed: Math.max(0, Math.round(value || 0)) })}
+        />
+      </div>
+
+      <div className="section-block">
+        <div className="section-header">Work area</div>
+        <p className="section-note">Distance units are millimeters.</p>
+        <NumberField
+          label="Width"
+          value={settings.workWidth}
+          min={10}
+          step={1}
+          onChange={(value) => onSettingsChange({ workWidth: Math.max(10, value || 10) })}
+        />
+        <NumberField
+          label="Height"
+          value={settings.workHeight}
+          min={10}
+          step={1}
+          onChange={(value) => onSettingsChange({ workHeight: Math.max(10, value || 10) })}
         />
       </div>
 

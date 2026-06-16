@@ -40,6 +40,29 @@ function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPa
 }
 
 describe('OperationsPanel', () => {
+  it('separates the operations list and selected details into tabs', () => {
+    const rect = makeRectOperation({ id: 'rect-tabbed' });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [rect],
+          selectedOperation: rect,
+          selectedOperationIds: [rect.id],
+        })}
+      />
+    );
+
+    expect(screen.getByRole('tab', { name: 'Operations' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Details' })).toBeInTheDocument();
+    expect(screen.queryByText('Operations list')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
+
+    expect(screen.getByText('Operations list')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Depth (mm)')).not.toBeInTheDocument();
+  });
+
   it('renders rect editing controls and updates toolpath/tabs fields', () => {
     const onUpdateOperation = vi.fn();
     render(<OperationsPanel {...buildProps({ onUpdateOperation })} />);
@@ -134,6 +157,8 @@ describe('OperationsPanel', () => {
       })
     );
 
+    expect(screen.queryByLabelText('Through X')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit segments' }));
     fireEvent.change(screen.getByLabelText('Through X'), { target: { value: '15' } });
     expect(onUpdateOperation).toHaveBeenCalledWith(
       'sketch-2',
@@ -146,6 +171,30 @@ describe('OperationsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete selected segment' }));
     expect(onStopSketchEdit).toHaveBeenCalledTimes(1);
     expect(onDeleteSelectedSketchSegment).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps sketch segment coordinates collapsed until requested', () => {
+    const sketch = makeSketchOperation({
+      id: 'sketch-collapsed',
+      segments: [{ type: 'line', x1: 1, y1: 2, x2: 3, y2: 4 }],
+    });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [sketch],
+          selectedOperation: sketch,
+          selectedOperationIds: [sketch.id],
+        })}
+      />
+    );
+
+    expect(screen.queryByLabelText('End X')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit segments' }));
+    expect(screen.getAllByLabelText('Start X')).toHaveLength(2);
+    expect(screen.getAllByLabelText('Start Y')).toHaveLength(2);
+    expect(screen.getByLabelText('End X')).toBeInTheDocument();
+    expect(screen.getByLabelText('End Y')).toBeInTheDocument();
   });
 
   it('shows sketch integrity details for open and disconnected sketches', () => {
@@ -256,6 +305,7 @@ describe('OperationsPanel', () => {
       />
     );
 
+    fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
     fireEvent.click(screen.getByRole('button', { name: /CIRCLE/i }));
     expect(onSelectOperation).toHaveBeenCalledWith('circle-b', { additive: false, toggle: false });
 
@@ -277,7 +327,8 @@ describe('OperationsPanel', () => {
       />
     );
 
-    expect(screen.getByText('Select an operation to edit exact dimensions and depth.')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Operations' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: 'Details' })).not.toBeInTheDocument();
     expect(screen.getByText('No operations yet. Use tools above to place drill points or cut paths.')).toBeInTheDocument();
   });
 
@@ -410,6 +461,7 @@ describe('OperationsPanel', () => {
     );
 
     expect(screen.getByLabelText('Closed path')).toBeDisabled();
+    fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
     fireEvent.click(screen.getByRole('button', { name: /RECT/i }), { shiftKey: true });
     expect(onSelectOperation).toHaveBeenCalledWith('rect-b', { additive: true, toggle: true });
   });

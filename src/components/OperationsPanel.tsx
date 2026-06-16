@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
 import NumericInput from './common/NumericInput';
 import type {
@@ -68,6 +68,7 @@ export default function OperationsPanel({
   const [repeatCount, setRepeatCount] = useState(1);
   const [repeatOffsetX, setRepeatOffsetX] = useState(10);
   const [repeatOffsetY, setRepeatOffsetY] = useState(0);
+  const [showSegmentDetails, setShowSegmentDetails] = useState(false);
   const rectCornerMax =
     selectedOperation?.type === 'rect'
       ? Math.max(
@@ -98,10 +99,51 @@ export default function OperationsPanel({
     (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle' || selectedOperation?.type === 'sketch') &&
     selectedOperation.pocketEnabled &&
     selectedOperation.cutSide === 'inside';
+  const [activeTab, setActiveTab] = useState<'list' | 'details'>(selectedCount > 0 ? 'details' : 'list');
+  const previousSelectedCountRef = useRef(selectedCount);
+
+  useEffect(() => {
+    const previousSelectedCount = previousSelectedCountRef.current;
+
+    if (selectedCount === 0) {
+      setActiveTab('list');
+    } else if (previousSelectedCount === 0) {
+      setActiveTab('details');
+    }
+
+    previousSelectedCountRef.current = selectedCount;
+  }, [selectedCount]);
+
+  useEffect(() => {
+    setShowSegmentDetails(false);
+  }, [selectedOperation?.id]);
 
   return (
     <div className="panel">
-      {selectedOperation ? (
+      <div className="panel-tabs" role="tablist" aria-label="Operations panel">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'list'}
+          className={`panel-tab ${activeTab === 'list' ? 'active' : ''}`}
+          onClick={() => setActiveTab('list')}
+        >
+          Operations
+        </button>
+        {selectedCount > 0 ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'details'}
+            className={`panel-tab ${activeTab === 'details' ? 'active' : ''}`}
+            onClick={() => setActiveTab('details')}
+          >
+            Details
+          </button>
+        ) : null}
+      </div>
+
+      {activeTab === 'details' ? (selectedOperation ? (
         <div className="operation-editor">
           <h3>Selected: {selectedOperation.type.toUpperCase()}</h3>
 
@@ -380,56 +422,81 @@ export default function OperationsPanel({
                       </button>
                     )}
                   </div>
-                  <h3>Segments</h3>
-                  {sketchSegments.map((segment, index) => (
-                    <div
-                      key={`${selectedOperation.id}-segment-${index}`}
-                      style={{
-                        padding: 8,
-                        marginBottom: 8,
-                        border: index === selectedSketchSegmentIndex ? '1px solid #38bdf8' : '1px solid #334155',
-                        borderRadius: 8,
-                        background: index === selectedSketchSegmentIndex ? '#082f49' : 'transparent',
-                      }}
-                    >
-                      <label className="field-row">
-                        <span>Segment {index + 1}</span>
-                        <input type="text" value={segment.type.toUpperCase()} readOnly />
-                      </label>
-                      <NumericFieldRow
-                        label="End X"
-                        value={segment.x2}
-                        onChange={(value) =>
-                          updateSketchSegment(selectedOperation, index, { x2: value }, onUpdateOperation)
-                        }
-                      />
-                      <NumericFieldRow
-                        label="End Y"
-                        value={segment.y2}
-                        onChange={(value) =>
-                          updateSketchSegment(selectedOperation, index, { y2: value }, onUpdateOperation)
-                        }
-                      />
-                      {segment.type === 'arc' ? (
-                        <>
+                  <button
+                    type="button"
+                    className="panel-section-toggle"
+                    onClick={() => setShowSegmentDetails((current) => !current)}
+                  >
+                    {showSegmentDetails ? 'Hide segment details' : 'Edit segments'}
+                  </button>
+                  {showSegmentDetails ? (
+                    <>
+                      <h3>Segments</h3>
+                      {sketchSegments.map((segment, index) => (
+                        <div
+                          key={`${selectedOperation.id}-segment-${index}`}
+                          style={{
+                            padding: 8,
+                            marginBottom: 8,
+                            border: index === selectedSketchSegmentIndex ? '1px solid #38bdf8' : '1px solid #334155',
+                            borderRadius: 8,
+                            background: index === selectedSketchSegmentIndex ? '#082f49' : 'transparent',
+                          }}
+                        >
+                          <label className="field-row">
+                            <span>Segment {index + 1}</span>
+                            <input type="text" value={segment.type.toUpperCase()} readOnly />
+                          </label>
                           <NumericFieldRow
-                            label="Through X"
-                            value={segment.throughX}
+                            label="Start X"
+                            value={segment.x1}
                             onChange={(value) =>
-                              updateSketchSegment(selectedOperation, index, { throughX: value }, onUpdateOperation)
+                              updateSketchSegment(selectedOperation, index, { x1: value }, onUpdateOperation)
                             }
                           />
                           <NumericFieldRow
-                            label="Through Y"
-                            value={segment.throughY}
+                            label="Start Y"
+                            value={segment.y1}
                             onChange={(value) =>
-                              updateSketchSegment(selectedOperation, index, { throughY: value }, onUpdateOperation)
+                              updateSketchSegment(selectedOperation, index, { y1: value }, onUpdateOperation)
                             }
                           />
-                        </>
-                      ) : null}
-                    </div>
-                  ))}
+                          <NumericFieldRow
+                            label="End X"
+                            value={segment.x2}
+                            onChange={(value) =>
+                              updateSketchSegment(selectedOperation, index, { x2: value }, onUpdateOperation)
+                            }
+                          />
+                          <NumericFieldRow
+                            label="End Y"
+                            value={segment.y2}
+                            onChange={(value) =>
+                              updateSketchSegment(selectedOperation, index, { y2: value }, onUpdateOperation)
+                            }
+                          />
+                          {segment.type === 'arc' ? (
+                            <>
+                              <NumericFieldRow
+                                label="Through X"
+                                value={segment.throughX}
+                                onChange={(value) =>
+                                  updateSketchSegment(selectedOperation, index, { throughX: value }, onUpdateOperation)
+                                }
+                              />
+                              <NumericFieldRow
+                                label="Through Y"
+                                value={segment.throughY}
+                                onChange={(value) =>
+                                  updateSketchSegment(selectedOperation, index, { throughY: value }, onUpdateOperation)
+                                }
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                      ))}
+                    </>
+                  ) : null}
                 </>
               ) : null}
             </>
@@ -692,57 +759,61 @@ export default function OperationsPanel({
             </>
           )}
         </div>
-      )}
+      )) : null}
 
-      <h2>Operations list</h2>
-      {operations.length === 0 ? (
-        <p className="hint-text">No operations yet. Use tools above to place drill points or cut paths.</p>
-      ) : (
-        <ul className="operations-list">
-          {operations.map((operation, index) => {
-            const isSelected = selectedOperationIds?.includes(operation.id);
-            return (
-              <li key={operation.id}>
-                <div className={`operation-item ${isSelected ? 'selected' : ''}`}>
-                  <button
-                    type="button"
-                    className="operation-main"
-                    onClick={(event) =>
-                      onSelectOperation(operation.id, {
-                        additive: event.shiftKey,
-                        toggle: event.shiftKey,
-                      })
-                    }
-                  >
-                    <span className="operation-type">{operation.type.toUpperCase()}</span>
-                    <span>{formatOperationLabel(operation)}</span>
-                    <span className="operation-tool">{getToolName(operation.toolId, tools)}</span>
-                    <span className="operation-tool">{getMaterialName(operation.materialId, materials)}</span>
-                  </button>
-                  <div className="operation-order-controls">
-                    <button
-                      type="button"
-                      onClick={() => onMoveOperation(operation.id, -1)}
-                      disabled={index === 0}
-                      title="Move up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onMoveOperation(operation.id, 1)}
-                      disabled={index === operations.length - 1}
-                      title="Move down"
-                    >
-                      ↓
-                    </button>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {activeTab === 'list' ? (
+        <>
+          <h2>Operations list</h2>
+          {operations.length === 0 ? (
+            <p className="hint-text">No operations yet. Use tools above to place drill points or cut paths.</p>
+          ) : (
+            <ul className="operations-list">
+              {operations.map((operation, index) => {
+                const isSelected = selectedOperationIds?.includes(operation.id);
+                return (
+                  <li key={operation.id}>
+                    <div className={`operation-item ${isSelected ? 'selected' : ''}`}>
+                      <button
+                        type="button"
+                        className="operation-main"
+                        onClick={(event) =>
+                          onSelectOperation(operation.id, {
+                            additive: event.shiftKey,
+                            toggle: event.shiftKey,
+                          })
+                        }
+                      >
+                        <span className="operation-type">{operation.type.toUpperCase()}</span>
+                        <span>{formatOperationLabel(operation)}</span>
+                        <span className="operation-tool">{getToolName(operation.toolId, tools)}</span>
+                        <span className="operation-tool">{getMaterialName(operation.materialId, materials)}</span>
+                      </button>
+                      <div className="operation-order-controls">
+                        <button
+                          type="button"
+                          onClick={() => onMoveOperation(operation.id, -1)}
+                          disabled={index === 0}
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onMoveOperation(operation.id, 1)}
+                          disabled={index === operations.length - 1}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }

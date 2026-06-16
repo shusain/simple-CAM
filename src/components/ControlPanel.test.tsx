@@ -50,9 +50,9 @@ describe('ControlPanel', () => {
     const props = buildProps();
     render(<ControlPanel {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'New' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export G-code' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply material to all operations' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply depths to all operations' }));
@@ -93,6 +93,13 @@ describe('ControlPanel', () => {
     expect(onSelectTool).toHaveBeenCalledWith('tool-2');
     expect(onSelectMaterial).toHaveBeenCalledWith('material-2');
     expect(onSettingsChange).toHaveBeenCalledWith({ circleSegments: 8 });
+  });
+
+  it('renders the left panel sections in the expected order', () => {
+    const { container } = render(<ControlPanel {...buildProps()} />);
+
+    const headers = Array.from(container.querySelectorAll('.section-header')).map((element) => element.textContent?.trim());
+    expect(headers).toEqual(['Project', 'Grid and snap', 'Machine setup', 'Work area']);
   });
 
   it('updates the remaining machine setup and feed fields', () => {
@@ -139,6 +146,25 @@ describe('ControlPanel', () => {
 
     expect(screen.getByRole('button', { name: 'Apply material to all operations' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Apply depths to all operations' })).toBeDisabled();
+  });
+
+  it('stores apply-all guidance on button tooltips instead of inline panel copy', () => {
+    render(<ControlPanel {...buildProps()} />);
+
+    expect(
+      screen.getByRole('button', { name: 'Apply material to all operations' })
+    ).toHaveAttribute(
+      'title',
+      'Assigns the active material to every operation so each tool uses its material-specific feeds and stepdown settings.'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Apply depths to all operations' })
+    ).toHaveAttribute(
+      'title',
+      'Updates all drill operations to the current drill depth and all cut operations to the current cut depth.'
+    );
+    expect(screen.queryByText(/assigns the active material to every operation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/updates all drill operations to the current drill depth/i)).not.toBeInTheDocument();
   });
 
   it('opens the tool manager and updates tool/material presets', () => {

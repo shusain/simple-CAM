@@ -103,7 +103,8 @@ export interface CamCanvasProps {
   onSelectOperation: (id: string | null, options?: SelectOptions) => void;
   onSetSelection: (ids: string[], options?: { additive?: boolean }) => void;
   onAddOperation: (operation: OperationInput) => string;
-  onMoveOperations: (args: MoveSelectedOperationsArgs) => void;
+  onPreviewMoveOperations: (args: MoveSelectedOperationsArgs) => void;
+  onCommitMoveOperations: (args: MoveSelectedOperationsArgs) => void;
   activeToolId: string;
   activeMaterialId: string;
   defaultDrillDepth: number;
@@ -115,6 +116,7 @@ export interface CamCanvasProps {
   sketchEdit: SketchEditState;
   onUpdateOperation: (id: string, updates: Partial<Operation>) => void;
   onSelectSketchSegment: (segmentIndex: number | null) => void;
+  onCancelSketchCreation: () => void;
   showToolpathPreview: boolean;
   toolpathPreview: ToolpathPreview | null;
   transformHint: string | null;
