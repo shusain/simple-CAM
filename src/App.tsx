@@ -5,6 +5,7 @@ import OctoprintSettingsModal from './components/OctoprintSettingsModal';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
 import { deriveSketchState, getOperationBounds, moveOperation } from './utils/geometry';
+import { getDefaultPocketStepOver } from './utils/pocketing';
 import { resolveMaterialId } from './utils/tooling';
 import type {
   HistoryState,
@@ -222,16 +223,28 @@ export default function App(): React.JSX.Element {
   const addOperation = useCallback(
     (operation: Omit<Operation, 'id'>) => {
       const selectedToolId = operation.toolId || activeToolId || tools[0]?.id || null;
+      const selectedTool = tools.find((tool) => tool.id === selectedToolId) || tools[0] || null;
       const selectedMaterialId = resolveMaterialId(
         materials,
         operation.materialId,
         activeMaterialId
       );
       const id = newId();
+      const providedPocketStepOver =
+        'pocketStepOver' in operation ? Number(operation.pocketStepOver) : Number.NaN;
       const nextOperation = {
         ...operation,
         toolId: selectedToolId || undefined,
         materialId: selectedMaterialId || undefined,
+        ...('pocketEnabled' in operation
+          ? {
+              pocketEnabled: Boolean(operation.pocketEnabled),
+              pocketStepOver:
+                Number.isFinite(providedPocketStepOver) && providedPocketStepOver > 0
+                  ? providedPocketStepOver
+                  : getDefaultPocketStepOver(selectedTool?.diameter),
+            }
+          : {}),
         id,
       } as Operation;
       commitOperations((prev) => [...prev, nextOperation]);
@@ -270,6 +283,8 @@ export default function App(): React.JSX.Element {
       tabCount: 2,
       tabWidth: 1,
       tabHeight: 1,
+      pocketEnabled: false,
+      pocketStepOver: 0,
       depth: settings.cutDepth,
     };
     const id = addOperation(operation);

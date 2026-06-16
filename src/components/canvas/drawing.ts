@@ -449,6 +449,8 @@ export function drawSketchEditOverlay(
         tabCount: 2,
         tabWidth: 1,
         tabHeight: 1,
+        pocketEnabled: false,
+        pocketStepOver: 0.5,
         id: 'arc-preview',
         depth: 0,
       };

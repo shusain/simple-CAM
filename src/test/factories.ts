@@ -10,6 +10,7 @@ import type {
   Tool,
 } from '../types';
 import { DEFAULT_MATERIALS, DEFAULT_SETTINGS, DEFAULT_TOOLS } from '../app/defaults';
+import { getDefaultPocketStepOver } from '../utils/pocketing';
 
 export function makeSettings(overrides: Partial<MachineSettings> = {}): MachineSettings {
   return {
@@ -81,6 +82,8 @@ export function makeRectOperation(overrides: Partial<RectOperation> = {}): RectO
     tabCount: 2,
     tabWidth: 1,
     tabHeight: 1,
+    pocketEnabled: false,
+    pocketStepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
     ...overrides,
   };
 }
@@ -100,6 +103,8 @@ export function makeCircleOperation(overrides: Partial<CircleOperation> = {}): C
     tabCount: 2,
     tabWidth: 1,
     tabHeight: 1,
+    pocketEnabled: false,
+    pocketStepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
     ...overrides,
   };
 }
@@ -134,6 +139,8 @@ export function makeSketchOperation(overrides: Partial<SketchOperation> = {}): S
     tabCount: 2,
     tabWidth: 1,
     tabHeight: 1,
+    pocketEnabled: false,
+    pocketStepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
     ...overrides,
   };
 }

@@ -44,11 +44,31 @@ describe('OperationsPanel', () => {
     const onUpdateOperation = vi.fn();
     render(<OperationsPanel {...buildProps({ onUpdateOperation })} />);
 
+    expect(screen.getByLabelText('Clear area')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Toolpath'), { target: { value: 'inside' } });
-    expect(onUpdateOperation).toHaveBeenCalledWith('rect-1', { cutSide: 'inside' });
+    expect(onUpdateOperation).toHaveBeenCalledWith('rect-1', { cutSide: 'inside', pocketEnabled: false });
 
     fireEvent.click(screen.getByLabelText('Retaining tabs'));
     expect(onUpdateOperation).toHaveBeenCalledWith('rect-1', { tabsEnabled: true });
+  });
+
+  it('shows pocket controls for inside rounded rectangles', () => {
+    const rect = makeRectOperation({
+      id: 'rect-rounded',
+      cornerRadius: 3,
+    });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [rect],
+          selectedOperation: rect,
+          selectedOperationIds: [rect.id],
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Clear area')).toBeInTheDocument();
   });
 
   it('disables sketch toolpath selection for open sketches and starts edit mode', () => {
@@ -152,6 +172,42 @@ describe('OperationsPanel', () => {
     expect(screen.getByLabelText('Subpaths')).toHaveValue(2);
     expect(screen.getByText(/disconnected subpaths/i)).toBeInTheDocument();
     expect(screen.getByText(/start and end are/i)).toBeInTheDocument();
+  });
+
+  it('treats geometrically closed sketches as closed for cut-side and pocket controls', () => {
+    const sketch = makeSketchOperation({
+      id: 'sketch-detected-closed',
+      closed: false,
+      cutSide: 'outside',
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 10, y1: 0, x2: 10, y2: 10 },
+        { type: 'line', x1: 10, y1: 10, x2: 0, y2: 10 },
+        { type: 'line', x1: 0, y1: 10, x2: 0, y2: 0 },
+      ],
+    });
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [sketch],
+          selectedOperation: sketch,
+          selectedOperationIds: [sketch.id],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Toolpath')).toBeEnabled();
+    expect(screen.getByLabelText('Clear area')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Clear area'));
+    expect(onUpdateOperation).toHaveBeenCalledWith('sketch-detected-closed', {
+      closed: true,
+      cutSide: 'inside',
+      pocketEnabled: true,
+    });
   });
 
   it('repeats or deletes multi-selection when no single operation is active', () => {
@@ -305,6 +361,36 @@ describe('OperationsPanel', () => {
     expect(onUpdateOperation).toHaveBeenCalledWith('circle-tabs', { tabCount: 1 });
     expect(onUpdateOperation).toHaveBeenCalledWith('circle-tabs', { tabWidth: 0.1 });
     expect(onUpdateOperation).toHaveBeenCalledWith('circle-tabs', { tabHeight: 0.1 });
+  });
+
+  it('shows inside-pocket controls for closed cutouts and hides tabs while clearing area', () => {
+    const sketch = makeSketchOperation({
+      id: 'sketch-pocket',
+      closed: true,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 0.8,
+      tabsEnabled: true,
+    });
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [sketch],
+          selectedOperation: sketch,
+          selectedOperationIds: [sketch.id],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Clear area')).toBeChecked();
+    expect(screen.getByLabelText('Step-over')).toHaveValue('0.8');
+    expect(screen.queryByLabelText('Retaining tabs')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Step-over'), { target: { value: '1.25' } });
+    expect(onUpdateOperation).toHaveBeenCalledWith('sketch-pocket', { pocketStepOver: 1.25 });
   });
 
   it('disables closing a sketch without a valid start point and supports shift-select in the list', () => {

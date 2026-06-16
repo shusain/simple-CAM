@@ -101,6 +101,8 @@ export function buildDraftSketchOperation(
     tabCount: 2,
     tabWidth: 1,
     tabHeight: 1,
+    pocketEnabled: false,
+    pocketStepOver: 0.5,
     id: 'draft-sketch',
     depth: 0,
   };
@@ -263,6 +265,8 @@ export function getSketchSegmentOperations(operation: SketchOperation): SketchSe
       tabCount: 2,
       tabWidth: 1,
       tabHeight: 1,
+      pocketEnabled: false,
+      pocketStepOver: 0.5,
       id: `sketch-segment-${index}`,
       depth: 0,
     };

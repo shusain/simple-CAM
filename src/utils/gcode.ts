@@ -14,15 +14,11 @@ import { resolveToolPreset } from './tooling';
 import { appendPathWithTabs, getTabRanges } from './gcode/tabs';
 import { buildIncrementDepths, getStartEndZ, num, toNegativeDepth, toPositiveStep } from './gcode/depth';
 import {
-  buildRoundedRectPath,
-  clampRectCornerRadius,
   distanceBetween,
-  getCutSide,
   getToolRadius,
-  normalizeRectGeometry,
-  offsetClosedPath,
 } from './gcode/path';
 import type { PathOperation } from './gcode/shared';
+import { getOperationPlannedPaths } from './toolpathPreview';
 
 interface GenerateMarlinGcodeArgs {
   operations: Operation[];
@@ -30,6 +26,26 @@ interface GenerateMarlinGcodeArgs {
   tools: Tool[];
 }
 
+interface CutPathOptions {
+  useStartEndClearance?: boolean;
+  betweenPassClearanceZ?: number;
+  finalRetractZ?: number;
+}
+
+interface CutPathFeeds {
+  rapidFeed: string;
+  plungeFeed: string;
+  cutFeed: string;
+}
+
+function getOperationTravelZ(settings: MachineSettings): number {
+  const safeZ = Number(settings.safeZ);
+  if (!Number.isFinite(safeZ) || safeZ <= 0) {
+    return 1;
+  }
+
+  return Math.min(safeZ, 1);
+}
 
 function addHeader(lines: string[], settings: MachineSettings, operationCount: number): void {
   const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
@@ -117,15 +133,16 @@ function appendEntryMove(
   startPoint: Point,
   rapidFeed: string,
   settings: MachineSettings,
-  useStartEndClearance: boolean
+  useStartEndClearance: boolean,
+  clearanceZ = Number(settings.safeZ) || 5
 ): void {
   if (useStartEndClearance) {
     lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
-    lines.push(`G0 Z${num(settings.safeZ)} F${rapidFeed}`);
+    lines.push(`G0 Z${num(clearanceZ)} F${rapidFeed}`);
     return;
   }
 
-  lines.push(`G0 Z${num(settings.safeZ)} F${rapidFeed}`);
+  lines.push(`G0 Z${num(clearanceZ)} F${rapidFeed}`);
   lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
 }
 
@@ -171,12 +188,17 @@ function appendCutPath(
   operation: PathOperation,
   settings: MachineSettings,
   tool: Tool | null,
-  useStartEndClearance = false
+  options: CutPathOptions = {}
 ): void {
   if (!Array.isArray(pathPoints) || pathPoints.length < 2) {
     return;
   }
 
+  const {
+    useStartEndClearance = false,
+    betweenPassClearanceZ = getOperationTravelZ(settings),
+    finalRetractZ = Number(settings.safeZ) || 5,
+  } = options;
   const preset = resolveToolPreset(tool, operation.materialId, settings);
   const rapidFeed = num(preset.rapidFeedRate, 0);
   const plungeFeed = num(preset.plungeFeedRate, 0);
@@ -186,23 +208,102 @@ function appendCutPath(
   const passes = buildIncrementDepths(finalDepth, passStep);
   const tabRanges = getTabRanges(pathPoints, operation, tool);
   const tabHeight = 'tabHeight' in operation ? Math.max(0.1, Math.abs(Number(operation.tabHeight) || 1)) : 1;
+  const feeds = { rapidFeed, plungeFeed, cutFeed };
 
   const start = pathPoints[0];
   passes.forEach((depth, index) => {
-    appendEntryMove(lines, start, rapidFeed, settings, useStartEndClearance && index === 0);
-    lines.push(`G1 Z${num(depth)} F${plungeFeed}`);
+    appendCutPathAtDepth(lines, pathPoints, operation, settings, tool, depth, feeds, {
+      useStartEndClearance: useStartEndClearance && index === 0,
+      retractZ: index === passes.length - 1 ? finalRetractZ : betweenPassClearanceZ,
+      clearanceZ: index === 0 ? Number(settings.safeZ) || 5 : betweenPassClearanceZ,
+      tabRanges,
+      tabHeight,
+    });
+  });
 
-    const liftedDepth = 'tabsEnabled' in operation && operation.tabsEnabled ? Math.min(-0.001, depth + tabHeight) : depth;
-    if ('tabsEnabled' in operation && operation.tabsEnabled && liftedDepth !== depth && tabRanges.length > 0) {
-      appendPathWithTabs(lines, pathPoints, depth, liftedDepth, cutFeed, plungeFeed, tabRanges);
-    } else {
-      for (let i = 1; i < pathPoints.length; i += 1) {
-        const point = pathPoints[i];
-        lines.push(`G1 X${num(point.x)} Y${num(point.y)} F${cutFeed}`);
-      }
+  lines.push('');
+}
+
+interface CutPathAtDepthOptions {
+  useStartEndClearance: boolean;
+  retractZ: number;
+  clearanceZ: number;
+  tabRanges: ReturnType<typeof getTabRanges>;
+  tabHeight: number;
+}
+
+function appendCutPathAtDepth(
+  lines: string[],
+  pathPoints: Point[],
+  operation: PathOperation,
+  settings: MachineSettings,
+  _tool: Tool | null,
+  depth: number,
+  feeds: CutPathFeeds,
+  options: CutPathAtDepthOptions
+): void {
+  const start = pathPoints[0];
+  appendEntryMove(
+    lines,
+    start,
+    feeds.rapidFeed,
+    settings,
+    options.useStartEndClearance,
+    options.clearanceZ
+  );
+  lines.push(`G1 Z${num(depth)} F${feeds.plungeFeed}`);
+
+  const liftedDepth =
+    'tabsEnabled' in operation && operation.tabsEnabled
+      ? Math.min(-0.001, depth + options.tabHeight)
+      : depth;
+  if ('tabsEnabled' in operation && operation.tabsEnabled && liftedDepth !== depth && options.tabRanges.length > 0) {
+    appendPathWithTabs(lines, pathPoints, depth, liftedDepth, feeds.cutFeed, feeds.plungeFeed, options.tabRanges);
+  } else {
+    for (let i = 1; i < pathPoints.length; i += 1) {
+      const point = pathPoints[i];
+      lines.push(`G1 X${num(point.x)} Y${num(point.y)} F${feeds.cutFeed}`);
     }
+  }
 
-    lines.push(`G0 Z${num(settings.safeZ)} F${rapidFeed}`);
+  lines.push(`G0 Z${num(options.retractZ)} F${feeds.rapidFeed}`);
+}
+
+function appendPocketCutPaths(
+  lines: string[],
+  plannedPaths: { path: Point[] }[],
+  operation: PathOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance: boolean
+): void {
+  const preset = resolveToolPreset(tool, operation.materialId, settings);
+  const feeds: CutPathFeeds = {
+    rapidFeed: num(preset.rapidFeedRate, 0),
+    plungeFeed: num(preset.plungeFeedRate, 0),
+    cutFeed: num(preset.cutFeedRate, 0),
+  };
+  const finalDepth = toNegativeDepth(operation.depth, settings.cutDepth);
+  const passStep = toPositiveStep(preset.cutDepthPerPass, Math.abs(finalDepth));
+  const passes = buildIncrementDepths(finalDepth, passStep);
+  const operationTravelZ = getOperationTravelZ(settings);
+
+  passes.forEach((depth, depthIndex) => {
+    lines.push(`; Depth pass ${depthIndex + 1} (${num(depth)}mm)`);
+    plannedPaths.forEach((plannedPath, pathIndex) => {
+      lines.push(`; Pocket contour ${pathIndex + 1}`);
+      appendCutPathAtDepth(lines, plannedPath.path, operation, settings, tool, depth, feeds, {
+        useStartEndClearance: useStartEndClearance && depthIndex === 0 && pathIndex === 0,
+        clearanceZ:
+          depthIndex === 0 && pathIndex === 0 ? Number(settings.safeZ) || 5 : operationTravelZ,
+        retractZ:
+          depthIndex === passes.length - 1 && pathIndex === plannedPaths.length - 1
+            ? Number(settings.safeZ) || 5
+            : operationTravelZ,
+        tabRanges: [],
+        tabHeight: 1,
+      });
+    });
   });
 
   lines.push('');
@@ -228,7 +329,7 @@ function appendLineCut(
     operation,
     settings,
     tool,
-    useStartEndClearance
+    { useStartEndClearance }
   );
 }
 
@@ -242,40 +343,44 @@ function appendRectCut(
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
-  const baseRect = normalizeRectGeometry(operation.x, operation.y, operation.width, operation.height);
-  const toolRadius = getToolRadius(tool);
-  const cutSide = getCutSide(operation, 'outside');
-  const offsetAmount = cutSide === 'outside' ? toolRadius : cutSide === 'inside' ? -toolRadius : 0;
-  const offsetRect = {
-    x: baseRect.x - offsetAmount,
-    y: baseRect.y - offsetAmount,
-    width: baseRect.width + offsetAmount * 2,
-    height: baseRect.height + offsetAmount * 2,
-  };
-  const baseCorner = clampRectCornerRadius(operation.cornerRadius, baseRect.width, baseRect.height);
-  const offsetCorner = clampRectCornerRadius(
-    baseCorner + offsetAmount,
-    offsetRect.width,
-    offsetRect.height
-  );
-  const cornerSegments = Math.max(2, Math.floor((settings.circleSegments || 48) / 4));
-
-  if (offsetRect.width <= 0.0001 || offsetRect.height <= 0.0001) {
-    lines.push(`; Cut rectangle (${cutSide} requested, falling back to along path: tool too large for inside offset)`);
-    appendCutPath(lines, buildRoundedRectPath(baseRect, baseCorner, cornerSegments), operation, settings, tool, useStartEndClearance);
+  const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
+  const firstPath = plannedPaths[0];
+  if (!firstPath) {
     return;
   }
+  const toolRadius = getToolRadius(tool);
 
-  lines.push(`; Cut rectangle (${cutSide} path)`);
-  lines.push(`; Tool radius compensation ${num(offsetAmount)}mm`);
-  lines.push(`; Nominal ${num(baseRect.width)} x ${num(baseRect.height)} mm, corner R${num(baseCorner)} -> path corner R${num(offsetCorner)}`);
+  if (firstPath.fallbackToAlongPath && firstPath.cutSide === 'inside') {
+    lines.push('; Cut rectangle (inside requested, falling back to along path: tool too large for inside offset)');
+  } else if (operation.pocketEnabled && firstPath.cutSide === 'inside') {
+    lines.push(`; Pocket rectangle (inside clear area, stepover ${num(operation.pocketStepOver)}mm)`);
+  } else {
+    lines.push(`; Cut rectangle (${firstPath.cutSide} path)`);
+  }
+  if (firstPath.cutSide !== 'along' && toolRadius > 0 && !firstPath.fallbackToAlongPath) {
+    lines.push(`; Tool radius compensation ${num(toolRadius)}mm`);
+  }
 
-  const path = buildRoundedRectPath(
-    cutSide === 'along' ? baseRect : offsetRect,
-    cutSide === 'along' ? baseCorner : offsetCorner,
-    cornerSegments
-  );
-  appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
+  plannedPaths.forEach((plannedPath, index) => {
+    if (!(operation.pocketEnabled && firstPath.cutSide === 'inside')) {
+      appendCutPath(
+        lines,
+        plannedPath.path,
+        operation,
+        settings,
+        tool,
+        {
+          useStartEndClearance: useStartEndClearance && index === 0,
+          betweenPassClearanceZ: getOperationTravelZ(settings),
+          finalRetractZ:
+            index === plannedPaths.length - 1 ? Number(settings.safeZ) || 5 : getOperationTravelZ(settings),
+        }
+      );
+    }
+  });
+  if (operation.pocketEnabled && firstPath.cutSide === 'inside') {
+    appendPocketCutPaths(lines, plannedPaths, { ...operation, tabsEnabled: false }, settings, tool, useStartEndClearance);
+  }
 }
 
 function appendCircleCut(
@@ -288,30 +393,40 @@ function appendCircleCut(
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
-  const toolRadius = getToolRadius(tool);
-  const cutSide = getCutSide(operation, 'outside');
-  const offsetAmount = cutSide === 'outside' ? toolRadius : cutSide === 'inside' ? -toolRadius : 0;
-  const compensatedRadius = operation.radius + offsetAmount;
+  const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
+  const firstPath = plannedPaths[0];
+  if (!firstPath) {
+    return;
+  }
 
-  if (compensatedRadius <= 0.0001) {
-    lines.push(`; Cut circle (${cutSide} requested, falling back to along path: tool too large for inside offset)`);
+  if (firstPath.fallbackToAlongPath && firstPath.cutSide === 'inside') {
+    lines.push('; Cut circle (inside requested, falling back to along path: tool too large for inside offset)');
+  } else if (operation.pocketEnabled && firstPath.cutSide === 'inside') {
+    lines.push(`; Pocket circle (inside clear area, stepover ${num(operation.pocketStepOver)}mm)`);
   } else {
-    lines.push(`; Cut circle nominal R${num(operation.radius)} (${cutSide} tool-center path R${num(compensatedRadius)})`);
+    lines.push(`; Cut circle (${firstPath.cutSide} path)`);
   }
 
-  const segments = Math.max(8, Math.floor(settings.circleSegments || 48));
-  const path: Point[] = [];
-  const pathRadius = compensatedRadius <= 0.0001 ? operation.radius : compensatedRadius;
-
-  for (let i = 0; i <= segments; i += 1) {
-    const theta = (Math.PI * 2 * i) / segments;
-    path.push({
-      x: operation.x + pathRadius * Math.cos(theta),
-      y: operation.y + pathRadius * Math.sin(theta),
-    });
+  plannedPaths.forEach((plannedPath, index) => {
+    if (!(operation.pocketEnabled && firstPath.cutSide === 'inside')) {
+      appendCutPath(
+        lines,
+        plannedPath.path,
+        operation,
+        settings,
+        tool,
+        {
+          useStartEndClearance: useStartEndClearance && index === 0,
+          betweenPassClearanceZ: getOperationTravelZ(settings),
+          finalRetractZ:
+            index === plannedPaths.length - 1 ? Number(settings.safeZ) || 5 : getOperationTravelZ(settings),
+        }
+      );
+    }
+  });
+  if (operation.pocketEnabled && firstPath.cutSide === 'inside') {
+    appendPocketCutPaths(lines, plannedPaths, { ...operation, tabsEnabled: false }, settings, tool, useStartEndClearance);
   }
-
-  appendCutPath(lines, path, operation, settings, tool, useStartEndClearance);
 }
 
 function appendSketchCut(
@@ -330,26 +445,38 @@ function appendSketchCut(
     return;
   }
 
-  const cutSide = getCutSide(operation, operation.closed ? 'outside' : 'along');
-  const toolRadius = getToolRadius(tool);
   lines.push(`; Cut sketch ${operation.closed ? 'closed' : 'open'} path (${subpaths.length} subpath(s))`);
-  lines.push(`; Toolpath mode: ${operation.closed ? cutSide : 'along'}${operation.closed && cutSide !== 'along' ? `, tool radius compensation ${num(toolRadius)}mm` : ''}`);
-  subpaths.forEach((path, index) => {
-    if (path.length < 2) {
-      return;
+  if (operation.pocketEnabled && operation.cutSide === 'inside' && operation.closed) {
+    lines.push(`; Pocket sketch (inside clear area, stepover ${num(operation.pocketStepOver)}mm)`);
+  }
+
+  const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
+  const isPocketSketch = operation.pocketEnabled && operation.cutSide === 'inside' && operation.closed;
+  plannedPaths.forEach((plannedPath, index) => {
+    if (plannedPath.fallbackToAlongPath) {
+      lines.push(`; Sketch subpath ${index + 1} offset failed, falling back to along path`);
+    } else if (!isPocketSketch) {
+      lines.push(`; Sketch subpath ${index + 1}`);
     }
-    let plannedPath = path;
-    if (operation.closed && cutSide !== 'along') {
-      const offsetPath = offsetClosedPath(path, cutSide === 'outside' ? toolRadius : -toolRadius);
-      if (offsetPath) {
-        plannedPath = offsetPath;
-      } else {
-        lines.push(`; Sketch subpath ${index + 1} offset failed, falling back to along path`);
-      }
+    if (!isPocketSketch) {
+      appendCutPath(
+        lines,
+        plannedPath.path,
+        operation,
+        settings,
+        tool,
+        {
+          useStartEndClearance: useStartEndClearance && index === 0,
+          betweenPassClearanceZ: getOperationTravelZ(settings),
+          finalRetractZ:
+            index === plannedPaths.length - 1 ? Number(settings.safeZ) || 5 : getOperationTravelZ(settings),
+        }
+      );
     }
-    lines.push(`; Sketch subpath ${index + 1}`);
-    appendCutPath(lines, plannedPath, operation, settings, tool, useStartEndClearance && index === 0);
   });
+  if (isPocketSketch) {
+    appendPocketCutPaths(lines, plannedPaths, { ...operation, tabsEnabled: false }, settings, tool, useStartEndClearance);
+  }
 }
 
 export function generateMarlinGcode({ operations, settings, tools }: GenerateMarlinGcodeArgs): string {

@@ -1,8 +1,9 @@
 import type { CircleOperation, CutSide, DrillOperation, MachineSettings, Operation, Point, RectOperation, SketchOperation, Tool } from '../types';
-import { getSketchSubpaths } from './geometry';
+import { getSketchSubpaths, isClosedSketchPath } from './geometry';
 import { buildRoundedRectPath, clampRectCornerRadius, getCutSide, getToolRadius, interpolatePoint, normalizeRectGeometry, offsetClosedPath, pointsEqual } from './gcode/path';
 import type { TabRange } from './gcode/shared';
 import { getTabRanges } from './gcode/tabs';
+import { buildPocketContourPaths, buildRectPocketContourPaths } from './pocketing';
 
 export type ToolpathPreviewSegmentKind = 'rapid' | 'cut' | 'tab';
 export type ToolpathPreviewMarkerKind = 'start' | 'end' | 'plunge' | 'drill';
@@ -14,6 +15,7 @@ export interface OperationPlannedPath {
   path: Point[];
   tabRanges: TabRange[];
   fallbackToAlongPath: boolean;
+  isPocketPath: boolean;
 }
 
 export interface ToolpathPreviewSegment {
@@ -41,6 +43,63 @@ interface BuildToolpathPreviewArgs {
   tools: Tool[];
 }
 
+function getPathBounds(path: Point[]): { minX: number; maxX: number; minY: number; maxY: number } | null {
+  if (!Array.isArray(path) || path.length === 0) {
+    return null;
+  }
+
+  let minX = path[0].x;
+  let maxX = path[0].x;
+  let minY = path[0].y;
+  let maxY = path[0].y;
+
+  path.forEach((point) => {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  });
+
+  return { minX, maxX, minY, maxY };
+}
+
+function getPathArea(path: Point[]): number {
+  if (!Array.isArray(path) || path.length < 3) {
+    return 0;
+  }
+
+  let area = 0;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const current = path[index];
+    const next = path[index + 1];
+    area += current.x * next.y - next.x * current.y;
+  }
+
+  return Math.abs(area / 2);
+}
+
+function isValidInwardOffset(basePath: Point[], candidatePath: Point[]): boolean {
+  const baseBounds = getPathBounds(basePath);
+  const candidateBounds = getPathBounds(candidatePath);
+  if (!baseBounds || !candidateBounds) {
+    return false;
+  }
+
+  const tolerance = 0.0001;
+  const baseArea = getPathArea(basePath);
+  const candidateArea = getPathArea(candidatePath);
+  if (candidateArea <= tolerance || candidateArea >= baseArea - tolerance) {
+    return false;
+  }
+
+  const baseWidth = baseBounds.maxX - baseBounds.minX;
+  const baseHeight = baseBounds.maxY - baseBounds.minY;
+  const candidateWidth = candidateBounds.maxX - candidateBounds.minX;
+  const candidateHeight = candidateBounds.maxY - candidateBounds.minY;
+
+  return candidateWidth < baseWidth - tolerance && candidateHeight < baseHeight - tolerance;
+}
+
 function getOperationTool(operation: Operation, tools: Tool[]): Tool | null {
   if (!Array.isArray(tools) || tools.length === 0) {
     return null;
@@ -66,16 +125,21 @@ function buildCirclePath(operation: CircleOperation, settings: MachineSettings, 
     });
   }
 
-  return [
-    {
-      operationId: operation.id,
-      operationType: operation.type,
-      cutSide,
-      path,
-      tabRanges: getTabRanges(path, operation, tool),
-      fallbackToAlongPath: compensatedRadius <= 0.0001 && cutSide !== 'along',
-    },
-  ];
+  const fallbackToAlongPath = compensatedRadius <= 0.0001 && cutSide !== 'along';
+  const plannedPaths =
+    cutSide === 'inside' && operation.pocketEnabled && !fallbackToAlongPath
+      ? buildPocketContourPaths(path, operation.pocketStepOver)
+      : [path];
+
+  return plannedPaths.map((plannedPath, index) => ({
+    operationId: operation.id,
+    operationType: operation.type,
+    cutSide,
+    path: plannedPath,
+    tabRanges: operation.pocketEnabled && cutSide === 'inside' ? [] : getTabRanges(plannedPath, operation, tool),
+    fallbackToAlongPath,
+    isPocketPath: index > 0,
+  }));
 }
 
 function buildRectPath(operation: RectOperation, settings: MachineSettings, tool: Tool | null): OperationPlannedPath[] {
@@ -90,7 +154,11 @@ function buildRectPath(operation: RectOperation, settings: MachineSettings, tool
     height: baseRect.height + offsetAmount * 2,
   };
   const baseCorner = clampRectCornerRadius(operation.cornerRadius, baseRect.width, baseRect.height);
-  const offsetCorner = clampRectCornerRadius(baseCorner + offsetAmount, offsetRect.width, offsetRect.height);
+  const offsetCorner = clampRectCornerRadius(
+    Math.max(0, baseCorner + offsetAmount),
+    offsetRect.width,
+    offsetRect.height
+  );
   const cornerSegments = Math.max(2, Math.floor((settings.circleSegments || 48) / 4));
   const fallbackToAlongPath = offsetRect.width <= 0.0001 || offsetRect.height <= 0.0001;
   const path = buildRoundedRectPath(
@@ -99,21 +167,31 @@ function buildRectPath(operation: RectOperation, settings: MachineSettings, tool
     cornerSegments
   );
 
-  return [
-    {
-      operationId: operation.id,
-      operationType: operation.type,
-      cutSide,
-      path,
-      tabRanges: getTabRanges(path, operation, tool),
-      fallbackToAlongPath,
-    },
-  ];
+  const plannedPaths =
+    cutSide === 'inside' && operation.pocketEnabled && !fallbackToAlongPath
+      ? buildRectPocketContourPaths(
+          offsetRect,
+          offsetCorner,
+          operation.pocketStepOver,
+          cornerSegments
+        )
+      : [path];
+
+  return plannedPaths.map((plannedPath, index) => ({
+    operationId: operation.id,
+    operationType: operation.type,
+    cutSide,
+    path: plannedPath,
+    tabRanges: operation.pocketEnabled && cutSide === 'inside' ? [] : getTabRanges(plannedPath, operation, tool),
+    fallbackToAlongPath,
+    isPocketPath: index > 0,
+  }));
 }
 
 function buildSketchPaths(operation: SketchOperation, settings: MachineSettings, tool: Tool | null): OperationPlannedPath[] {
   const subpaths = getSketchSubpaths(operation, settings.circleSegments || 48);
-  const cutSide = getCutSide(operation, operation.closed ? 'outside' : 'along');
+  const effectiveClosed = Boolean(operation.closed || isClosedSketchPath(operation));
+  const cutSide = getCutSide(operation, effectiveClosed ? 'outside' : 'along');
   const toolRadius = getToolRadius(tool);
 
   return subpaths
@@ -122,24 +200,37 @@ function buildSketchPaths(operation: SketchOperation, settings: MachineSettings,
       let plannedPath = path;
       let fallbackToAlongPath = false;
 
-      if (operation.closed && cutSide !== 'along') {
+      if (effectiveClosed && cutSide !== 'along') {
         const offsetPath = offsetClosedPath(path, cutSide === 'outside' ? toolRadius : -toolRadius);
-        if (offsetPath) {
+        if (offsetPath && (cutSide !== 'inside' || isValidInwardOffset(path, offsetPath))) {
           plannedPath = offsetPath;
         } else {
           fallbackToAlongPath = true;
         }
       }
 
-      return {
+      const basePlannedPath = {
         operationId: operation.id,
         operationType: operation.type,
         cutSide,
         path: plannedPath,
-        tabRanges: getTabRanges(plannedPath, operation, tool),
+        tabRanges: operation.pocketEnabled && cutSide === 'inside' ? [] : getTabRanges(plannedPath, operation, tool),
         fallbackToAlongPath,
+        isPocketPath: false,
       };
-    });
+
+      if (!(effectiveClosed && cutSide === 'inside' && operation.pocketEnabled) || fallbackToAlongPath) {
+        return [basePlannedPath];
+      }
+
+      return buildPocketContourPaths(plannedPath, operation.pocketStepOver).map((pocketPath, index) => ({
+        ...basePlannedPath,
+        path: pocketPath,
+        tabRanges: [],
+        isPocketPath: index > 0,
+      }));
+    })
+    .flat();
 }
 
 export function getOperationPlannedPaths(
@@ -159,6 +250,7 @@ export function getOperationPlannedPaths(
         ],
         tabRanges: [],
         fallbackToAlongPath: false,
+        isPocketPath: false,
       },
     ];
   }
