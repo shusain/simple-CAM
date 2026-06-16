@@ -54,7 +54,8 @@ export default function CamCanvas({
   onSelectOperation,
   onSetSelection,
   onAddOperation,
-  onMoveOperations,
+  onPreviewMoveOperations,
+  onCommitMoveOperations,
   activeToolId,
   activeMaterialId,
   defaultDrillDepth,
@@ -66,6 +67,7 @@ export default function CamCanvas({
   sketchEdit,
   onUpdateOperation,
   onSelectSketchSegment,
+  onCancelSketchCreation,
   showToolpathPreview,
   toolpathPreview,
   transformHint,
@@ -284,6 +286,10 @@ export default function CamCanvas({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
       if (event.key === 'Escape') {
         if (draft?.type === 'sketch') {
           event.preventDefault();
@@ -293,6 +299,15 @@ export default function CamCanvas({
         if (editingSketchOperation && sketchArcInsertDraft) {
           event.preventDefault();
           setSketchArcInsertDraft(null);
+          return;
+        }
+        if (
+          editingSketchOperation &&
+          sketchEdit.isNewSketch &&
+          getSketchSegments(editingSketchOperation).length === 0
+        ) {
+          event.preventDefault();
+          onCancelSketchCreation();
           return;
         }
         interactionRef.current = createEmptyInteractionState();
@@ -322,8 +337,10 @@ export default function CamCanvas({
     editingSketchOperation,
     finishOpenSketchDraft,
     onAddOperation,
+    onCancelSketchCreation,
     onSelectOperation,
     settings.cutDepth,
+    sketchEdit.isNewSketch,
     sketchArcInsertDraft,
   ]);
 
@@ -493,9 +510,9 @@ export default function CamCanvas({
       }
 
       const dragIdSet = new Set(dragIds);
-      const sourceOperations = operations
-        .filter((operation) => dragIdSet.has(operation.id))
-        .map((operation) => ({ ...operation }));
+      const sourceOperations = operations.map((operation) =>
+        dragIdSet.has(operation.id) ? { ...operation } : operation
+      );
 
       interactionRef.current = {
         mode: 'drag-ops',
@@ -708,7 +725,7 @@ export default function CamCanvas({
       }
       const dx = point.x - startPoint.x;
       const dy = point.y - startPoint.y;
-      onMoveOperations({
+      onPreviewMoveOperations({
         ids: interaction.selectedIds,
         sourceOperations: interaction.sourceOperations,
         dx,
@@ -828,6 +845,17 @@ export default function CamCanvas({
 
   function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>): void {
     const interaction = interactionRef.current;
+    if (interaction.mode === 'drag-ops' && interaction.sourceOperations && interaction.start && interaction.selectedIds) {
+      const point = getPointerPoint(event, true);
+      const dx = point.x - interaction.start.x;
+      const dy = point.y - interaction.start.y;
+      onCommitMoveOperations({
+        ids: interaction.selectedIds,
+        sourceOperations: interaction.sourceOperations,
+        dx,
+        dy,
+      });
+    }
     if (interaction.mode === 'draw') {
       finalizeDraft();
     }

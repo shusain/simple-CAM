@@ -1,10 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Circle,
+  Eye,
+  MousePointer2,
+  PenLine,
+  Plus,
+  Minus,
+  RectangleHorizontal,
+  Ruler,
+  ScanSearch,
+  Target,
+  Workflow,
+  XCircle,
+} from 'lucide-react';
 import CamCanvas from './components/CamCanvas';
 import ControlPanel from './components/ControlPanel';
 import OctoprintSettingsModal from './components/OctoprintSettingsModal';
 import OperationsPanel from './components/OperationsPanel';
 import { generateMarlinGcode } from './utils/gcode';
-import { deriveSketchState, getOperationBounds, moveOperation } from './utils/geometry';
+import { deriveSketchState, getOperationBounds, getSketchSegments, moveOperation } from './utils/geometry';
 import { getDefaultPocketStepOver } from './utils/pocketing';
 import { resolveMaterialId } from './utils/tooling';
 import type {
@@ -70,6 +84,32 @@ interface VisibleTool {
   label: string;
 }
 
+interface ToolbarButtonMeta {
+  icon: React.JSX.Element;
+  title?: string;
+}
+
+function getToolButtonMeta(toolId: ActiveTool, hotkey: number): ToolbarButtonMeta {
+  const title = `${toolId === 'sketch' ? 'Poly-Line' : toolId === 'arc' ? 'Poly-Arc' : TOOLS.find((tool) => tool.id === toolId)?.label || toolId} (Ctrl+${hotkey})`;
+
+  switch (toolId) {
+    case 'select':
+      return { icon: <MousePointer2 aria-hidden="true" size={16} />, title };
+    case 'drill':
+      return { icon: <Target aria-hidden="true" size={16} />, title };
+    case 'line':
+      return { icon: <Ruler aria-hidden="true" size={16} />, title };
+    case 'sketch':
+      return { icon: <PenLine aria-hidden="true" size={16} />, title };
+    case 'arc':
+      return { icon: <Workflow aria-hidden="true" size={16} />, title };
+    case 'rect':
+      return { icon: <RectangleHorizontal aria-hidden="true" size={16} />, title };
+    case 'circle':
+      return { icon: <Circle aria-hidden="true" size={16} />, title };
+  }
+}
+
 export default function App(): React.JSX.Element {
   const electron: ElectronBridge | null = typeof window !== 'undefined' ? window.electron || null : null;
   const initialState = useMemo<InitialState>(() => getInitialState(), []);
@@ -95,6 +135,7 @@ export default function App(): React.JSX.Element {
   const [sketchEdit, setSketchEdit] = useState<SketchEditState>({
     operationId: null,
     selectedSegmentIndex: null,
+    isNewSketch: false,
   });
   const [showToolpathPreview, setShowToolpathPreview] = useState(true);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
@@ -117,6 +158,16 @@ export default function App(): React.JSX.Element {
     if (selectedIds.length !== 1) return null;
     return operations.find((op) => op.id === selectedIds[0]) || null;
   }, [operations, selectedIds]);
+  const editingSketchOperation = useMemo(
+    () =>
+      sketchEdit.operationId
+        ? operations.find(
+            (operation): operation is SketchOperation =>
+              operation.id === sketchEdit.operationId && operation.type === 'sketch'
+          ) || null
+        : null,
+    [operations, sketchEdit.operationId]
+  );
   const toolpathPreview = useMemo(
     () => buildToolpathPreview({ operations, settings, tools }),
     [operations, settings, tools]
@@ -131,6 +182,12 @@ export default function App(): React.JSX.Element {
   );
   const isEditingSelectedSketch =
     selectedOperation?.type === 'sketch' && sketchEdit.operationId === selectedOperation.id;
+  const canCancelSketchCreation = Boolean(editingSketchOperation && sketchEdit.isNewSketch);
+  const canCancelSketchWithEscape = Boolean(
+    editingSketchOperation &&
+      sketchEdit.isNewSketch &&
+      getSketchSegments(editingSketchOperation).length === 0
+  );
   const visibleTools = useMemo<VisibleTool[]>(() => {
     if (isEditingSelectedSketch) {
       return TOOLS
@@ -173,6 +230,20 @@ export default function App(): React.JSX.Element {
         past,
         present: next,
         future: [],
+      };
+    });
+  }, []);
+
+  const previewOperations = useCallback((nextOrUpdater: OperationsUpdater) => {
+    setOperationsHistory((previous) => {
+      const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(previous.present) : nextOrUpdater;
+      if (!Array.isArray(next) || !operationsChanged(previous.present, next)) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        present: next,
       };
     });
   }, []);
@@ -269,6 +340,7 @@ export default function App(): React.JSX.Element {
     setSketchEdit({
       operationId: selectedOperation.id,
       selectedSegmentIndex: null,
+      isNewSketch: false,
     });
     setActiveTool('select');
   }, [selectedOperation]);
@@ -292,6 +364,7 @@ export default function App(): React.JSX.Element {
     setSketchEdit({
       operationId: id,
       selectedSegmentIndex: null,
+      isNewSketch: true,
     });
     setActiveTool('sketch');
   }, [addOperation, settings.cutDepth]);
@@ -382,8 +455,27 @@ export default function App(): React.JSX.Element {
     setSketchEdit({
       operationId: null,
       selectedSegmentIndex: null,
+      isNewSketch: false,
     });
   }, [operations, sketchEdit.operationId, updateOperation]);
+
+  const cancelSketchCreation = useCallback(() => {
+    if (!editingSketchOperation || !sketchEdit.isNewSketch) {
+      return;
+    }
+
+    commitOperations((previous) =>
+      previous.filter((operation) => operation.id !== editingSketchOperation.id)
+    );
+    setSelectedIds((previous) => previous.filter((id) => id !== editingSketchOperation.id));
+    setSketchEdit({
+      operationId: null,
+      selectedSegmentIndex: null,
+      isNewSketch: false,
+    });
+    setActiveTool('select');
+    setStatus('Canceled sketch creation');
+  }, [commitOperations, editingSketchOperation, sketchEdit.isNewSketch]);
 
   const selectSketchSegment = useCallback((segmentIndex: number | null) => {
     setSketchEdit((prev) => ({
@@ -497,7 +589,7 @@ export default function App(): React.JSX.Element {
     setStatus(`Applied ${activeMaterial?.name || 'material'} to ${operations.length} operation(s)`);
   }, [activeMaterial?.name, activeMaterialId, commitOperations, operations.length]);
 
-  const moveSelectedOperations = useCallback(
+  const previewMoveSelectedOperations = useCallback(
     ({ ids, sourceOperations, dx, dy }: MoveSelectedOperationsArgs) => {
       const selected = Array.isArray(ids) ? ids : [];
       if (selected.length === 0) return;
@@ -505,8 +597,8 @@ export default function App(): React.JSX.Element {
       const sourceMap = new Map((sourceOperations || []).map((item) => [item.id, item]));
       const selectedSet = new Set(selected);
 
-      commitOperations((prev) =>
-        prev.map((operation) => {
+      previewOperations(
+        (sourceOperations || []).map((operation) => {
           if (!selectedSet.has(operation.id)) {
             return operation;
           }
@@ -515,7 +607,43 @@ export default function App(): React.JSX.Element {
         })
       );
     },
-    [commitOperations]
+    [previewOperations]
+  );
+
+  const commitMoveSelectedOperations = useCallback(
+    ({ ids, sourceOperations, dx, dy }: MoveSelectedOperationsArgs) => {
+      const selected = Array.isArray(ids) ? ids : [];
+      if (selected.length === 0 || !Array.isArray(sourceOperations) || sourceOperations.length === 0) return;
+
+      const sourceMap = new Map((sourceOperations || []).map((item) => [item.id, item]));
+      const selectedSet = new Set(selected);
+      const nextOperations = sourceOperations.map((operation) => {
+        if (!selectedSet.has(operation.id)) {
+          return operation;
+        }
+        const base = sourceMap.get(operation.id) || operation;
+        return offsetOperation(base, dx, dy);
+      });
+
+      if (!operationsChanged(sourceOperations, nextOperations)) {
+        previewOperations(sourceOperations);
+        return;
+      }
+
+      setOperationsHistory((previous) => {
+        const past = [...previous.past, sourceOperations];
+        if (past.length > HISTORY_LIMIT) {
+          past.shift();
+        }
+
+        return {
+          past,
+          present: nextOperations,
+          future: [],
+        };
+      });
+    },
+    [previewOperations]
   );
 
   const deleteOperation = useCallback(
@@ -857,7 +985,7 @@ export default function App(): React.JSX.Element {
       setSketchEdit((prev) =>
         prev.operationId === null
           ? prev
-          : { operationId: null, selectedSegmentIndex: null }
+          : { operationId: null, selectedSegmentIndex: null, isNewSketch: false }
       );
     }
   }, [selectedOperation, sketchEdit.operationId]);
@@ -933,7 +1061,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isEditableElement(event.target)) {
+      if (event.defaultPrevented || isEditableElement(event.target)) {
         return;
       }
 
@@ -1001,6 +1129,12 @@ export default function App(): React.JSX.Element {
         event.preventDefault();
         cancelPastePlacement();
         setStatus('Paste mode canceled');
+        return;
+      }
+
+      if (event.key === 'Escape' && canCancelSketchWithEscape) {
+        event.preventDefault();
+        cancelSketchCreation();
         return;
       }
 
@@ -1085,6 +1219,8 @@ export default function App(): React.JSX.Element {
     cancelTransformPreview,
     commitTransformPreview,
     cancelPastePlacement,
+    cancelSketchCreation,
+    canCancelSketchWithEscape,
     copySelection,
     deleteSelectedSketchSegment,
     deleteSelection,
@@ -1108,33 +1244,64 @@ export default function App(): React.JSX.Element {
           <span className="topbar-subtitle">MPCNC / Marlin pattern editor</span>
         </div>
         <div className="topbar-tools">
-          {visibleTools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className={`tool-button ${activeTool === tool.id ? 'active' : ''}`}
-              onClick={() => handleToolButtonClick(tool.id)}
-            >
-              {tool.label}
-            </button>
-          ))}
+          {visibleTools.map((tool, index) => {
+            const meta = getToolButtonMeta(tool.id, index + 1);
+            return (
+              <button
+                key={tool.id}
+                type="button"
+                className={`tool-button ${activeTool === tool.id ? 'active' : ''}`}
+                title={meta.title}
+                onClick={() => handleToolButtonClick(tool.id)}
+              >
+                <span className="tool-button-content">
+                  {meta.icon}
+                  <span>{tool.label}</span>
+                </span>
+              </button>
+            );
+          })}
+          {canCancelSketchCreation ? (
+            <>
+              <span className="topbar-tools-divider" aria-hidden="true" />
+              <button type="button" className="tool-button danger" title="Cancel in-progress sketch" onClick={cancelSketchCreation}>
+                <span className="tool-button-content">
+                  <XCircle aria-hidden="true" size={16} />
+                  <span>Cancel Sketch</span>
+                </span>
+              </button>
+            </>
+          ) : null}
         </div>
         <div className="topbar-view-controls">
           <button
             type="button"
             className={`tool-button ${showToolpathPreview ? 'active' : ''}`}
+            title="Preview toolpaths"
             onClick={() => setShowToolpathPreview((current) => !current)}
           >
-            Preview
+            <span className="tool-button-content">
+              <Eye aria-hidden="true" size={16} />
+              <span>Preview</span>
+            </span>
           </button>
-          <button type="button" className="tool-button" onClick={() => requestZoom('out')}>
-            Zoom -
+          <button type="button" className="tool-button" title="Zoom out" onClick={() => requestZoom('out')}>
+            <span className="tool-button-content">
+              <Minus aria-hidden="true" size={16} />
+              <span>Zoom -</span>
+            </span>
           </button>
-          <button type="button" className="tool-button" onClick={() => requestZoom('in')}>
-            Zoom +
+          <button type="button" className="tool-button" title="Zoom in" onClick={() => requestZoom('in')}>
+            <span className="tool-button-content">
+              <Plus aria-hidden="true" size={16} />
+              <span>Zoom +</span>
+            </span>
           </button>
-          <button type="button" className="tool-button" onClick={() => requestZoom('reset')}>
-            Fit
+          <button type="button" className="tool-button" title="Fit workspace in view" onClick={() => requestZoom('reset')}>
+            <span className="tool-button-content">
+              <ScanSearch aria-hidden="true" size={16} />
+              <span>Fit</span>
+            </span>
           </button>
         </div>
       </header>
@@ -1182,7 +1349,8 @@ export default function App(): React.JSX.Element {
             onSelectOperation={handleSelectOperation}
             onSetSelection={handleSetSelection}
             onAddOperation={addOperation}
-            onMoveOperations={moveSelectedOperations}
+            onPreviewMoveOperations={previewMoveSelectedOperations}
+            onCommitMoveOperations={commitMoveSelectedOperations}
             activeToolId={activeToolId}
             activeMaterialId={activeMaterialId}
             defaultDrillDepth={settings.drillDepth}
@@ -1194,6 +1362,7 @@ export default function App(): React.JSX.Element {
             sketchEdit={sketchEdit}
             onUpdateOperation={updateOperation}
             onSelectSketchSegment={selectSketchSegment}
+            onCancelSketchCreation={cancelSketchCreation}
             showToolpathPreview={showToolpathPreview}
             toolpathPreview={toolpathPreview}
             transformHint={transformHint}

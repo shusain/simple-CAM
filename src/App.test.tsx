@@ -61,6 +61,8 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Poly-Arc' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cut Rect' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cut Circle' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select' })).toHaveAttribute('title', 'Select (Ctrl+1)');
+    expect(screen.getByRole('button', { name: 'New Sketch' })).toHaveAttribute('title', 'Poly-Line (Ctrl+4)');
   });
 
   it('creates a sketch and enters sketch edit tools when clicking New Sketch', () => {
@@ -70,7 +72,28 @@ describe('App', () => {
 
     expect(screen.getByRole('button', { name: 'Poly-Line' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Poly-Arc' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel Sketch' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New Sketch' })).not.toBeInTheDocument();
+  });
+
+  it('cancels an empty sketch from the toolbar action', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'New Sketch' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Sketch' }));
+
+    expect(screen.getByRole('button', { name: 'New Sketch' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Sketch' })).not.toBeInTheDocument();
+  });
+
+  it('cancels an empty sketch with escape', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'New Sketch' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.getByRole('button', { name: 'New Sketch' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Sketch' })).not.toBeInTheDocument();
   });
 
   it('starts a new sketch from ctrl+number and exposes sketch edit tools', () => {

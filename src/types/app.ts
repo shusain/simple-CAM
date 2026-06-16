@@ -9,6 +9,7 @@ export interface OctoprintSettings {
 export interface SketchEditState {
   operationId: string | null;
   selectedSegmentIndex: number | null;
+  isNewSketch: boolean;
 }
 
 export interface ZoomRequest {

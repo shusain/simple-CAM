@@ -61,6 +61,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
 .topbar-view-controls {
@@ -85,6 +86,24 @@ textarea {
   background: #1e293b;
   border-color: #38bdf8;
   color: #bae6fd;
+}
+
+.tool-button.danger {
+  border-color: #ef4444;
+  color: #fecaca;
+}
+
+.tool-button-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-tools-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #334155;
+  opacity: 0.9;
 }
 
 .workspace-grid {
@@ -123,6 +142,43 @@ textarea {
 .panel h2 {
   margin: 4px 0 8px;
   font-size: 1rem;
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #334155;
+}
+
+.panel-tab {
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #cbd5e1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.panel-tab.active {
+  border-color: #38bdf8;
+  background: #082f49;
+  color: #e0f2fe;
+}
+
+.panel-section-toggle {
+  width: 100%;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.panel-section-toggle:hover {
+  border-color: #64748b;
 }
 
 .panel h3 {
@@ -196,6 +252,42 @@ textarea {
 .section-block > button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.project-action-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.icon-button {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.icon-button svg,
+.tool-button svg {
+  flex: 0 0 auto;
+}
+
+.icon-button:hover {
+  border-color: #64748b;
+}
+
+.icon-button.accent {
+  border-color: #0ea5e9;
+  color: #bae6fd;
 }
 
 .button-column button,
