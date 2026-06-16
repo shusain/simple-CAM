@@ -99,6 +99,14 @@ textarea {
   gap: 6px;
 }
 
+.icon-only-toolbar-button {
+  width: 38px;
+  min-width: 38px;
+  padding: 6px;
+  display: inline-grid;
+  place-items: center;
+}
+
 .topbar-tools-divider {
   width: 1px;
   align-self: stretch;
@@ -256,7 +264,7 @@ textarea {
 
 .project-action-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 12px;
 }
@@ -286,6 +294,57 @@ textarea {
 }
 
 .icon-button.accent {
+  border-color: #0ea5e9;
+  color: #bae6fd;
+}
+
+.import-svg-button {
+  border-color: #0891b2;
+  color: #67e8f9;
+}
+
+.import-svg-button:hover {
+  border-color: #22d3ee;
+}
+
+.import-dxf-button {
+  border-color: #ca8a04;
+  color: #fde68a;
+}
+
+.import-dxf-button:hover {
+  border-color: #facc15;
+}
+
+.save-sketch-button {
+  border-color: #16a34a;
+  color: #bbf7d0;
+}
+
+.import-cut-modal {
+  max-width: 460px;
+}
+
+.import-cut-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.import-cut-actions button {
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 9px 10px;
+}
+
+.import-cut-actions button:hover {
+  border-color: #64748b;
+}
+
+.import-cut-actions .accent {
   border-color: #0ea5e9;
   color: #bae6fd;
 }

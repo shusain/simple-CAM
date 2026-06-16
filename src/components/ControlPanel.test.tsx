@@ -33,6 +33,8 @@ function buildProps(overrides: Partial<ControlPanelProps> = {}): ControlPanelPro
     onDeleteTool: vi.fn(),
     onNewProject: vi.fn(),
     onOpenProject: vi.fn(),
+    onImportSvg: vi.fn(),
+    onImportDxf: vi.fn(),
     onSaveProject: vi.fn(),
     onExportGcode: vi.fn(),
     canSendToOctoprint: false,
@@ -52,6 +54,8 @@ describe('ControlPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New project' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import SVG' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import DXF' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export G-code' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply material to all operations' }));
@@ -59,6 +63,8 @@ describe('ControlPanel', () => {
 
     expect(props.onNewProject).toHaveBeenCalledTimes(1);
     expect(props.onOpenProject).toHaveBeenCalledTimes(1);
+    expect(props.onImportSvg).toHaveBeenCalledTimes(1);
+    expect(props.onImportDxf).toHaveBeenCalledTimes(1);
     expect(props.onSaveProject).toHaveBeenCalledTimes(1);
     expect(props.onExportGcode).toHaveBeenCalledTimes(1);
     expect(props.onApplyMaterialToAll).toHaveBeenCalledTimes(1);

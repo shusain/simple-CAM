@@ -9,6 +9,8 @@ function registerMenuHandler(channel: string, callback: () => void): () => void 
 
 const electronBridge: ElectronBridge = {
   openProject: () => ipcRenderer.invoke('project:open'),
+  openSvgImport: () => ipcRenderer.invoke('import:svg:open'),
+  openDxfImport: () => ipcRenderer.invoke('import:dxf:open'),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
   exportGcode: (payload) => ipcRenderer.invoke('gcode:export', payload),
   getOctoprintSettings: () => ipcRenderer.invoke('octoprint:getSettings'),
@@ -16,6 +18,8 @@ const electronBridge: ElectronBridge = {
   uploadToOctoprint: (payload) => ipcRenderer.invoke('octoprint:upload', payload),
   onMenuNew: (callback) => registerMenuHandler('menu:new', callback),
   onMenuOpen: (callback) => registerMenuHandler('menu:open', callback),
+  onMenuImportSvg: (callback) => registerMenuHandler('menu:importSvg', callback),
+  onMenuImportDxf: (callback) => registerMenuHandler('menu:importDxf', callback),
   onMenuSave: (callback) => registerMenuHandler('menu:save', callback),
   onMenuExportGcode: (callback) => registerMenuHandler('menu:exportGcode', callback),
   onMenuOctoprintSettings: (callback) => registerMenuHandler('menu:octoprintSettings', callback),
