@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
+import NumericInput from './common/NumericInput';
 import type {
   CutSide,
   Operation,
@@ -13,6 +14,38 @@ import {
   updateSketchStart,
 } from './operationsPanel/helpers';
 import type { OperationsPanelProps } from './operationsPanel/types';
+
+interface NumericFieldRowProps {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  step?: number;
+  min?: number;
+  max?: number;
+}
+
+function NumericFieldRow({
+  label,
+  value,
+  onChange,
+  step = 0.1,
+  min,
+  max,
+}: NumericFieldRowProps): React.JSX.Element {
+  return (
+    <label className="field-row">
+      <span>{label}</span>
+      <NumericInput
+        aria-label={label}
+        value={value}
+        step={step}
+        min={min}
+        max={max}
+        onChange={onChange}
+      />
+    </label>
+  );
+}
 
 export default function OperationsPanel({
   operations,
@@ -111,77 +144,17 @@ export default function OperationsPanel({
 
           {selectedOperation.type === 'drill' ? (
             <>
-              <label className="field-row">
-                <span>X (mm)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.x}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { x: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Y (mm)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.y}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { y: Number(event.target.value) })
-                  }
-                />
-              </label>
+              <NumericFieldRow label="X (mm)" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
+              <NumericFieldRow label="Y (mm)" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
             </>
           ) : null}
 
           {selectedOperation.type === 'line' ? (
             <>
-              <label className="field-row">
-                <span>X1</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.x1}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { x1: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Y1</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.y1}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { y1: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>X2</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.x2}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { x2: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Y2</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.y2}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { y2: Number(event.target.value) })
-                  }
-                />
-              </label>
+              <NumericFieldRow label="X1" value={selectedOperation.x1} onChange={(value) => onUpdateOperation(selectedOperation.id, { x1: value })} />
+              <NumericFieldRow label="Y1" value={selectedOperation.y1} onChange={(value) => onUpdateOperation(selectedOperation.id, { y1: value })} />
+              <NumericFieldRow label="X2" value={selectedOperation.x2} onChange={(value) => onUpdateOperation(selectedOperation.id, { x2: value })} />
+              <NumericFieldRow label="Y2" value={selectedOperation.y2} onChange={(value) => onUpdateOperation(selectedOperation.id, { y2: value })} />
             </>
           ) : null}
 
@@ -194,36 +167,16 @@ export default function OperationsPanel({
               {sketchStart ? (
                 <>
                   <h3>Sketch start</h3>
-                  <label className="field-row">
-                    <span>Start X</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={sketchStart.x}
-                      onChange={(event) =>
-                        updateSketchStart(
-                          selectedOperation,
-                          { x: Number(event.target.value) },
-                          onUpdateOperation
-                        )
-                      }
-                    />
-                  </label>
-                  <label className="field-row">
-                    <span>Start Y</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={sketchStart.y}
-                      onChange={(event) =>
-                        updateSketchStart(
-                          selectedOperation,
-                          { y: Number(event.target.value) },
-                          onUpdateOperation
-                        )
-                      }
-                    />
-                  </label>
+                  <NumericFieldRow
+                    label="Start X"
+                    value={sketchStart.x}
+                    onChange={(value) => updateSketchStart(selectedOperation, { x: value }, onUpdateOperation)}
+                  />
+                  <NumericFieldRow
+                    label="Start Y"
+                    value={sketchStart.y}
+                    onChange={(value) => updateSketchStart(selectedOperation, { y: value }, onUpdateOperation)}
+                  />
                 </>
               ) : null}
               <label className="field-row checkbox-row">
@@ -336,72 +289,36 @@ export default function OperationsPanel({
                         <span>Segment {index + 1}</span>
                         <input type="text" value={segment.type.toUpperCase()} readOnly />
                       </label>
-                      <label className="field-row">
-                        <span>End X</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={segment.x2}
-                          onChange={(event) =>
-                            updateSketchSegment(
-                              selectedOperation,
-                              index,
-                              { x2: Number(event.target.value) },
-                              onUpdateOperation
-                            )
-                          }
-                        />
-                      </label>
-                      <label className="field-row">
-                        <span>End Y</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={segment.y2}
-                          onChange={(event) =>
-                            updateSketchSegment(
-                              selectedOperation,
-                              index,
-                              { y2: Number(event.target.value) },
-                              onUpdateOperation
-                            )
-                          }
-                        />
-                      </label>
+                      <NumericFieldRow
+                        label="End X"
+                        value={segment.x2}
+                        onChange={(value) =>
+                          updateSketchSegment(selectedOperation, index, { x2: value }, onUpdateOperation)
+                        }
+                      />
+                      <NumericFieldRow
+                        label="End Y"
+                        value={segment.y2}
+                        onChange={(value) =>
+                          updateSketchSegment(selectedOperation, index, { y2: value }, onUpdateOperation)
+                        }
+                      />
                       {segment.type === 'arc' ? (
                         <>
-                          <label className="field-row">
-                            <span>Through X</span>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={segment.throughX}
-                              onChange={(event) =>
-                                updateSketchSegment(
-                                  selectedOperation,
-                                  index,
-                                  { throughX: Number(event.target.value) },
-                                  onUpdateOperation
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="field-row">
-                            <span>Through Y</span>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={segment.throughY}
-                              onChange={(event) =>
-                                updateSketchSegment(
-                                  selectedOperation,
-                                  index,
-                                  { throughY: Number(event.target.value) },
-                                  onUpdateOperation
-                                )
-                              }
-                            />
-                          </label>
+                          <NumericFieldRow
+                            label="Through X"
+                            value={segment.throughX}
+                            onChange={(value) =>
+                              updateSketchSegment(selectedOperation, index, { throughX: value }, onUpdateOperation)
+                            }
+                          />
+                          <NumericFieldRow
+                            label="Through Y"
+                            value={segment.throughY}
+                            onChange={(value) =>
+                              updateSketchSegment(selectedOperation, index, { throughY: value }, onUpdateOperation)
+                            }
+                          />
                         </>
                       ) : null}
                     </div>
@@ -422,48 +339,37 @@ export default function OperationsPanel({
                   </label>
                   {selectedOperation.tabsEnabled ? (
                     <>
-                      <label className="field-row">
-                        <span>Tab count</span>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={selectedOperation.tabCount ?? 2}
-                          onChange={(event) =>
-                            onUpdateOperation(selectedOperation.id, {
-                              tabCount: Math.max(1, Math.round(Number(event.target.value) || 1)),
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="field-row">
-                        <span>Tab width</span>
-                        <input
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          value={selectedOperation.tabWidth ?? 1}
-                          onChange={(event) =>
-                            onUpdateOperation(selectedOperation.id, {
-                              tabWidth: Math.max(0.1, Number(event.target.value) || 0.1),
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="field-row">
-                        <span>Tab height</span>
-                        <input
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          value={selectedOperation.tabHeight ?? 1}
-                          onChange={(event) =>
-                            onUpdateOperation(selectedOperation.id, {
-                              tabHeight: Math.max(0.1, Number(event.target.value) || 0.1),
-                            })
-                          }
-                        />
-                      </label>
+                      <NumericFieldRow
+                        label="Tab count"
+                        value={selectedOperation.tabCount ?? 2}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateOperation(selectedOperation.id, {
+                            tabCount: Math.max(1, Math.round(value || 1)),
+                          })
+                        }
+                      />
+                      <NumericFieldRow
+                        label="Tab width"
+                        value={selectedOperation.tabWidth ?? 1}
+                        min={0.1}
+                        onChange={(value) =>
+                          onUpdateOperation(selectedOperation.id, {
+                            tabWidth: Math.max(0.1, value || 0.1),
+                          })
+                        }
+                      />
+                      <NumericFieldRow
+                        label="Tab height"
+                        value={selectedOperation.tabHeight ?? 1}
+                        min={0.1}
+                        onChange={(value) =>
+                          onUpdateOperation(selectedOperation.id, {
+                            tabHeight: Math.max(0.1, value || 0.1),
+                          })
+                        }
+                      />
                     </>
                   ) : null}
                 </>
@@ -473,66 +379,21 @@ export default function OperationsPanel({
 
           {selectedOperation.type === 'rect' ? (
             <>
-              <label className="field-row">
-                <span>X</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.x}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { x: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Y</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.y}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { y: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Width</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.width}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { width: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Height</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.height}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { height: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Corner radius</span>
-                <input
-                  type="number"
-                  min="0"
-                  max={rectCornerMax}
-                  step="0.1"
-                  value={selectedOperation.cornerRadius ?? 0}
-                  onChange={(event) => {
-                    const next = Math.max(0, Number(event.target.value) || 0);
-                    onUpdateOperation(selectedOperation.id, {
-                      cornerRadius: Math.min(next, rectCornerMax),
-                    });
-                  }}
-                />
-              </label>
+              <NumericFieldRow label="X" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
+              <NumericFieldRow label="Y" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
+              <NumericFieldRow label="Width" value={selectedOperation.width} onChange={(value) => onUpdateOperation(selectedOperation.id, { width: value })} />
+              <NumericFieldRow label="Height" value={selectedOperation.height} onChange={(value) => onUpdateOperation(selectedOperation.id, { height: value })} />
+              <NumericFieldRow
+                label="Corner radius"
+                value={selectedOperation.cornerRadius ?? 0}
+                min={0}
+                max={rectCornerMax}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    cornerRadius: Math.min(Math.max(0, value || 0), rectCornerMax),
+                  })
+                }
+              />
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
                 <input
@@ -545,48 +406,37 @@ export default function OperationsPanel({
               </label>
               {selectedOperation.tabsEnabled ? (
                 <>
-                  <label className="field-row">
-                    <span>Tab count</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={selectedOperation.tabCount ?? 2}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, {
-                          tabCount: Math.max(1, Math.round(Number(event.target.value) || 1)),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field-row">
-                    <span>Tab width</span>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={selectedOperation.tabWidth ?? 1}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, {
-                          tabWidth: Math.max(0.1, Number(event.target.value) || 0.1),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field-row">
-                    <span>Tab height</span>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={selectedOperation.tabHeight ?? 1}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, {
-                          tabHeight: Math.max(0.1, Number(event.target.value) || 0.1),
-                        })
-                      }
-                    />
-                  </label>
+                  <NumericFieldRow
+                    label="Tab count"
+                    value={selectedOperation.tabCount ?? 2}
+                    min={1}
+                    step={1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        tabCount: Math.max(1, Math.round(value || 1)),
+                      })
+                    }
+                  />
+                  <NumericFieldRow
+                    label="Tab width"
+                    value={selectedOperation.tabWidth ?? 1}
+                    min={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        tabWidth: Math.max(0.1, value || 0.1),
+                      })
+                    }
+                  />
+                  <NumericFieldRow
+                    label="Tab height"
+                    value={selectedOperation.tabHeight ?? 1}
+                    min={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        tabHeight: Math.max(0.1, value || 0.1),
+                      })
+                    }
+                  />
                 </>
               ) : null}
             </>
@@ -594,42 +444,18 @@ export default function OperationsPanel({
 
           {selectedOperation.type === 'circle' ? (
             <>
-              <label className="field-row">
-                <span>Center X</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.x}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { x: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Center Y</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedOperation.y}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, { y: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-row">
-                <span>Radius</span>
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={selectedOperation.radius}
-                  onChange={(event) =>
-                    onUpdateOperation(selectedOperation.id, {
-                      radius: Math.max(0.1, Number(event.target.value) || 0.1),
-                    })
-                  }
-                />
-              </label>
+              <NumericFieldRow label="Center X" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
+              <NumericFieldRow label="Center Y" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
+              <NumericFieldRow
+                label="Radius"
+                value={selectedOperation.radius}
+                min={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    radius: Math.max(0.1, value || 0.1),
+                  })
+                }
+              />
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
                 <input
@@ -642,48 +468,37 @@ export default function OperationsPanel({
               </label>
               {selectedOperation.tabsEnabled ? (
                 <>
-                  <label className="field-row">
-                    <span>Tab count</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={selectedOperation.tabCount ?? 2}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, {
-                          tabCount: Math.max(1, Math.round(Number(event.target.value) || 1)),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field-row">
-                    <span>Tab width</span>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={selectedOperation.tabWidth ?? 1}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, {
-                          tabWidth: Math.max(0.1, Number(event.target.value) || 0.1),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field-row">
-                    <span>Tab height</span>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={selectedOperation.tabHeight ?? 1}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, {
-                          tabHeight: Math.max(0.1, Number(event.target.value) || 0.1),
-                        })
-                      }
-                    />
-                  </label>
+                  <NumericFieldRow
+                    label="Tab count"
+                    value={selectedOperation.tabCount ?? 2}
+                    min={1}
+                    step={1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        tabCount: Math.max(1, Math.round(value || 1)),
+                      })
+                    }
+                  />
+                  <NumericFieldRow
+                    label="Tab width"
+                    value={selectedOperation.tabWidth ?? 1}
+                    min={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        tabWidth: Math.max(0.1, value || 0.1),
+                      })
+                    }
+                  />
+                  <NumericFieldRow
+                    label="Tab height"
+                    value={selectedOperation.tabHeight ?? 1}
+                    min={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        tabHeight: Math.max(0.1, value || 0.1),
+                      })
+                    }
+                  />
                 </>
               ) : null}
             </>
@@ -698,34 +513,9 @@ export default function OperationsPanel({
           </button>
 
           <h3>Linear repeat</h3>
-          <label className="field-row">
-            <span>Copies</span>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={repeatCount}
-              onChange={(event) => setRepeatCount(Math.max(1, Number(event.target.value) || 1))}
-            />
-          </label>
-          <label className="field-row">
-            <span>Offset X (mm)</span>
-            <input
-              type="number"
-              step="0.1"
-              value={repeatOffsetX}
-              onChange={(event) => setRepeatOffsetX(Number(event.target.value) || 0)}
-            />
-          </label>
-          <label className="field-row">
-            <span>Offset Y (mm)</span>
-            <input
-              type="number"
-              step="0.1"
-              value={repeatOffsetY}
-              onChange={(event) => setRepeatOffsetY(Number(event.target.value) || 0)}
-            />
-          </label>
+          <NumericFieldRow label="Copies" value={repeatCount} min={1} step={1} onChange={(value) => setRepeatCount(Math.max(1, Math.round(value || 1)))} />
+          <NumericFieldRow label="Offset X (mm)" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />
+          <NumericFieldRow label="Offset Y (mm)" value={repeatOffsetY} onChange={(value) => setRepeatOffsetY(value || 0)} />
           <button
             type="button"
             className="accent"
@@ -750,34 +540,9 @@ export default function OperationsPanel({
                 actions below.
               </p>
               <h3>Linear repeat</h3>
-              <label className="field-row">
-                <span>Copies</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={repeatCount}
-                  onChange={(event) => setRepeatCount(Math.max(1, Number(event.target.value) || 1))}
-                />
-              </label>
-              <label className="field-row">
-                <span>Offset X (mm)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={repeatOffsetX}
-                  onChange={(event) => setRepeatOffsetX(Number(event.target.value) || 0)}
-                />
-              </label>
-              <label className="field-row">
-                <span>Offset Y (mm)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={repeatOffsetY}
-                  onChange={(event) => setRepeatOffsetY(Number(event.target.value) || 0)}
-                />
-              </label>
+              <NumericFieldRow label="Copies" value={repeatCount} min={1} step={1} onChange={(value) => setRepeatCount(Math.max(1, Math.round(value || 1)))} />
+              <NumericFieldRow label="Offset X (mm)" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />
+              <NumericFieldRow label="Offset Y (mm)" value={repeatOffsetY} onChange={(value) => setRepeatOffsetY(value || 0)} />
               <div className="button-column">
                 <button
                   type="button"

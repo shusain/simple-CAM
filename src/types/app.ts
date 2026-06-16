@@ -21,6 +21,21 @@ export interface PastePreview {
   anchor: Point;
 }
 
+export type TransformMode = 'move' | 'rotate' | 'scale';
+
+export type TransformAxis = 'x' | 'y' | null;
+
+export interface TransformSession {
+  mode: TransformMode;
+  axis: TransformAxis;
+  input: string;
+  sourceOperations: Operation[];
+  operationIds: string[];
+  pivot: Point;
+  anchorPoint: Point;
+  currentPoint: Point;
+}
+
 export interface HistoryState<T> {
   past: T[];
   present: T;

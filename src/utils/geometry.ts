@@ -6,11 +6,17 @@ import type {
   SketchArcSegment,
   SketchOperation,
   SketchSegment,
+  TransformAxis,
 } from '../types';
 import { sanitizeMaterialId, sanitizeToolId } from './tooling';
 
 type RawRecord = Record<string, unknown>;
 type OperationBounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+export interface BoundsCenter extends Point {
+  width: number;
+  height: number;
+}
 
 export type SketchIntegrityIssueCode =
   | 'empty'
@@ -117,6 +123,96 @@ export function distance(a: Point, b: Point): number {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function rotatePoint(point: Point, pivot: Point, angleRadians: number): Point {
+  const dx = point.x - pivot.x;
+  const dy = point.y - pivot.y;
+  const cos = Math.cos(angleRadians);
+  const sin = Math.sin(angleRadians);
+  return {
+    x: pivot.x + dx * cos - dy * sin,
+    y: pivot.y + dx * sin + dy * cos,
+  };
+}
+
+function scalePoint(point: Point, pivot: Point, scaleX: number, scaleY: number): Point {
+  return {
+    x: pivot.x + (point.x - pivot.x) * scaleX,
+    y: pivot.y + (point.y - pivot.y) * scaleY,
+  };
+}
+
+function transformPoint(point: Point, pivot: Point, angleRadians: number, scaleX: number, scaleY: number): Point {
+  const scaled = scalePoint(point, pivot, scaleX, scaleY);
+  return angleRadians === 0 ? scaled : rotatePoint(scaled, pivot, angleRadians);
+}
+
+function circleToSketchSegments(
+  operation: Extract<Operation, { type: 'circle' }>,
+  circleSegments = 48
+): SketchSegment[] {
+  const steps = Math.max(12, Math.floor(circleSegments || 48));
+  const points: Point[] = [];
+
+  for (let index = 0; index < steps; index += 1) {
+    const theta = (Math.PI * 2 * index) / steps;
+    points.push({
+      x: operation.x + Math.cos(theta) * operation.radius,
+      y: operation.y + Math.sin(theta) * operation.radius,
+    });
+  }
+
+  return points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return {
+      type: 'line' as const,
+      x1: point.x,
+      y1: point.y,
+      x2: next.x,
+      y2: next.y,
+    };
+  });
+}
+
+function rectToSketchSegments(operation: Extract<Operation, { type: 'rect' }>): SketchSegment[] {
+  const rect = normalizeRect(operation.x, operation.y, operation.width, operation.height);
+  const corners: Point[] = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ];
+
+  return corners.map((corner, index) => {
+    const next = corners[(index + 1) % corners.length];
+    return {
+      type: 'line' as const,
+      x1: corner.x,
+      y1: corner.y,
+      x2: next.x,
+      y2: next.y,
+    };
+  });
+}
+
+function buildSketchFromSegments(source: Operation, segments: SketchSegment[], closed: boolean): SketchOperation {
+  const tabsEnabled = 'tabsEnabled' in source ? Boolean(source.tabsEnabled) && closed : false;
+  const cutSide = 'cutSide' in source ? normalizeCutSideValue(source.cutSide, closed ? 'outside' : 'along') : closed ? 'outside' : 'along';
+  return {
+    id: source.id,
+    type: 'sketch',
+    depth: source.depth,
+    toolId: source.toolId,
+    materialId: source.materialId,
+    segments,
+    closed,
+    cutSide: closed ? cutSide === 'along' ? 'outside' : cutSide : 'along',
+    tabsEnabled,
+    tabCount: 'tabCount' in source ? Math.max(1, Number(source.tabCount) || 1) : 2,
+    tabWidth: 'tabWidth' in source ? Math.max(0.1, Number(source.tabWidth) || 1) : 1,
+    tabHeight: 'tabHeight' in source ? Math.max(0.1, Number(source.tabHeight) || 1) : 1,
+  };
 }
 
 function normalizeAngle(angle: number): number {
@@ -668,6 +764,33 @@ export function getOperationBounds(operation: Operation | null | undefined): Ope
   );
 }
 
+export function getOperationsCenter(operations: Operation[]): BoundsCenter | null {
+  const bounds = operations
+    .map((operation) => getOperationBounds(operation))
+    .filter((bound): bound is OperationBounds => Boolean(bound));
+
+  if (bounds.length === 0) {
+    return null;
+  }
+
+  const merged = bounds.reduce<OperationBounds>(
+    (acc, bound) => ({
+      minX: Math.min(acc.minX, bound.minX),
+      minY: Math.min(acc.minY, bound.minY),
+      maxX: Math.max(acc.maxX, bound.maxX),
+      maxY: Math.max(acc.maxY, bound.maxY),
+    }),
+    bounds[0]
+  );
+
+  return {
+    x: (merged.minX + merged.maxX) / 2,
+    y: (merged.minY + merged.maxY) / 2,
+    width: merged.maxX - merged.minX,
+    height: merged.maxY - merged.minY,
+  };
+}
+
 export function pointToSegmentDistance(point: Point, a: Point, b: Point): number {
   const ax = a.x;
   const ay = a.y;
@@ -804,6 +927,240 @@ export function moveOperation(operation: Operation | null | undefined, dx: numbe
           }
     ),
   };
+}
+
+export function rotateOperation(
+  operation: Operation | null | undefined,
+  angleRadians: number,
+  pivot: Point
+): Operation | null | undefined {
+  if (!operation || Math.abs(angleRadians) <= 0.0000001) {
+    return operation;
+  }
+
+  if (operation.type === 'drill') {
+    return { ...operation, ...rotatePoint({ x: operation.x, y: operation.y }, pivot, angleRadians) };
+  }
+
+  if (operation.type === 'line') {
+    const start = rotatePoint({ x: operation.x1, y: operation.y1 }, pivot, angleRadians);
+    const end = rotatePoint({ x: operation.x2, y: operation.y2 }, pivot, angleRadians);
+    return {
+      ...operation,
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+    };
+  }
+
+  if (operation.type === 'circle') {
+    const center = rotatePoint({ x: operation.x, y: operation.y }, pivot, angleRadians);
+    return {
+      ...operation,
+      x: center.x,
+      y: center.y,
+    };
+  }
+
+  if (operation.type === 'rect') {
+    const segments = rectToSketchSegments(operation).map((segment) => ({
+      type: 'line' as const,
+      ...(() => {
+        const start = rotatePoint({ x: segment.x1, y: segment.y1 }, pivot, angleRadians);
+        const end = rotatePoint({ x: segment.x2, y: segment.y2 }, pivot, angleRadians);
+        return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+      })(),
+    }));
+    const sketch = buildSketchFromSegments(operation, segments, true);
+    return {
+      ...sketch,
+      ...deriveSketchState(sketch, segments),
+    };
+  }
+
+  const segments = getSketchSegments(operation).map((segment) => {
+    const start = rotatePoint({ x: segment.x1, y: segment.y1 }, pivot, angleRadians);
+    const end = rotatePoint({ x: segment.x2, y: segment.y2 }, pivot, angleRadians);
+    if (segment.type === 'arc') {
+      const through = rotatePoint({ x: segment.throughX, y: segment.throughY }, pivot, angleRadians);
+      return {
+        ...segment,
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+        throughX: through.x,
+        throughY: through.y,
+      };
+    }
+
+    return {
+      ...segment,
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+    };
+  });
+
+  return {
+    ...operation,
+    ...deriveSketchState(operation, segments),
+  };
+}
+
+export function scaleOperation(
+  operation: Operation | null | undefined,
+  scaleX: number,
+  scaleY: number,
+  pivot: Point,
+  circleSegments = 48
+): Operation | null | undefined {
+  if (!operation || (Math.abs(scaleX - 1) <= 0.0000001 && Math.abs(scaleY - 1) <= 0.0000001)) {
+    return operation;
+  }
+
+  if (operation.type === 'drill') {
+    return { ...operation, ...scalePoint({ x: operation.x, y: operation.y }, pivot, scaleX, scaleY) };
+  }
+
+  if (operation.type === 'line') {
+    const start = scalePoint({ x: operation.x1, y: operation.y1 }, pivot, scaleX, scaleY);
+    const end = scalePoint({ x: operation.x2, y: operation.y2 }, pivot, scaleX, scaleY);
+    return {
+      ...operation,
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+    };
+  }
+
+  if (operation.type === 'rect') {
+    const origin = scalePoint({ x: operation.x, y: operation.y }, pivot, scaleX, scaleY);
+    const farCorner = scalePoint(
+      { x: operation.x + operation.width, y: operation.y + operation.height },
+      pivot,
+      scaleX,
+      scaleY
+    );
+    const normalized = normalizeRect(origin.x, origin.y, farCorner.x - origin.x, farCorner.y - origin.y);
+    return {
+      ...operation,
+      x: normalized.x,
+      y: normalized.y,
+      width: normalized.width,
+      height: normalized.height,
+      cornerRadius: Math.max(0, operation.cornerRadius * Math.min(Math.abs(scaleX), Math.abs(scaleY))),
+    };
+  }
+
+  if (operation.type === 'circle') {
+    const center = scalePoint({ x: operation.x, y: operation.y }, pivot, scaleX, scaleY);
+    if (Math.abs(Math.abs(scaleX) - Math.abs(scaleY)) <= 0.000001) {
+      return {
+        ...operation,
+        x: center.x,
+        y: center.y,
+        radius: operation.radius * Math.abs(scaleX),
+      };
+    }
+
+    const transformedSegments = circleToSketchSegments(operation, circleSegments).map((segment) => {
+      const start = scalePoint({ x: segment.x1, y: segment.y1 }, pivot, scaleX, scaleY);
+      const end = scalePoint({ x: segment.x2, y: segment.y2 }, pivot, scaleX, scaleY);
+      return {
+        type: 'line' as const,
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+      };
+    });
+    const sketch = buildSketchFromSegments(operation, transformedSegments, true);
+    return {
+      ...sketch,
+      ...deriveSketchState(sketch, transformedSegments),
+    };
+  }
+
+  const segments = getSketchSegments(operation).map((segment) => {
+    const start = scalePoint({ x: segment.x1, y: segment.y1 }, pivot, scaleX, scaleY);
+    const end = scalePoint({ x: segment.x2, y: segment.y2 }, pivot, scaleX, scaleY);
+    if (segment.type === 'arc') {
+      const through = scalePoint({ x: segment.throughX, y: segment.throughY }, pivot, scaleX, scaleY);
+      return {
+        ...segment,
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+        throughX: through.x,
+        throughY: through.y,
+      };
+    }
+
+    return {
+      ...segment,
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+    };
+  });
+
+  return {
+    ...operation,
+    ...deriveSketchState(operation, segments),
+  };
+}
+
+export function transformOperation(
+  operation: Operation | null | undefined,
+  args: {
+    dx?: number;
+    dy?: number;
+    angleRadians?: number;
+    scaleX?: number;
+    scaleY?: number;
+    pivot?: Point;
+    circleSegments?: number;
+  }
+): Operation | null | undefined {
+  if (!operation) {
+    return operation;
+  }
+
+  let next = operation;
+  const dx = args.dx || 0;
+  const dy = args.dy || 0;
+  const angleRadians = args.angleRadians || 0;
+  const scaleX = args.scaleX ?? 1;
+  const scaleY = args.scaleY ?? 1;
+  const pivot = args.pivot || { x: 0, y: 0 };
+
+  if (dx !== 0 || dy !== 0) {
+    next = moveOperation(next, dx, dy) as Operation;
+  }
+  if (scaleX !== 1 || scaleY !== 1) {
+    next = scaleOperation(next, scaleX, scaleY, pivot, args.circleSegments) as Operation;
+  }
+  if (angleRadians !== 0) {
+    next = rotateOperation(next, angleRadians, pivot) as Operation;
+  }
+
+  return next;
+}
+
+export function constrainDeltaToAxis(delta: Point, axis: TransformAxis): Point {
+  if (axis === 'x') {
+    return { x: delta.x, y: 0 };
+  }
+  if (axis === 'y') {
+    return { x: 0, y: delta.y };
+  }
+  return delta;
 }
 
 export function sanitizeOperation(raw: unknown): Operation | null {

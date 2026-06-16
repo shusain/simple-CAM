@@ -15,6 +15,7 @@ import {
   isSketchTool,
   offsetOperation,
   rectsOverlap,
+  switchSketchInsertDraftMode,
   updateSketchHandle,
 } from './sketchEditing';
 import type { DrawDraft } from '../../types';
@@ -189,6 +190,39 @@ describe('canvas sketchEditing helpers', () => {
       throughY: -1,
     });
     expect(closed.nextDraft).toBeNull();
+  });
+
+  it('preserves the current sketch chain start when switching between line and arc tools', () => {
+    expect(
+      switchSketchInsertDraftMode(
+        {
+          mode: 'arc',
+          startPoint: { x: 8, y: 3 },
+          chainStartPoint: { x: 1, y: 1 },
+          endPoint: { x: 10, y: 3 },
+        },
+        'sketch'
+      )
+    ).toEqual({
+      mode: 'sketch',
+      startPoint: { x: 8, y: 3 },
+      chainStartPoint: { x: 1, y: 1 },
+    });
+
+    expect(
+      switchSketchInsertDraftMode(
+        {
+          mode: 'sketch',
+          startPoint: { x: 8, y: 3 },
+          chainStartPoint: { x: 1, y: 1 },
+        },
+        'arc'
+      )
+    ).toEqual({
+      mode: 'arc',
+      startPoint: { x: 8, y: 3 },
+      chainStartPoint: { x: 1, y: 1 },
+    });
   });
 
   it('creates handles, display map, and hit detection for sketch elements', () => {

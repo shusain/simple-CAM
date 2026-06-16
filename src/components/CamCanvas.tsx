@@ -25,6 +25,7 @@ import type {
 } from './canvas/types';
 import { buildTransform, canvasToWorld, clampCenter } from './canvas/viewport';
 import { renderCanvasScene } from './canvas/drawing';
+import { buildCanvasOverlayHints } from './canvas/overlay';
 import {
   buildNextArcInsertDraft,
   buildNextLineInsertDraft,
@@ -37,6 +38,7 @@ import {
   isSketchTool,
   offsetOperation,
   rectsOverlap,
+  switchSketchInsertDraftMode,
   updateSketchHandle,
 } from './canvas/sketchEditing';
 
@@ -47,6 +49,7 @@ export default function CamCanvas({
   activeTool,
   settings,
   operations,
+  transformPreviewOperations,
   selectedOperationIds,
   onSelectOperation,
   onSetSelection,
@@ -58,11 +61,14 @@ export default function CamCanvas({
   zoomRequest,
   pastePreview,
   onPlacePaste,
+  onPointerUpdate,
+  onCommitTransformPreview,
   sketchEdit,
   onUpdateOperation,
   onSelectSketchSegment,
   showToolpathPreview,
   toolpathPreview,
+  transformHint,
 }: CamCanvasProps): React.JSX.Element {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -104,13 +110,29 @@ export default function CamCanvas({
       return;
     }
 
-    setSketchArcInsertDraft((current) => {
-      if (!current || current.mode === activeTool) {
-        return current;
-      }
-      return null;
-    });
+    setSketchArcInsertDraft((current) => switchSketchInsertDraftMode(current, activeTool));
   }, [activeTool, editingSketchOperation]);
+
+  function finishOpenSketchDraft(currentDraft: Extract<DrawDraft, { type: 'sketch' }>): void {
+    const segments = currentDraft.segments || [];
+    if (segments.length >= 1) {
+      const id = onAddOperation({
+        type: 'sketch',
+        segments,
+        closed: false,
+        cutSide: 'along',
+        tabsEnabled: false,
+        tabCount: 2,
+        tabWidth: 1,
+        tabHeight: 1,
+        depth: settings.cutDepth,
+        toolId: activeToolId,
+        materialId: activeMaterialId,
+      });
+      onSelectOperation(id);
+    }
+    setDraft(null);
+  }
 
   const transform = useMemo(
     () => buildTransform(size, settings, view.zoom, view.center),
@@ -123,6 +145,17 @@ export default function CamCanvas({
     const dy = pointerMm.y - pastePreview.anchor.y;
     return pastePreview.operations.map((operation) => offsetOperation(operation, dx, dy));
   }, [pastePreview, pointerMm.x, pointerMm.y]);
+  const overlayHints = useMemo(
+    () =>
+      buildCanvasOverlayHints({
+        activeTool,
+        draft,
+        editingSketchOperation,
+        pastePreview,
+        transformHint,
+      }),
+    [activeTool, draft, editingSketchOperation, pastePreview, transformHint]
+  );
 
   useEffect(() => {
     if (!wrapperRef.current) return undefined;
@@ -166,6 +199,7 @@ export default function CamCanvas({
       workHeight: settings.workHeight,
       workWidth: settings.workWidth,
       operations,
+      transformPreviewOperations,
       toolpathPreview: showToolpathPreview ? toolpathPreview : null,
       selectedIds: selectedSet,
       pastePreviewOperations,
@@ -191,6 +225,7 @@ export default function CamCanvas({
     settings.workHeight,
     settings.workWidth,
     showToolpathPreview,
+    transformPreviewOperations,
     toolpathPreview,
     transform,
   ]);
@@ -248,6 +283,16 @@ export default function CamCanvas({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (draft?.type === 'sketch') {
+          event.preventDefault();
+          finishOpenSketchDraft(draft);
+          return;
+        }
+        if (editingSketchOperation && sketchArcInsertDraft) {
+          event.preventDefault();
+          setSketchArcInsertDraft(null);
+          return;
+        }
         interactionRef.current = createEmptyInteractionState();
         setDraft(null);
         setSelectBox(null);
@@ -256,24 +301,7 @@ export default function CamCanvas({
 
       if (event.key === 'Enter' && draft?.type === 'sketch') {
         event.preventDefault();
-        const segments = draft.segments || [];
-        if (segments.length >= 1) {
-          const id = onAddOperation({
-            type: 'sketch',
-            segments,
-            closed: false,
-            cutSide: 'along',
-            tabsEnabled: false,
-            tabCount: 2,
-            tabWidth: 1,
-            tabHeight: 1,
-            depth: settings.cutDepth,
-            toolId: activeToolId,
-            materialId: activeMaterialId,
-          });
-          onSelectOperation(id);
-        }
-        setDraft(null);
+        finishOpenSketchDraft(draft);
         return;
       }
 
@@ -290,6 +318,7 @@ export default function CamCanvas({
     activeToolId,
     draft,
     editingSketchOperation,
+    finishOpenSketchDraft,
     onAddOperation,
     onSelectOperation,
     settings.cutDepth,
@@ -345,18 +374,20 @@ export default function CamCanvas({
       return;
     }
 
+    const rawPoint = getPointerPoint(event, false);
     const point = getPointerPoint(event, true);
     setPointerMm(point);
+    onPointerUpdate(point);
 
     if (editingSketchOperation) {
       if (activeTool === 'select') {
         const handleToleranceMm = Math.max(1.5, 8 / transform.scale);
-        const handleHit = findSketchHandleHit(editingSketchOperation, point, handleToleranceMm, transform.scale);
+        const handleHit = findSketchHandleHit(editingSketchOperation, rawPoint, handleToleranceMm, transform.scale);
         if (handleHit) {
           interactionRef.current = {
             mode: 'drag-handle',
             pointerId: event.pointerId,
-            start: point,
+            start: rawPoint,
             startCenter: null,
             startClient: null,
             selectedIds: null,
@@ -368,7 +399,7 @@ export default function CamCanvas({
           return;
         }
 
-        const segmentHit = findSketchSegmentHit(editingSketchOperation, point, Math.max(1.5, 6 / transform.scale));
+        const segmentHit = findSketchSegmentHit(editingSketchOperation, rawPoint, Math.max(1.5, 6 / transform.scale));
         if (segmentHit) {
           onSelectSketchSegment(segmentHit.index);
           return;
@@ -426,6 +457,11 @@ export default function CamCanvas({
 
     if (pastePreview && activeTool === 'select' && event.button === 0) {
       onPlacePaste(point);
+      return;
+    }
+
+    if (transformPreviewOperations.length > 0 && event.button === 0) {
+      onCommitTransformPreview();
       return;
     }
 
@@ -617,8 +653,10 @@ export default function CamCanvas({
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>): void {
+    const rawPoint = getPointerPoint(event, false);
     const point = getPointerPoint(event, true);
     setPointerMm(point);
+    onPointerUpdate(point);
     const interaction = interactionRef.current;
 
     if (draft?.type === 'sketch') {
@@ -830,27 +868,9 @@ export default function CamCanvas({
         <span>
           Zoom: {(transform.zoom * 100).toFixed(0)}% (Ctrl/Cmd + wheel or View menu)
         </span>
-        <span>
-          Shift + click adds selection, drag empty space for box select, Alt/middle/right drag to pan
-        </span>
-        {draft?.type === 'sketch' ? (
-          <span>
-            Sketch: line mode clicks add segments, arc mode uses end click + bulge click, click first point to
-            close, Enter to finish open
-          </span>
-        ) : null}
-        {activeTool === 'sketch' && !editingSketchOperation && draft?.type !== 'sketch' ? (
-          <span>
-            New sketch: click to place the first point, continue clicking to build the path, then click the first
-            point again to close it
-          </span>
-        ) : null}
-        {isSketchTool(activeTool) && editingSketchOperation ? (
-          <span>
-            Sketch edit mode: use `Poly-Line` or `Poly-Arc` to add replacement segments to the selected sketch
-          </span>
-        ) : null}
-        {pastePreview ? <span>Paste mode: click to place copied operations (Esc to cancel)</span> : null}
+        {overlayHints.map((hint) => (
+          <span key={hint}>{hint}</span>
+        ))}
       </div>
     </div>
   );

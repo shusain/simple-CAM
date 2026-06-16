@@ -98,6 +98,7 @@ export interface CamCanvasProps {
   activeTool: CanvasTool;
   settings: MachineSettings;
   operations: Operation[];
+  transformPreviewOperations: Operation[];
   selectedOperationIds: string[];
   onSelectOperation: (id: string | null, options?: SelectOptions) => void;
   onSetSelection: (ids: string[], options?: { additive?: boolean }) => void;
@@ -109,9 +110,12 @@ export interface CamCanvasProps {
   zoomRequest: ZoomRequest | null;
   pastePreview: PastePreview | null;
   onPlacePaste: (point: Point) => void;
+  onPointerUpdate: (point: Point) => void;
+  onCommitTransformPreview: () => void;
   sketchEdit: SketchEditState;
   onUpdateOperation: (id: string, updates: Partial<Operation>) => void;
   onSelectSketchSegment: (segmentIndex: number | null) => void;
   showToolpathPreview: boolean;
   toolpathPreview: ToolpathPreview | null;
+  transformHint: string | null;
 }

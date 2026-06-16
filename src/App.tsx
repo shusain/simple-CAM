@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CamCanvas from './components/CamCanvas';
 import ControlPanel from './components/ControlPanel';
 import OctoprintSettingsModal from './components/OctoprintSettingsModal';
@@ -18,6 +18,8 @@ import type {
   Tool,
   ZoomRequest,
   SketchEditState,
+  Point,
+  TransformSession,
 } from './types';
 import type { ElectronBridge } from './types/electron';
 import {
@@ -43,6 +45,13 @@ import {
   savePreferences,
 } from './app/helpers';
 import { buildProjectFile, hydrateProjectFile } from './app/project';
+import {
+  beginTransformSession,
+  buildTransformPreview,
+  formatTransformStatus,
+  isTransformInputKey,
+  normalizeTransformAxis,
+} from './app/transforms';
 import { buildToolpathPreview } from './utils/toolpathPreview';
 import type {
   InitialState,
@@ -87,6 +96,8 @@ export default function App(): React.JSX.Element {
     selectedSegmentIndex: null,
   });
   const [showToolpathPreview, setShowToolpathPreview] = useState(true);
+  const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
+  const canvasPointerRef = useRef<Point | null>(null);
 
   const operations = operationsHistory.present;
 
@@ -108,6 +119,14 @@ export default function App(): React.JSX.Element {
   const toolpathPreview = useMemo(
     () => buildToolpathPreview({ operations, settings, tools }),
     [operations, settings, tools]
+  );
+  const transformPreviewOperations = useMemo(
+    () => (transformSession ? buildTransformPreview(transformSession, settings.circleSegments) : []),
+    [settings.circleSegments, transformSession]
+  );
+  const transformHint = useMemo(
+    () => (transformSession ? formatTransformStatus(transformSession) : null),
+    [transformSession]
   );
   const isEditingSelectedSketch =
     selectedOperation?.type === 'sketch' && sketchEdit.operationId === selectedOperation.id;
@@ -273,6 +292,66 @@ export default function App(): React.JSX.Element {
     },
     [beginNewSketch, isEditingSelectedSketch]
   );
+
+  const handleToolHotkey = useCallback(
+    (key: string): boolean => {
+      if (!/^[1-9]$/.test(key)) {
+        return false;
+      }
+
+      const index = Number(key) - 1;
+      const visibleTool = visibleTools[index];
+      if (!visibleTool) {
+        return false;
+      }
+
+      handleToolButtonClick(visibleTool.id);
+      return true;
+    },
+    [handleToolButtonClick, visibleTools]
+  );
+
+  const updateCanvasPointer = useCallback((point: Point) => {
+    canvasPointerRef.current = point;
+    setTransformSession((previous) => (previous ? { ...previous, currentPoint: point } : previous));
+  }, []);
+
+  const beginSelectionTransform = useCallback(
+    (mode: TransformSession['mode']) => {
+      if (selectedOperations.length === 0) {
+        return;
+      }
+
+      const session = beginTransformSession(mode, selectedOperations, selectedIds, canvasPointerRef.current);
+      if (!session) {
+        return;
+      }
+
+      setTransformSession(session);
+      setStatus(formatTransformStatus(session));
+    },
+    [selectedIds, selectedOperations]
+  );
+
+  const cancelTransformPreview = useCallback(() => {
+    setTransformSession(null);
+    setStatus('Transform canceled');
+  }, []);
+
+  const commitTransformPreview = useCallback(() => {
+    if (!transformSession || transformPreviewOperations.length === 0) {
+      return;
+    }
+
+    const nextMap = new Map(transformPreviewOperations.map((operation) => [operation.id, operation]));
+    const targetIds = new Set(transformSession.operationIds);
+
+    commitOperations((previous) =>
+      previous.map((operation) => (targetIds.has(operation.id) ? nextMap.get(operation.id) || operation : operation))
+    );
+    setTransformSession(null);
+    setStatus(`${transformSession.mode} applied to ${transformSession.operationIds.length} operation(s)`);
+  }, [commitOperations, transformPreviewOperations, transformSession]);
 
   const stopSketchEdit = useCallback(() => {
     const editingOperation = operations.find(
@@ -805,6 +884,21 @@ export default function App(): React.JSX.Element {
   }, [activeToolId, materials, settings, tools]);
 
   useEffect(() => {
+    if (!transformSession) {
+      return;
+    }
+
+    const sameSelection =
+      transformSession.operationIds.length === selectedIds.length &&
+      transformSession.operationIds.every((id) => selectedIds.includes(id));
+
+    if (!sameSelection) {
+      setTransformSession(null);
+      setStatus('Transform canceled');
+    }
+  }, [selectedIds, transformSession]);
+
+  useEffect(() => {
     if (!electron) return undefined;
     const unsubs = [
       electron.onMenuNew?.(handleNew),
@@ -831,10 +925,79 @@ export default function App(): React.JSX.Element {
       const key = event.key.toLowerCase();
       const mod = event.ctrlKey || event.metaKey;
 
+      if (transformSession) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelTransformPreview();
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          commitTransformPreview();
+          return;
+        }
+
+        if ((key === 'x' || key === 'y') && transformSession.mode !== 'rotate') {
+          event.preventDefault();
+          setTransformSession((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  axis: normalizeTransformAxis(previous.mode, previous.axis, key),
+                }
+              : previous
+          );
+          return;
+        }
+
+        if (key === 'g') {
+          event.preventDefault();
+          beginSelectionTransform('move');
+          return;
+        }
+
+        if (key === 'r') {
+          event.preventDefault();
+          beginSelectionTransform('rotate');
+          return;
+        }
+
+        if (key === 's') {
+          event.preventDefault();
+          beginSelectionTransform('scale');
+          return;
+        }
+
+        if (event.key === 'Backspace') {
+          event.preventDefault();
+          setTransformSession((previous) => (previous ? { ...previous, input: previous.input.slice(0, -1) } : previous));
+          return;
+        }
+
+        if (isTransformInputKey(event.key)) {
+          event.preventDefault();
+          setTransformSession((previous) => (previous ? { ...previous, input: `${previous.input}${event.key}` } : previous));
+          return;
+        }
+      }
+
       if (event.key === 'Escape' && pastePreview) {
         event.preventDefault();
         cancelPastePlacement();
         setStatus('Paste mode canceled');
+        return;
+      }
+
+      if (
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        sketchEdit.operationId &&
+        selectedOperation?.type === 'sketch' &&
+        sketchEdit.operationId === selectedOperation.id &&
+        sketchEdit.selectedSegmentIndex !== null
+      ) {
+        event.preventDefault();
+        deleteSelectedSketchSegment();
         return;
       }
 
@@ -845,6 +1008,29 @@ export default function App(): React.JSX.Element {
       }
 
       if (!mod) {
+        if (key === 'g') {
+          event.preventDefault();
+          beginSelectionTransform('move');
+          return;
+        }
+
+        if (key === 'r') {
+          event.preventDefault();
+          beginSelectionTransform('rotate');
+          return;
+        }
+
+        if (key === 's') {
+          event.preventDefault();
+          beginSelectionTransform('scale');
+          return;
+        }
+
+        return;
+      }
+
+      if (handleToolHotkey(key)) {
+        event.preventDefault();
         return;
       }
 
@@ -880,12 +1066,22 @@ export default function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     beginPastePlacement,
+    beginSelectionTransform,
+    cancelTransformPreview,
+    commitTransformPreview,
     cancelPastePlacement,
     copySelection,
+    deleteSelectedSketchSegment,
     deleteSelection,
+    handleToolHotkey,
+    transformSession,
+    setTransformSession,
     pastePreview,
     redo,
+    selectedOperation,
     selectedIds.length,
+    sketchEdit.operationId,
+    sketchEdit.selectedSegmentIndex,
     undo,
   ]);
 
@@ -966,6 +1162,7 @@ export default function App(): React.JSX.Element {
             activeTool={activeTool}
             settings={settings}
             operations={operations}
+            transformPreviewOperations={transformPreviewOperations}
             selectedOperationIds={selectedIds}
             onSelectOperation={handleSelectOperation}
             onSetSelection={handleSetSelection}
@@ -977,11 +1174,14 @@ export default function App(): React.JSX.Element {
             zoomRequest={zoomRequest}
             pastePreview={pastePreview}
             onPlacePaste={placePastedOperations}
+            onPointerUpdate={updateCanvasPointer}
+            onCommitTransformPreview={commitTransformPreview}
             sketchEdit={sketchEdit}
             onUpdateOperation={updateOperation}
             onSelectSketchSegment={selectSketchSegment}
             showToolpathPreview={showToolpathPreview}
             toolpathPreview={toolpathPreview}
+            transformHint={transformHint}
           />
         </main>
 
@@ -1015,7 +1215,7 @@ export default function App(): React.JSX.Element {
       />
 
       <footer className="statusbar">
-        <span>{status}</span>
+        <span>{transformHint || status}</span>
         <span>{projectName}</span>
         <span>
           {operations.length} operation(s), {selectedIds.length} selected

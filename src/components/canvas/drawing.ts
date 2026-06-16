@@ -597,6 +597,7 @@ export function renderCanvasScene(args: {
   workHeight: number;
   workWidth: number;
   operations: Operation[];
+  transformPreviewOperations: Operation[];
   toolpathPreview: ToolpathPreview | null;
   selectedIds: Set<string>;
   pastePreviewOperations: Operation[];
@@ -615,6 +616,7 @@ export function renderCanvasScene(args: {
     workHeight,
     workWidth,
     operations,
+    transformPreviewOperations,
     toolpathPreview,
     selectedIds,
     pastePreviewOperations,
@@ -648,6 +650,10 @@ export function renderCanvasScene(args: {
 
   operations.forEach((operation) => {
     drawOperation(ctx, transform, operation, { selected: selectedIds.has(operation.id) });
+  });
+
+  transformPreviewOperations.forEach((operation) => {
+    drawOperation(ctx, transform, operation, { selected: selectedIds.has(operation.id), ghost: true });
   });
 
   drawToolpathPreview(ctx, transform, toolpathPreview);

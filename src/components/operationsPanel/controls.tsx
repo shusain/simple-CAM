@@ -1,4 +1,5 @@
 import React from 'react';
+import NumericInput from '../common/NumericInput';
 import type { CutSide } from '../../types';
 
 interface DepthEditorProps {
@@ -17,11 +18,11 @@ export function DepthEditor({ value, onChange }: DepthEditorProps): React.JSX.El
   return (
     <label className="field-row">
       <span>Depth (mm)</span>
-      <input
-        type="number"
-        step="0.1"
+      <NumericInput
+        aria-label="Depth (mm)"
         value={value ?? ''}
-        onChange={(event) => onChange(Number(event.target.value))}
+        step={0.1}
+        onChange={onChange}
       />
     </label>
   );

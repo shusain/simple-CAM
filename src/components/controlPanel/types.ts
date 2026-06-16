@@ -5,6 +5,7 @@ export interface NumberFieldProps {
   value: number;
   step?: number | 'any';
   min?: number;
+  max?: number;
   onChange: (value: number) => void;
 }
 

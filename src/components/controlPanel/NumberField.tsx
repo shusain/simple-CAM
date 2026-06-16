@@ -1,4 +1,5 @@
 import React from 'react';
+import NumericInput from '../common/NumericInput';
 import type { NumberFieldProps } from './types';
 
 export default function NumberField({
@@ -6,17 +7,19 @@ export default function NumberField({
   value,
   step = 'any',
   min,
+  max,
   onChange,
 }: NumberFieldProps): React.JSX.Element {
   return (
     <label className="field-row">
       <span>{label}</span>
-      <input
-        type="number"
+      <NumericInput
+        aria-label={label}
         value={value}
         min={min}
+        max={max}
         step={step}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={onChange}
       />
     </label>
   );
