@@ -82,10 +82,22 @@ export default function OperationsPanel({
   const sketchStart = selectedOperation?.type === 'sketch' ? getSketchStartPoint(selectedOperation) : null;
   const sketchSegments = selectedOperation?.type === 'sketch' ? getSketchSegments(selectedOperation) : [];
   const sketchIntegrity = selectedOperation?.type === 'sketch' ? analyzeSketchIntegrity(selectedOperation) : null;
+  const effectiveSketchClosed =
+    selectedOperation?.type === 'sketch'
+      ? Boolean(sketchIntegrity?.detectedClosed || selectedOperation.closed)
+      : false;
   const sketchCutOptions: CutSide[] =
-    selectedOperation?.type === 'sketch' && selectedOperation.closed
+    selectedOperation?.type === 'sketch' && effectiveSketchClosed
       ? ['outside', 'inside', 'along']
       : ['along'];
+  const shouldShowPocketControls =
+    selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle';
+  const shouldShowSketchPocketControls =
+    selectedOperation?.type === 'sketch' && effectiveSketchClosed;
+  const shouldHideTabsForPocket =
+    (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle' || selectedOperation?.type === 'sketch') &&
+    selectedOperation.pocketEnabled &&
+    selectedOperation.cutSide === 'inside';
 
   return (
     <div className="panel">
@@ -101,15 +113,26 @@ export default function OperationsPanel({
           {selectedOperation.type === 'rect' || selectedOperation.type === 'circle' ? (
             <CutSideEditor
               value={selectedOperation.cutSide || 'outside'}
-              onChange={(value) => onUpdateOperation(selectedOperation.id, { cutSide: value })}
+              onChange={(value) =>
+                onUpdateOperation(selectedOperation.id, {
+                  cutSide: value,
+                  pocketEnabled: value === 'inside' ? selectedOperation.pocketEnabled : false,
+                })
+              }
             />
           ) : null}
 
           {selectedOperation.type === 'sketch' ? (
             <CutSideEditor
-              value={selectedOperation.cutSide || (selectedOperation.closed ? 'outside' : 'along')}
-              onChange={(value) => onUpdateOperation(selectedOperation.id, { cutSide: value })}
-              disabled={!selectedOperation.closed}
+              value={selectedOperation.cutSide || (effectiveSketchClosed ? 'outside' : 'along')}
+              onChange={(value) =>
+                onUpdateOperation(selectedOperation.id, {
+                  closed: effectiveSketchClosed ? true : selectedOperation.closed,
+                  cutSide: value,
+                  pocketEnabled: value === 'inside' ? selectedOperation.pocketEnabled : false,
+                })
+              }
+              disabled={!effectiveSketchClosed}
               options={sketchCutOptions}
             />
           ) : null}
@@ -191,6 +214,7 @@ export default function OperationsPanel({
                         ? selectedOperation.cutSide || 'outside'
                         : 'along',
                       tabsEnabled: event.target.checked ? selectedOperation.tabsEnabled : false,
+                      pocketEnabled: event.target.checked ? selectedOperation.pocketEnabled : false,
                     })
                   }
                   disabled={sketchSegments.length < 2 || !sketchStart}
@@ -242,6 +266,89 @@ export default function OperationsPanel({
                   ) : (
                     <p className="hint-text">No integrity issues detected in the current sketch geometry.</p>
                   )}
+                </>
+              ) : null}
+              {effectiveSketchClosed ? (
+                <>
+                  {shouldShowSketchPocketControls ? (
+                    <>
+                      <label className="field-row checkbox-row">
+                        <span>Clear area</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(selectedOperation.pocketEnabled && selectedOperation.cutSide === 'inside')}
+                          onChange={(event) =>
+                            onUpdateOperation(selectedOperation.id, {
+                              closed: true,
+                              cutSide: event.target.checked ? 'inside' : selectedOperation.cutSide,
+                              pocketEnabled: event.target.checked,
+                            })
+                          }
+                        />
+                      </label>
+                      {selectedOperation.pocketEnabled ? (
+                        <NumericFieldRow
+                          label="Step-over"
+                          value={selectedOperation.pocketStepOver}
+                          min={0.1}
+                          onChange={(value) =>
+                            onUpdateOperation(selectedOperation.id, {
+                              pocketStepOver: Math.max(0.1, value || 0.1),
+                            })
+                          }
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                  {!shouldHideTabsForPocket ? (
+                    <>
+                      <label className="field-row checkbox-row">
+                        <span>Retaining tabs</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(selectedOperation.tabsEnabled)}
+                          onChange={(event) =>
+                            onUpdateOperation(selectedOperation.id, { tabsEnabled: event.target.checked })
+                          }
+                        />
+                      </label>
+                      {selectedOperation.tabsEnabled ? (
+                        <>
+                          <NumericFieldRow
+                            label="Tab count"
+                            value={selectedOperation.tabCount ?? 2}
+                            min={1}
+                            step={1}
+                            onChange={(value) =>
+                              onUpdateOperation(selectedOperation.id, {
+                                tabCount: Math.max(1, Math.round(value || 1)),
+                              })
+                            }
+                          />
+                          <NumericFieldRow
+                            label="Tab width"
+                            value={selectedOperation.tabWidth ?? 1}
+                            min={0.1}
+                            onChange={(value) =>
+                              onUpdateOperation(selectedOperation.id, {
+                                tabWidth: Math.max(0.1, value || 0.1),
+                              })
+                            }
+                          />
+                          <NumericFieldRow
+                            label="Tab height"
+                            value={selectedOperation.tabHeight ?? 1}
+                            min={0.1}
+                            onChange={(value) =>
+                              onUpdateOperation(selectedOperation.id, {
+                                tabHeight: Math.max(0.1, value || 0.1),
+                              })
+                            }
+                          />
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
                 </>
               ) : null}
               {sketchSegments.length > 0 ? (
@@ -325,55 +432,6 @@ export default function OperationsPanel({
                   ))}
                 </>
               ) : null}
-              {selectedOperation.closed ? (
-                <>
-                  <label className="field-row checkbox-row">
-                    <span>Retaining tabs</span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedOperation.tabsEnabled)}
-                      onChange={(event) =>
-                        onUpdateOperation(selectedOperation.id, { tabsEnabled: event.target.checked })
-                      }
-                    />
-                  </label>
-                  {selectedOperation.tabsEnabled ? (
-                    <>
-                      <NumericFieldRow
-                        label="Tab count"
-                        value={selectedOperation.tabCount ?? 2}
-                        min={1}
-                        step={1}
-                        onChange={(value) =>
-                          onUpdateOperation(selectedOperation.id, {
-                            tabCount: Math.max(1, Math.round(value || 1)),
-                          })
-                        }
-                      />
-                      <NumericFieldRow
-                        label="Tab width"
-                        value={selectedOperation.tabWidth ?? 1}
-                        min={0.1}
-                        onChange={(value) =>
-                          onUpdateOperation(selectedOperation.id, {
-                            tabWidth: Math.max(0.1, value || 0.1),
-                          })
-                        }
-                      />
-                      <NumericFieldRow
-                        label="Tab height"
-                        value={selectedOperation.tabHeight ?? 1}
-                        min={0.1}
-                        onChange={(value) =>
-                          onUpdateOperation(selectedOperation.id, {
-                            tabHeight: Math.max(0.1, value || 0.1),
-                          })
-                        }
-                      />
-                    </>
-                  ) : null}
-                </>
-              ) : null}
             </>
           ) : null}
 
@@ -394,6 +452,37 @@ export default function OperationsPanel({
                   })
                 }
               />
+              {shouldShowPocketControls ? (
+                <>
+                  <label className="field-row checkbox-row">
+                    <span>Clear area</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedOperation.pocketEnabled && selectedOperation.cutSide === 'inside')}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          cutSide: event.target.checked ? 'inside' : selectedOperation.cutSide,
+                          pocketEnabled: event.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+                  {selectedOperation.pocketEnabled ? (
+                    <NumericFieldRow
+                      label="Step-over"
+                      value={selectedOperation.pocketStepOver}
+                      min={0.1}
+                      onChange={(value) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          pocketStepOver: Math.max(0.1, value || 0.1),
+                        })
+                      }
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              {!shouldHideTabsForPocket ? (
+                <>
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
                 <input
@@ -439,6 +528,8 @@ export default function OperationsPanel({
                   />
                 </>
               ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -456,6 +547,37 @@ export default function OperationsPanel({
                   })
                 }
               />
+              {shouldShowPocketControls ? (
+                <>
+                  <label className="field-row checkbox-row">
+                    <span>Clear area</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedOperation.pocketEnabled && selectedOperation.cutSide === 'inside')}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          cutSide: event.target.checked ? 'inside' : selectedOperation.cutSide,
+                          pocketEnabled: event.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+                  {selectedOperation.pocketEnabled ? (
+                    <NumericFieldRow
+                      label="Step-over"
+                      value={selectedOperation.pocketStepOver}
+                      min={0.1}
+                      onChange={(value) =>
+                        onUpdateOperation(selectedOperation.id, {
+                          pocketStepOver: Math.max(0.1, value || 0.1),
+                        })
+                      }
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              {!shouldHideTabsForPocket ? (
+                <>
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
                 <input
@@ -499,6 +621,8 @@ export default function OperationsPanel({
                       })
                     }
                   />
+                </>
+              ) : null}
                 </>
               ) : null}
             </>

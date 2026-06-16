@@ -23,6 +23,8 @@ function makeEditingSketch(): SketchOperation {
     tabCount: 2,
     tabWidth: 1,
     tabHeight: 1,
+    pocketEnabled: false,
+    pocketStepOver: 0.5,
     depth: -2,
   };
 }

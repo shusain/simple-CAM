@@ -28,7 +28,12 @@ export interface TabbedCutFields {
   tabHeight: number;
 }
 
-export interface RectOperation extends BaseOperation, TabbedCutFields {
+export interface PocketFields {
+  pocketEnabled: boolean;
+  pocketStepOver: number;
+}
+
+export interface RectOperation extends BaseOperation, TabbedCutFields, PocketFields {
   type: 'rect';
   x: number;
   y: number;
@@ -38,7 +43,7 @@ export interface RectOperation extends BaseOperation, TabbedCutFields {
   cutSide: CutSide;
 }
 
-export interface CircleOperation extends BaseOperation, TabbedCutFields {
+export interface CircleOperation extends BaseOperation, TabbedCutFields, PocketFields {
   type: 'circle';
   x: number;
   y: number;
@@ -66,7 +71,7 @@ export interface SketchArcSegment {
 
 export type SketchSegment = SketchLineSegment | SketchArcSegment;
 
-export interface SketchOperation extends BaseOperation, TabbedCutFields {
+export interface SketchOperation extends BaseOperation, TabbedCutFields, PocketFields {
   type: 'sketch';
   segments: SketchSegment[];
   closed: boolean;

@@ -8,6 +8,7 @@ import type {
   SketchSegment,
   TransformAxis,
 } from '../types';
+import { getDefaultPocketStepOver } from './pocketing';
 import { sanitizeMaterialId, sanitizeToolId } from './tooling';
 
 type RawRecord = Record<string, unknown>;
@@ -212,6 +213,11 @@ function buildSketchFromSegments(source: Operation, segments: SketchSegment[], c
     tabCount: 'tabCount' in source ? Math.max(1, Number(source.tabCount) || 1) : 2,
     tabWidth: 'tabWidth' in source ? Math.max(0.1, Number(source.tabWidth) || 1) : 1,
     tabHeight: 'tabHeight' in source ? Math.max(0.1, Number(source.tabHeight) || 1) : 1,
+    pocketEnabled: 'pocketEnabled' in source ? Boolean(source.pocketEnabled) && closed : false,
+    pocketStepOver:
+      'pocketStepOver' in source
+        ? toOptionalPositiveNumber(source.pocketStepOver) ?? getDefaultPocketStepOver()
+        : getDefaultPocketStepOver(),
   };
 }
 
@@ -1231,6 +1237,8 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
+      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
 
@@ -1254,6 +1262,8 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
+      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
 
@@ -1277,6 +1287,8 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
+      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
 

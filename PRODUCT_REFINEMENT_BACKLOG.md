@@ -58,6 +58,18 @@ Remaining follow-up:
 - Extend transform workflow to sketch point/segment editing directly, not just whole operations
 - Decide whether direct canvas gizmos/handles are needed in addition to keyboard-first transforms
 
+### Numeric input controls
+
+Completed:
+- Shared text-backed numeric input that allows blank/retype and sign changes cleanly
+- Applied to machine setup numeric fields and main editable operation numeric fields
+- Applied to transform numeric entry and operation-side editing flows that were previously relying on browser number input behavior
+- Preserved clamping/validation behavior without relying on browser `type="number"` quirks
+
+Remaining follow-up:
+- Extend the custom numeric control to any remaining editable numeric dialogs/modals
+- Optional visual polish for focus/dirty-state feedback
+
 ## P0: Alpha Hardening
 
 ### 1. Sketch closure and geometry integrity checks
@@ -204,9 +216,17 @@ Scope:
 - Pocket inside closed rectangles, circles, and closed sketches
 - Reuse current tool/material pass depth and feed settings
 - Provide stepover control per operation or via tool/material defaults
+- Limit the first implementation to simple contour-offset clearing before adding smarter raster/adaptive strategies
 
 Acceptance notes:
 - Start with simple offset pocketing before more advanced clearing strategies
+
+Status:
+- Initial implementation now supports `Clear area` on inside rectangle/circle/closed-sketch cuts
+- Step-over is operation-configurable and defaults to `50%` of the selected tool diameter when the operation is created
+- Preview and G-code both use the same planned pocket contour generation and layered depth-per-pass sequencing
+- Concave sketch pocket cleanup now stays constrained by the original sketch outline while allowing overlapping inner cleanup contours
+- Remaining work is mostly strategy refinement and optional future defaults/tool-material integration if needed later
 
 ### 9. Imported geometry workflow
 
@@ -279,11 +299,11 @@ Acceptance notes:
 ## Suggested Near-Term Sequence
 
 1. Sketch closure and integrity checks
-2. Numeric geometry editing with better input controls
-3. Better sketch editing mode
-4. Batch operation editing
-5. Better operation summaries
-6. Pocketing and area clearing
+2. Better sketch editing mode
+3. Batch operation editing
+4. Better operation summaries
+5. Pocketing and area clearing refinement
+6. Numeric geometry editing where direct point/segment fields are still missing
 
 ## User-Requested Priorities
 

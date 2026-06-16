@@ -150,4 +150,120 @@ describe('generateMarlinGcode', () => {
     expect(gcode).toContain('; Cut sketch open path (2 subpath(s))');
     expect(gcode).toContain('; Sketch subpath 2');
   });
+
+  it('emits pocket-clearing passes for inside cuts and suppresses tab comments', () => {
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeRectOperation({
+          width: 18,
+          height: 14,
+          cutSide: 'inside',
+          pocketEnabled: true,
+          pocketStepOver: 1,
+          tabsEnabled: true,
+          tabCount: 2,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [makeTool({ diameter: 4 })],
+    });
+
+    expect(gcode).toContain('; Pocket rectangle (inside clear area, stepover 1.000mm)');
+    expect(gcode).toContain('; Depth pass 2 (-2.000mm)');
+    expect(gcode).toContain('; Pocket contour 2');
+    expect(gcode).not.toContain('; Tab 1 start');
+    expect(gcode).not.toContain('; Tab 1 end');
+  });
+
+  it('uses low retracts between depth passes and only returns to safe Z after the operation', () => {
+    const tool = makeTool({
+      diameter: 2,
+      materialProfiles: {
+        'material-generic': {
+          cutFeedRate: 600,
+          plungeFeedRate: 220,
+          drillDepthPerPass: 1,
+          cutDepthPerPass: 1,
+        },
+      },
+    });
+
+    const gcode = normalizeGcode(
+      generateMarlinGcode({
+        operations: [makeRectOperation({ depth: -3 })],
+        settings: makeSettings({ safeZ: 5, cutDepth: -3 }),
+        tools: [tool],
+      })
+    );
+
+    const lowRetracts = gcode.filter((line) => line === 'G0 Z1.000 F2400');
+    const safeRetracts = gcode.filter((line) => line === 'G0 Z5.000 F2400');
+
+    expect(lowRetracts.length).toBeGreaterThanOrEqual(2);
+    expect(safeRetracts.length).toBeGreaterThanOrEqual(2);
+    expect(gcode).toContain('G0 Z1.000 F2400');
+  });
+
+  it('keeps pocket subpath transfers near the work and only retracts to safe Z after the final subpath', () => {
+    const gcode = normalizeGcode(
+      generateMarlinGcode({
+        operations: [
+          makeRectOperation({
+            width: 18,
+            height: 14,
+            depth: -1,
+            cutSide: 'inside',
+            pocketEnabled: true,
+            pocketStepOver: 1,
+          }),
+        ],
+        settings: makeSettings({ safeZ: 5, cutDepth: -1 }),
+        tools: [makeTool({ diameter: 4 })],
+      })
+    );
+
+    const pocketContourTwoIndex = gcode.findIndex((line) => line === '; Pocket contour 2');
+    expect(pocketContourTwoIndex).toBeGreaterThan(0);
+    expect(gcode[pocketContourTwoIndex - 1]).toBe('G0 Z1.000 F2400');
+    expect(gcode).toContain('G0 Z5.000 F2400');
+  });
+
+  it('cuts pocket contours across each depth layer instead of finishing one contour to full depth first', () => {
+    const tool = makeTool({
+      diameter: 4,
+      materialProfiles: {
+        'material-generic': {
+          cutFeedRate: 600,
+          plungeFeedRate: 220,
+          drillDepthPerPass: 1,
+          cutDepthPerPass: 1,
+        },
+      },
+    });
+
+    const gcode = normalizeGcode(
+      generateMarlinGcode({
+        operations: [
+          makeRectOperation({
+            width: 18,
+            height: 14,
+            depth: -3,
+            cutSide: 'inside',
+            pocketEnabled: true,
+            pocketStepOver: 1,
+          }),
+        ],
+        settings: makeSettings({ safeZ: 5, cutDepth: -3 }),
+        tools: [tool],
+      })
+    );
+
+    const depthPass1 = gcode.findIndex((line) => line === '; Depth pass 1 (-1.000mm)');
+    const depthPass2 = gcode.findIndex((line) => line === '; Depth pass 2 (-2.000mm)');
+    const contour2 = gcode.findIndex((line) => line === '; Pocket contour 2');
+
+    expect(depthPass1).toBeGreaterThanOrEqual(0);
+    expect(contour2).toBeGreaterThan(depthPass1);
+    expect(depthPass2).toBeGreaterThan(contour2);
+  });
 });

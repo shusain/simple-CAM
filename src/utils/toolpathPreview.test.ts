@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeCircleOperation, makeDrillOperation, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeTool } from '../test/factories';
+import { getDefaultPocketStepOver } from './pocketing';
 import { buildToolpathPreview, getOperationPlannedPaths, slicePathByRange } from './toolpathPreview';
 
 describe('toolpathPreview', () => {
@@ -70,5 +71,127 @@ describe('toolpathPreview', () => {
 
     expect(planned.path[0]).not.toEqual({ x: 0, y: 0 });
     expect(planned.tabRanges).toHaveLength(2);
+  });
+
+  it('defaults pocket stepover to half the tool diameter', () => {
+    expect(getDefaultPocketStepOver(3.175)).toBeCloseTo(1.5875);
+  });
+
+  it('builds multiple inside pocket contours and suppresses tabs for closed areas', () => {
+    const tool = makeTool({ diameter: 4 });
+    const operation = makeRectOperation({
+      width: 20,
+      height: 16,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1,
+      tabsEnabled: true,
+      tabCount: 2,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 16 }), tool);
+
+    expect(plannedPaths.length).toBeGreaterThan(1);
+    expect(plannedPaths[0]?.isPocketPath).toBe(false);
+    expect(plannedPaths[1]?.isPocketPath).toBe(true);
+    expect(plannedPaths.every((planned) => planned.cutSide === 'inside')).toBe(true);
+    expect(plannedPaths.every((planned) => planned.tabRanges.length === 0)).toBe(true);
+  });
+
+  it('builds multiple pocket contours for rounded rectangles', () => {
+    const tool = makeTool({ diameter: 4 });
+    const operation = makeRectOperation({
+      width: 24,
+      height: 18,
+      cornerRadius: 4,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 16 }), tool);
+
+    expect(plannedPaths.length).toBeGreaterThan(1);
+    expect(plannedPaths[1]?.isPocketPath).toBe(true);
+  });
+
+  it('falls back to a single along-path sketch preview when inside pocket compensation fails', () => {
+    const tool = makeTool({ diameter: 12 });
+    const operation = makeSketchOperation({
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 6, y2: 0 },
+        { type: 'line', x1: 6, y1: 0, x2: 6, y2: 6 },
+        { type: 'line', x1: 6, y1: 6, x2: 0, y2: 6 },
+        { type: 'line', x1: 0, y1: 6, x2: 0, y2: 0 },
+      ],
+      closed: true,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 12 }), tool);
+
+    expect(plannedPaths).toHaveLength(1);
+    expect(plannedPaths[0]?.fallbackToAlongPath).toBe(true);
+    expect(plannedPaths[0]?.isPocketPath).toBe(false);
+  });
+
+  it('pockets sketches when the geometry is closed even if the stored closed flag is false', () => {
+    const tool = makeTool({ diameter: 2 });
+    const operation = makeSketchOperation({
+      closed: false,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 12 }), tool);
+
+    expect(plannedPaths.length).toBeGreaterThan(1);
+    expect(plannedPaths[0]?.cutSide).toBe('inside');
+  });
+
+  it('does not emit invalid inner pocket contours that leave a concave sketch boundary', () => {
+    const tool = makeTool({ diameter: 3.175 });
+    const operation = makeSketchOperation({
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 20, y2: 0 },
+        { type: 'line', x1: 20, y1: 0, x2: 10, y2: 6 },
+        { type: 'line', x1: 10, y1: 6, x2: 20, y2: 12 },
+        { type: 'line', x1: 20, y1: 12, x2: 0, y2: 12 },
+        { type: 'line', x1: 0, y1: 12, x2: 0, y2: 0 },
+      ],
+      closed: true,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1.5875,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 24 }), tool);
+
+    expect(plannedPaths.length).toBeGreaterThan(0);
+    expect(plannedPaths.every((plannedPath) => plannedPath.path.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)))).toBe(true);
+    expect(plannedPaths.some((plannedPath) => plannedPath.isPocketPath)).toBe(true);
+  });
+
+  it('keeps concave sketch cleanup contours finite when constrained by the original boundary', () => {
+    const tool = makeTool({ diameter: 3.175 });
+    const operation = makeSketchOperation({
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 12, y2: 0 },
+        { type: 'arc', x1: 12, y1: 0, x2: 6, y2: 6, throughX: 12, throughY: 6 },
+        { type: 'arc', x1: 6, y1: 6, x2: 0, y2: 0, throughX: 0, throughY: 6 },
+      ],
+      closed: true,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1.5875,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 32 }), tool);
+
+    expect(plannedPaths.length).toBeGreaterThan(0);
+    expect(plannedPaths.every((plannedPath) => plannedPath.path.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)))).toBe(true);
   });
 });
