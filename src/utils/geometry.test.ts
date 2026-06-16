@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  analyzeSketchIntegrity,
+  deriveSketchState,
   getSketchPathPoints,
   getSketchSegments,
   getSketchStartPoint,
@@ -72,6 +74,118 @@ describe('geometry', () => {
 
     expect(getSketchSubpaths(splitSketch)).toHaveLength(2);
     expect(isClosedSketchPath(splitSketch)).toBe(false);
+  });
+
+  it('detects closed sketches even when segments are stored out of draw order', () => {
+    const reorderedClosedSketch = makeSketchOperation({
+      closed: false,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 10, y1: 10, x2: 0, y2: 10 },
+        { type: 'line', x1: 10, y1: 0, x2: 10, y2: 10 },
+        { type: 'line', x1: 0, y1: 10, x2: 0, y2: 0 },
+      ],
+    });
+
+    const subpaths = getSketchSubpaths(reorderedClosedSketch);
+
+    expect(subpaths).toHaveLength(1);
+    expect(subpaths[0][0]).toEqual(subpaths[0][subpaths[0].length - 1]);
+    expect(isClosedSketchPath(reorderedClosedSketch)).toBe(true);
+    expect(deriveSketchState(reorderedClosedSketch, reorderedClosedSketch.segments)).toMatchObject({
+      closed: true,
+      cutSide: 'outside',
+    });
+  });
+
+  it('does not auto-close an open geometry just because the stored closed flag was true', () => {
+    const previouslyClosedButNowOpen = makeSketchOperation({
+      closed: true,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 10, y1: 0, x2: 10, y2: 10 },
+        { type: 'line', x1: 10, y1: 10, x2: 0, y2: 10 },
+      ],
+    });
+
+    const subpaths = getSketchSubpaths(previouslyClosedButNowOpen);
+
+    expect(subpaths).toHaveLength(1);
+    expect(subpaths[0][0]).not.toEqual(subpaths[0][subpaths[0].length - 1]);
+    expect(isClosedSketchPath(previouslyClosedButNowOpen)).toBe(false);
+    expect(deriveSketchState(previouslyClosedButNowOpen, previouslyClosedButNowOpen.segments)).toMatchObject({
+      closed: false,
+      cutSide: 'along',
+      tabsEnabled: false,
+    });
+  });
+
+  it('analyzes sketch integrity issues and closure state', () => {
+    const openSketch = makeSketchOperation({
+      closed: false,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 10, y1: 0, x2: 10, y2: 10 },
+      ],
+    });
+    const disconnectedSketch = makeSketchOperation({
+      closed: false,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 5, y2: 0 },
+        { type: 'line', x1: 20, y1: 0, x2: 25, y2: 0 },
+      ],
+    });
+    const degenerateSketch = makeSketchOperation({
+      closed: false,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 0, y2: 0 },
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+      ],
+    });
+
+    const openReport = analyzeSketchIntegrity(openSketch);
+    expect(openReport.detectedClosed).toBe(false);
+    expect(openReport.openGap).toBeCloseTo(Math.sqrt(200));
+    expect(openReport.issues.map((issue) => issue.code)).toContain('open-gap');
+
+    const disconnectedReport = analyzeSketchIntegrity(disconnectedSketch);
+    expect(disconnectedReport.subpathCount).toBe(2);
+    expect(disconnectedReport.issues.map((issue) => issue.code)).toContain('disconnected-subpaths');
+
+    const degenerateReport = analyzeSketchIntegrity(degenerateSketch);
+    expect(degenerateReport.zeroLengthSegmentIndexes).toEqual([0]);
+    expect(degenerateReport.duplicateSegmentIndexes).toEqual([2]);
+    expect(degenerateReport.issues.map((issue) => issue.code)).toContain('zero-length-segment');
+    expect(degenerateReport.issues.map((issue) => issue.code)).toContain('duplicate-segment');
+  });
+
+  it('derives sketch state from the current segment geometry', () => {
+    const openSketch = makeSketchOperation({
+      closed: false,
+      cutSide: 'along',
+      tabsEnabled: true,
+      segments: [
+        { type: 'line', x1: 0, y1: 0, x2: 10, y2: 0 },
+        { type: 'line', x1: 10, y1: 0, x2: 10, y2: 10 },
+      ],
+    });
+    const closedSegments = [
+      ...openSketch.segments,
+      { type: 'line' as const, x1: 10, y1: 10, x2: 0, y2: 0 },
+    ];
+
+    expect(deriveSketchState(openSketch)).toMatchObject({
+      closed: false,
+      cutSide: 'along',
+      tabsEnabled: false,
+    });
+
+    expect(deriveSketchState(openSketch, closedSegments)).toMatchObject({
+      closed: true,
+      cutSide: 'outside',
+      tabsEnabled: true,
+    });
   });
 
   it('computes bounds and hit testing for representative operations', () => {

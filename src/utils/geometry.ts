@@ -12,6 +12,40 @@ import { sanitizeMaterialId, sanitizeToolId } from './tooling';
 type RawRecord = Record<string, unknown>;
 type OperationBounds = { minX: number; minY: number; maxX: number; maxY: number };
 
+export type SketchIntegrityIssueCode =
+  | 'empty'
+  | 'disconnected-subpaths'
+  | 'open-gap'
+  | 'zero-length-segment'
+  | 'duplicate-segment';
+
+export interface SketchIntegrityIssue {
+  code: SketchIntegrityIssueCode;
+  message: string;
+  segmentIndexes?: number[];
+  value?: number;
+}
+
+export interface SketchIntegrityReport {
+  detectedClosed: boolean;
+  storedClosed: boolean;
+  segmentCount: number;
+  subpathCount: number;
+  startPoint: Point | null;
+  endPoint: Point | null;
+  openGap: number | null;
+  zeroLengthSegmentIndexes: number[];
+  duplicateSegmentIndexes: number[];
+  issues: SketchIntegrityIssue[];
+}
+
+export interface DerivedSketchState {
+  segments: SketchSegment[];
+  closed: boolean;
+  cutSide: CutSide;
+  tabsEnabled: boolean;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
@@ -171,7 +205,7 @@ function normalizeSketchSegment(segment: unknown): SketchSegment | null {
   return null;
 }
 
-export function getSketchStartPoint(operation: Operation | null | undefined): Point | null {
+export function getSketchStartPoint(operation: Operation | RawRecord | null | undefined): Point | null {
   if (operation?.type !== 'sketch') {
     return null;
   }
@@ -271,43 +305,162 @@ function flattenArcSegment(start: Point, segment: SketchArcSegment, circleSegmen
   return points;
 }
 
+function reverseSketchSegment(segment: SketchSegment): SketchSegment {
+  if (segment.type === 'arc') {
+    return {
+      type: 'arc',
+      x1: segment.x2,
+      y1: segment.y2,
+      x2: segment.x1,
+      y2: segment.y1,
+      throughX: segment.throughX,
+      throughY: segment.throughY,
+    };
+  }
+
+  return {
+    type: 'line',
+    x1: segment.x2,
+    y1: segment.y2,
+    x2: segment.x1,
+    y2: segment.y1,
+  };
+}
+
+function getOrCreateSketchNodeId(nodes: Point[], point: Point): number {
+  const existingIndex = nodes.findIndex((node) => pointsEqual(node, point));
+  if (existingIndex >= 0) {
+    return existingIndex;
+  }
+
+  nodes.push({ ...point });
+  return nodes.length - 1;
+}
+
+function buildOrderedSketchSegments(segments: SketchSegment[]): SketchSegment[][] {
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const nodes: Point[] = [];
+  const edges = segments.map((segment, index) => {
+    const start = { x: segment.x1, y: segment.y1 };
+    const end = { x: segment.x2, y: segment.y2 };
+    return {
+      index,
+      segment,
+      startNode: getOrCreateSketchNodeId(nodes, start),
+      endNode: getOrCreateSketchNodeId(nodes, end),
+    };
+  });
+
+  const adjacency = new Map<number, number[]>();
+  edges.forEach((edge, edgeIndex) => {
+    adjacency.set(edge.startNode, [...(adjacency.get(edge.startNode) || []), edgeIndex]);
+    adjacency.set(edge.endNode, [...(adjacency.get(edge.endNode) || []), edgeIndex]);
+  });
+
+  const unusedEdges = new Set(edges.map((_, index) => index));
+  const orderedGroups: SketchSegment[][] = [];
+
+  while (unusedEdges.size > 0) {
+    const seedEdgeIndex = unusedEdges.values().next().value as number;
+    const componentNodes = new Set<number>();
+    const componentEdges = new Set<number>();
+    const pendingNodes = [edges[seedEdgeIndex].startNode, edges[seedEdgeIndex].endNode];
+
+    while (pendingNodes.length > 0) {
+      const nodeId = pendingNodes.pop();
+      if (nodeId === undefined || componentNodes.has(nodeId)) {
+        continue;
+      }
+      componentNodes.add(nodeId);
+      (adjacency.get(nodeId) || []).forEach((edgeIndex) => {
+        if (!unusedEdges.has(edgeIndex) || componentEdges.has(edgeIndex)) {
+          return;
+        }
+        componentEdges.add(edgeIndex);
+        pendingNodes.push(edges[edgeIndex].startNode, edges[edgeIndex].endNode);
+      });
+    }
+
+    while (true) {
+      const remainingComponentEdges = [...componentEdges].filter((edgeIndex) => unusedEdges.has(edgeIndex));
+      if (remainingComponentEdges.length === 0) {
+        break;
+      }
+
+      const degreeMap = new Map<number, number>();
+      remainingComponentEdges.forEach((edgeIndex) => {
+        const edge = edges[edgeIndex];
+        degreeMap.set(edge.startNode, (degreeMap.get(edge.startNode) || 0) + 1);
+        degreeMap.set(edge.endNode, (degreeMap.get(edge.endNode) || 0) + 1);
+      });
+
+      const oddNode = [...degreeMap.entries()].find(([, degree]) => degree % 2 === 1)?.[0];
+      const seedEdge = edges[remainingComponentEdges[0]];
+      let currentNode = oddNode ?? seedEdge.startNode;
+      const orderedSegments: SketchSegment[] = [];
+
+      while (true) {
+        const nextEdgeIndex = (adjacency.get(currentNode) || []).find(
+          (edgeIndex) => componentEdges.has(edgeIndex) && unusedEdges.has(edgeIndex)
+        );
+        if (nextEdgeIndex === undefined) {
+          break;
+        }
+
+        unusedEdges.delete(nextEdgeIndex);
+        const edge = edges[nextEdgeIndex];
+        if (edge.startNode === currentNode) {
+          orderedSegments.push(edge.segment);
+          currentNode = edge.endNode;
+        } else {
+          orderedSegments.push(reverseSketchSegment(edge.segment));
+          currentNode = edge.startNode;
+        }
+      }
+
+      if (orderedSegments.length > 0) {
+        orderedGroups.push(orderedSegments);
+      } else {
+        break;
+      }
+    }
+  }
+
+  return orderedGroups;
+}
+
 export function getSketchSubpaths(operation: Operation | RawRecord | null | undefined, circleSegments = 48): Point[][] {
   const segments = getSketchSegments(operation);
   if (segments.length === 0) {
     return [];
   }
 
-  const subpaths: Point[][] = [];
-  let currentPath: Point[] | null = null;
-  let currentEnd: Point | null = null;
+  const orderedGroups = buildOrderedSketchSegments(segments);
+  const subpaths = orderedGroups.map((orderedSegments) => {
+    const path: Point[] = [];
 
-  segments.forEach((segment) => {
-    const segmentStart = { x: segment.x1, y: segment.y1 };
-    const segmentEnd = { x: segment.x2, y: segment.y2 };
+    orderedSegments.forEach((segment, index) => {
+      const segmentStart = { x: segment.x1, y: segment.y1 };
+      const segmentEnd = { x: segment.x2, y: segment.y2 };
 
-    if (!currentPath || !currentEnd || !pointsEqual(currentEnd, segmentStart)) {
-      currentPath = [{ ...segmentStart }];
-      subpaths.push(currentPath);
-    }
+      if (index === 0) {
+        path.push({ ...segmentStart });
+      }
 
-    if (segment.type === 'line') {
-      currentPath.push(segmentEnd);
-      currentEnd = segmentEnd;
-      return;
-    }
+      if (segment.type === 'line') {
+        path.push(segmentEnd);
+        return;
+      }
 
-    const points = flattenArcSegment(segmentStart, segment, circleSegments);
-    points.forEach((point) => currentPath?.push(point));
-    currentEnd = segmentEnd;
+      const points = flattenArcSegment(segmentStart, segment, circleSegments);
+      points.forEach((point) => path.push(point));
+    });
+
+    return path;
   });
-
-  if (operation?.type === 'sketch' && operation.closed && subpaths.length === 1) {
-    const first = subpaths[0][0];
-    const last = subpaths[0][subpaths[0].length - 1];
-    if (!pointsEqual(first, last)) {
-      subpaths[0].push({ ...first });
-    }
-  }
 
   return subpaths;
 }
@@ -324,6 +477,139 @@ export function isClosedSketchPath(operation: Operation | RawRecord | null | und
   }
 
   return pointsEqual(path[0], path[path.length - 1]);
+}
+
+function normalizedSegmentKey(segment: SketchSegment): string {
+  if (segment.type === 'arc') {
+    return [
+      segment.type,
+      segment.x1.toFixed(4),
+      segment.y1.toFixed(4),
+      segment.x2.toFixed(4),
+      segment.y2.toFixed(4),
+      segment.throughX.toFixed(4),
+      segment.throughY.toFixed(4),
+    ].join(':');
+  }
+
+  return [
+    segment.type,
+    segment.x1.toFixed(4),
+    segment.y1.toFixed(4),
+    segment.x2.toFixed(4),
+    segment.y2.toFixed(4),
+  ].join(':');
+}
+
+export function analyzeSketchIntegrity(operation: Operation | RawRecord | null | undefined): SketchIntegrityReport {
+  const storedClosed = Boolean(operation?.type === 'sketch' && operation.closed);
+  const segments = getSketchSegments(operation);
+  const subpaths = getSketchSubpaths(operation);
+  const primaryPath = subpaths[0] || [];
+  const startPoint = primaryPath[0] || getSketchStartPoint(operation);
+  const endPoint = primaryPath.length > 0 ? primaryPath[primaryPath.length - 1] : null;
+  const detectedClosed = isClosedSketchPath(operation);
+  const openGap =
+    startPoint && endPoint && !detectedClosed
+      ? distance(startPoint, endPoint)
+      : detectedClosed
+        ? 0
+        : null;
+
+  const zeroLengthSegmentIndexes = segments
+    .map((segment, index) =>
+      distance({ x: segment.x1, y: segment.y1 }, { x: segment.x2, y: segment.y2 }) <= 0.0001 ? index : -1
+    )
+    .filter((index) => index >= 0);
+
+  const duplicateSegmentIndexes: number[] = [];
+  const seenSegmentIndexes = new Map<string, number>();
+  segments.forEach((segment, index) => {
+    const key = normalizedSegmentKey(segment);
+    const firstIndex = seenSegmentIndexes.get(key);
+    if (typeof firstIndex === 'number') {
+      duplicateSegmentIndexes.push(index);
+      return;
+    }
+    seenSegmentIndexes.set(key, index);
+  });
+
+  const issues: SketchIntegrityIssue[] = [];
+  if (segments.length === 0) {
+    issues.push({
+      code: 'empty',
+      message: 'Sketch has no segments.',
+    });
+  }
+
+  if (subpaths.length > 1) {
+    issues.push({
+      code: 'disconnected-subpaths',
+      message: `Sketch is split into ${subpaths.length} disconnected subpaths.`,
+      value: subpaths.length,
+    });
+  }
+
+  if (!detectedClosed && openGap !== null && openGap > 0.0001) {
+    issues.push({
+      code: 'open-gap',
+      message: `Sketch start and end are ${openGap.toFixed(3)} mm apart.`,
+      value: openGap,
+    });
+  }
+
+  if (zeroLengthSegmentIndexes.length > 0) {
+    issues.push({
+      code: 'zero-length-segment',
+      message: `Sketch has ${zeroLengthSegmentIndexes.length} zero-length segment(s).`,
+      segmentIndexes: zeroLengthSegmentIndexes,
+      value: zeroLengthSegmentIndexes.length,
+    });
+  }
+
+  if (duplicateSegmentIndexes.length > 0) {
+    issues.push({
+      code: 'duplicate-segment',
+      message: `Sketch has ${duplicateSegmentIndexes.length} duplicate segment(s).`,
+      segmentIndexes: duplicateSegmentIndexes,
+      value: duplicateSegmentIndexes.length,
+    });
+  }
+
+  return {
+    detectedClosed,
+    storedClosed,
+    segmentCount: segments.length,
+    subpathCount: subpaths.length,
+    startPoint,
+    endPoint,
+    openGap,
+    zeroLengthSegmentIndexes,
+    duplicateSegmentIndexes,
+    issues,
+  };
+}
+
+export function deriveSketchState(
+  operation: SketchOperation,
+  segments: SketchSegment[] = getSketchSegments(operation)
+): DerivedSketchState {
+  const nextOperation: SketchOperation = {
+    ...operation,
+    segments,
+  };
+  const closed = isClosedSketchPath(nextOperation);
+  const currentCutSide = operation.cutSide;
+  const cutSide: CutSide = closed
+    ? currentCutSide === 'inside' || currentCutSide === 'outside' ? currentCutSide : 'outside'
+    : 'along';
+
+  return {
+    segments,
+    closed,
+    cutSide,
+    tabsEnabled: closed ? Boolean(operation.tabsEnabled) : false,
+  };
 }
 
 export function getSketchPathPoints(operation: Operation | RawRecord | null | undefined, circleSegments = 48): Point[] {

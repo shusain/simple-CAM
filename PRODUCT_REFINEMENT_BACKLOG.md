@@ -16,27 +16,20 @@ This file tracks the next highest-value product work for `simple-CAM` during the
 - `P2`: Valuable feature expansion after alpha hardening work
 - `P3`: Nice-to-have polish or longer-range expansion
 
+## Completed Recently
+
+### Toolpath preview clarity
+
+Completed:
+- 2D planned-path preview overlay
+- Inside/outside/along path visualization
+- Rapid links, start/end markers, and direction indicators
+- Retaining tab highlighting
+- Preview toggle in the top view controls
+
 ## P0: Alpha Hardening
 
-### 1. Toolpath preview clarity
-
-Why it matters:
-The user should be able to visually confirm what the machine will do before running the job.
-
-Scope:
-- Start with a clear 2D toolpath preview that shows the final planned path, not just source geometry
-- Preview cut offset for `inside`, `outside`, and `along`
-- Distinguish rapid moves, plunge moves, and cutting moves
-- Highlight retaining tabs in the preview
-- Show start point and end point for each operation or the full job
-- Leave room in the design for a later 3D preview mode that shows pass depth and Z transitions
-
-Acceptance notes:
-- Preview should match exported G-code intent closely enough to catch direction, offset, or tab mistakes
-- Tabs should be easy to locate visually
-- 2D preview should be the first milestone, with 3D visualization as a follow-on refinement
-
-### 2. Sketch closure and geometry integrity checks
+### 1. Sketch closure and geometry integrity checks
 
 Why it matters:
 Sketches are now central to more advanced geometry, so integrity issues should be obvious and recoverable.
@@ -51,7 +44,7 @@ Acceptance notes:
 - Closing a path after segment edits should update state without requiring extra user actions
 - Users should be able to see why a sketch is considered open
 
-### 3. Sketch-first drawing workflow
+### 2. Sketch-first drawing workflow
 
 Why it matters:
 The drawing flow should center around building and editing sketches instead of treating polyline/arc as separate top-level operations.
@@ -68,7 +61,7 @@ Acceptance notes:
 
 ## P1: Core Workflow Refinements
 
-### 4. Blender-style transform hotkeys
+### 3. Blender-style transform hotkeys
 
 Why it matters:
 Fast keyboard-driven transforms will make geometry editing much more efficient, especially for repeated adjustments.
@@ -83,7 +76,7 @@ Acceptance notes:
 - Transform state should be clear while active
 - Hotkeys should not conflict with text inputs or existing editing shortcuts
 
-### 5. Numeric geometry editing
+### 4. Numeric geometry editing
 
 Why it matters:
 Dragging is useful, but precise geometry needs direct coordinate and dimension entry.
@@ -99,7 +92,7 @@ Acceptance notes:
 - Inputs should respect current units and snapping behavior
 - Numeric entry UX should feel deliberate rather than browser-default and fiddly
 
-### 6. Better sketch editing mode
+### 5. Better sketch editing mode
 
 Why it matters:
 Sketching is functionally useful now, but editing still has friction when repairing or extending shapes.
@@ -114,7 +107,7 @@ Acceptance notes:
 - Editing mode should make it obvious that drill/cut creation is temporarily unavailable
 - Adding replacement segments after deletion should feel predictable
 
-### 7. Batch operation editing
+### 6. Batch operation editing
 
 Why it matters:
 Material, tool, cut side, and depth changes often need to apply across several operations.
@@ -128,7 +121,7 @@ Acceptance notes:
 - Multi-edit should not silently overwrite unrelated operation fields
 - Undo/redo should treat a batch edit as one action
 
-### 8. Better operation summaries
+### 7. Better operation summaries
 
 Why it matters:
 The operations list should help confirm job intent without constant re-selection.
@@ -143,7 +136,7 @@ Acceptance notes:
 
 ## P2: Feature Expansion
 
-### 9. Pocketing and area clearing
+### 8. Pocketing and area clearing
 
 Why it matters:
 This is one of the biggest missing CAM capabilities after profile cuts and drilling.
@@ -156,7 +149,7 @@ Scope:
 Acceptance notes:
 - Start with simple offset pocketing before more advanced clearing strategies
 
-### 10. Imported geometry workflow
+### 9. Imported geometry workflow
 
 Why it matters:
 Manual sketching is good for simple jobs, but import will unlock more realistic projects.
@@ -169,7 +162,7 @@ Scope:
 Acceptance notes:
 - Imported geometry should land in the same editing workflow as manually drawn sketches
 
-### 11. Basic job estimates
+### 10. Basic job estimates
 
 Why it matters:
 Estimated cut distance/time improves planning and can catch unexpectedly large jobs.
@@ -183,7 +176,7 @@ Acceptance notes:
 
 ## P3: Longer-Range Refinements
 
-### 12. Constraints and snapping upgrades
+### 11. Constraints and snapping upgrades
 
 Ideas:
 - Horizontal/vertical constraints
@@ -191,7 +184,7 @@ Ideas:
 - Midpoint and center snapping
 - Optional temporary snap disable modifier
 
-### 13. Project UX polish
+### 12. Project UX polish
 
 Ideas:
 - Recent files
@@ -199,14 +192,14 @@ Ideas:
 - Job notes and setup checklist
 - Better empty states and onboarding hints
 
-### 14. Machine integration polish
+### 13. Machine integration polish
 
 Ideas:
 - Better OctoPrint upload/run feedback
 - Dry-run or air-cut helper mode
 - More explicit machine state/status feedback
 
-### 15. Job preflight validation
+### 14. Job preflight validation
 
 Why it matters:
 Preflight will still be useful, but it can follow once preview and geometry workflows are stronger.
@@ -226,18 +219,18 @@ Acceptance notes:
 
 ## Suggested Near-Term Sequence
 
-1. Toolpath preview clarity, starting with a strong 2D planned-path view
-2. Sketch closure and integrity checks
-3. Sketch-first drawing workflow
-4. Blender-style transform hotkeys
-5. Numeric geometry editing with better input controls
-6. Better sketch editing mode
+1. Sketch closure and integrity checks
+2. Sketch-first drawing workflow
+3. Blender-style transform hotkeys
+4. Numeric geometry editing with better input controls
+5. Better sketch editing mode
+6. Batch operation editing
 
 ## User-Requested Priorities
 
 Use this section to add or reorder work based on hands-on machine testing and day-to-day usage.
 
-- Toolpath preview should eventually support a 3D visualization mode after the initial 2D planned-path view
+- Toolpath preview should eventually support a 3D visualization mode after the current 2D planned-path view
 - Sketch creation/editing should feel like the primary geometry workflow instead of exposing polyline/poly-arc as separate top-level operations
 - Keyboard transforms should follow Blender-like patterns where practical
 - Numeric input UX should avoid frustrating default browser number controls
