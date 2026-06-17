@@ -13,6 +13,7 @@ import {
   makeMaterial,
   makeRectOperation,
   makeSketchOperation,
+  makeSurfaceRoughOperation,
   makeTool,
 } from '../../test/factories';
 
@@ -24,6 +25,9 @@ describe('operationsPanel helpers', () => {
       'Rect 20.0 x 10.0 mm R2.0'
     );
     expect(formatOperationLabel(makeCircleOperation({ radius: 4, x: 5, y: 6 }))).toBe('Circle R4.00 @ X5.0 Y6.0');
+    expect(formatOperationLabel(makeSurfaceRoughOperation({ stepOver: 1.25 }))).toBe(
+      'Surface roughing (1.250mm stepover)'
+    );
     expect(formatOperationLabel(makeSketchOperation({ closed: true }))).toBe('Sketch closed (5 segments)');
   });
 

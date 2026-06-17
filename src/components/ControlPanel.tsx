@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FileInput, FileOutput, FilePlus2, FolderOpen, Save } from 'lucide-react';
+import { Box, FileInput, FileOutput, FilePlus2, FolderOpen, Save } from 'lucide-react';
 import { resolveToolPreset } from '../utils/tooling';
 import NumberField from './controlPanel/NumberField';
 import MaterialManagerModal from './controlPanel/MaterialManagerModal';
@@ -26,6 +26,7 @@ export default function ControlPanel({
   onOpenProject,
   onImportSvg,
   onImportDxf,
+  onImportStl,
   onSaveProject,
   onExportGcode,
   canSendToOctoprint,
@@ -72,6 +73,15 @@ export default function ControlPanel({
             onClick={onImportDxf}
           >
             <FileInput aria-hidden="true" size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-button import-stl-button"
+            aria-label="Import STL"
+            title="Import STL"
+            onClick={onImportStl}
+          >
+            <Box aria-hidden="true" size={18} />
           </button>
           <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
             <Save aria-hidden="true" size={18} />

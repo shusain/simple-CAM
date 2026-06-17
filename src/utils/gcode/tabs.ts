@@ -1,6 +1,6 @@
-import type { Point, RectOperation, Tool } from '../../types';
+import type { PathOperation, Point, RectOperation, Tool } from '../../types';
 import { distanceBetween, getClosedPathLength, interpolatePoint } from './path';
-import type { PathOperation, TabRange } from './shared';
+import type { TabRange } from './shared';
 
 function mergeRanges(ranges: TabRange[], totalLength: number): TabRange[] {
   if (!Array.isArray(ranges) || ranges.length === 0 || totalLength <= 0) {

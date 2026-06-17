@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCircleOperation, makeDrillOperation, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeTool } from '../test/factories';
+import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTool } from '../test/factories';
 import { getDefaultPocketStepOver } from './pocketing';
 import { buildToolpathPreview, getOperationPlannedPaths, slicePathByRange } from './toolpathPreview';
 
@@ -193,5 +193,122 @@ describe('toolpathPreview', () => {
 
     expect(plannedPaths.length).toBeGreaterThan(0);
     expect(plannedPaths.every((plannedPath) => plannedPath.path.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)))).toBe(true);
+  });
+
+  it('projects surface rough raster paths into the 2D preview', () => {
+    const preview = buildToolpathPreview({
+      operations: [
+        makeSurfaceRoughOperation({
+          depth: -2,
+          stepOver: 2,
+          stockToLeave: 0.5,
+          meshId: 'mesh-1',
+          toolId: 'tool-1',
+          materialId: 'mat-1',
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [
+        makeTool({
+          id: 'tool-1',
+          diameter: 4,
+          materialProfiles: {
+            'mat-1': {
+              cutFeedRate: 300,
+              plungeFeedRate: 120,
+              cutDepthPerPass: 1,
+              drillDepthPerPass: 1,
+            },
+          },
+        }),
+      ],
+      importedMeshes: [
+        makeImportedMesh({
+          id: 'mesh-1',
+          placement: { x: 20, y: 20 },
+          localBounds: {
+            minX: -5,
+            maxX: 5,
+            minY: -4,
+            maxY: 4,
+            minZ: -2,
+            maxZ: 0,
+          },
+          triangles: [
+            {
+              a: { x: -5, y: -4, z: -2 },
+              b: { x: 5, y: -4, z: -2 },
+              c: { x: 5, y: 4, z: -2 },
+            },
+            {
+              a: { x: -5, y: -4, z: -2 },
+              b: { x: 5, y: 4, z: -2 },
+              c: { x: -5, y: 4, z: -2 },
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(preview.segments.some((segment) => segment.operationType === 'surface-rough' && segment.kind === 'cut')).toBe(true);
+    expect(preview.markers.some((marker) => marker.operationType === 'surface-rough' && marker.kind === 'plunge')).toBe(true);
+  });
+
+  it('projects surface finish raster paths into the 2D preview', () => {
+    const preview = buildToolpathPreview({
+      operations: [
+        makeSurfaceFinishOperation({
+          depth: -2,
+          stepOver: 2,
+          meshId: 'mesh-1',
+          toolId: 'tool-1',
+          materialId: 'mat-1',
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [
+        makeTool({
+          id: 'tool-1',
+          diameter: 4,
+          materialProfiles: {
+            'mat-1': {
+              cutFeedRate: 300,
+              plungeFeedRate: 120,
+              cutDepthPerPass: 1,
+              drillDepthPerPass: 1,
+            },
+          },
+        }),
+      ],
+      importedMeshes: [
+        makeImportedMesh({
+          id: 'mesh-1',
+          placement: { x: 20, y: 20 },
+          localBounds: {
+            minX: -5,
+            maxX: 5,
+            minY: -4,
+            maxY: 4,
+            minZ: -2,
+            maxZ: 0,
+          },
+          triangles: [
+            {
+              a: { x: -5, y: -4, z: -2 },
+              b: { x: 5, y: -4, z: -2 },
+              c: { x: 5, y: 4, z: 0 },
+            },
+            {
+              a: { x: -5, y: -4, z: -2 },
+              b: { x: 5, y: 4, z: 0 },
+              c: { x: -5, y: 4, z: 0 },
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(preview.segments.some((segment) => segment.operationType === 'surface-finish' && segment.kind === 'cut')).toBe(true);
+    expect(preview.markers.some((marker) => marker.operationType === 'surface-finish' && marker.kind === 'plunge')).toBe(true);
   });
 });

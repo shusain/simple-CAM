@@ -13,13 +13,16 @@ vi.mock('./components/CamCanvas', () => ({
 }));
 
 vi.mock('./components/ControlPanel', () => ({
-  default: (props: { onImportSvg: () => void; onImportDxf: () => void }) => (
+  default: (props: { onImportSvg: () => void; onImportDxf: () => void; onImportStl: () => void }) => (
     <div data-testid="control-panel">
       <button type="button" onClick={props.onImportSvg}>
         Import SVG
       </button>
       <button type="button" onClick={props.onImportDxf}>
         Import DXF
+      </button>
+      <button type="button" onClick={props.onImportStl}>
+        Import STL
       </button>
     </div>
   ),
@@ -33,9 +36,13 @@ vi.mock('./components/OctoprintSettingsModal', () => ({
   default: () => null,
 }));
 
-vi.mock('./utils/toolpathPreview', () => ({
-  buildToolpathPreview: () => buildToolpathPreviewMock(),
-}));
+vi.mock('./utils/toolpathPreview', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./utils/toolpathPreview')>();
+  return {
+    ...actual,
+    buildToolpathPreview: () => buildToolpathPreviewMock(),
+  };
+});
 
 import App from './App';
 
@@ -62,6 +69,21 @@ describe('App', () => {
     expect(previewButton).not.toHaveClass('active');
     expect(screen.getByTestId('cam-canvas')).toHaveTextContent('preview-off');
     expect(camCanvasMock).toHaveBeenLastCalledWith(expect.objectContaining({ showToolpathPreview: false }));
+  });
+
+  it('switches the viewport between 2D canvas mode and 3D preview mode', () => {
+    render(<App />);
+
+    expect(screen.getByTestId('cam-canvas')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '3D preview' }));
+
+    expect(screen.queryByTestId('cam-canvas')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '3D toolpath preview' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '2D view' }));
+
+    expect(screen.getByTestId('cam-canvas')).toBeInTheDocument();
   });
 
   it('shows sketch-first topbar tools outside of sketch edit mode', () => {
@@ -148,5 +170,31 @@ describe('App', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Choose import cut type' })).not.toBeInTheDocument();
     expect(screen.getByText(/Imported 1 sketch path\(s\) from sample\.svg/i)).toBeInTheDocument();
+  });
+
+  it('imports an STL and reports the triangle count', async () => {
+    (window as Window & { electron?: unknown }).electron = {
+      openStlImport: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePath: '/tmp/hold-down.stl',
+        contents: `
+solid sample
+  facet normal 0 0 1
+    outer loop
+      vertex -1 -1 0
+      vertex 1 -1 0
+      vertex 1 1 0
+    endloop
+  endfacet
+endsolid sample
+        `,
+      }),
+    };
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import STL' }));
+
+    expect(await screen.findByText(/Imported STL hold-down\.stl \(1 triangle\(s\)\)/i)).toBeInTheDocument();
   });
 });

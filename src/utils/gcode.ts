@@ -1,14 +1,19 @@
 import type {
   CircleOperation,
   DrillOperation,
+  ImportedMesh,
   LineOperation,
   MachineSettings,
   Operation,
+  PathOperation,
   Point,
   RectOperation,
   SketchOperation,
+  SurfaceFinishOperation,
+  SurfaceRoughOperation,
   Tool,
 } from '../types';
+import { isPathOperation } from '../types';
 import { getSketchSubpaths } from './geometry';
 import { resolveToolPreset } from './tooling';
 import { appendPathWithTabs, getTabRanges } from './gcode/tabs';
@@ -17,13 +22,14 @@ import {
   distanceBetween,
   getToolRadius,
 } from './gcode/path';
-import type { PathOperation } from './gcode/shared';
 import { getOperationPlannedPaths } from './toolpathPreview';
+import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 
 interface GenerateMarlinGcodeArgs {
   operations: Operation[];
   settings: MachineSettings;
   tools: Tool[];
+  importedMeshes?: ImportedMesh[];
 }
 
 interface CutPathOptions {
@@ -309,6 +315,146 @@ function appendPocketCutPaths(
   lines.push('');
 }
 
+function appendSurfaceRoughCut(
+  lines: string[],
+  operation: SurfaceRoughOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  mesh: ImportedMesh | null | undefined,
+  useStartEndClearance = false
+): void {
+  const plan = buildSurfaceRoughPlan(operation, mesh, settings, tool);
+
+  if (tool) {
+    lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
+  }
+  lines.push(`; Surface roughing (${plan.scanAxis.toUpperCase()} raster, stepover ${num(operation.stepOver)}mm, stock to leave ${num(operation.stockToLeave)}mm)`);
+
+  if (!mesh) {
+    lines.push('; Imported mesh not found for surface roughing operation');
+    lines.push('');
+    return;
+  }
+
+  if (plan.paths.length === 0) {
+    lines.push('; No surface roughing paths were generated');
+    lines.push('');
+    return;
+  }
+
+  const preset = resolveToolPreset(tool, operation.materialId, settings);
+  const rapidFeed = num(preset.rapidFeedRate, 0);
+  const plungeFeed = num(preset.plungeFeedRate, 0);
+  const cutFeed = num(preset.cutFeedRate, 0);
+  const betweenPathZ = getOperationTravelZ(settings);
+
+  let currentPassIndex = -1;
+
+  plan.paths.forEach((path, pathIndex) => {
+    if (path.points.length < 2) {
+      return;
+    }
+
+    if (path.passIndex !== currentPassIndex) {
+      currentPassIndex = path.passIndex;
+      lines.push(`; Surface roughing pass ${path.passIndex + 1} (${num(path.passDepth)}mm)`);
+    }
+
+    lines.push(`; Raster row ${path.rowIndex + 1}`);
+
+    const startPoint = path.points[0];
+    appendEntryMove(
+      lines,
+      { x: startPoint.x, y: startPoint.y },
+      rapidFeed,
+      settings,
+      useStartEndClearance && pathIndex === 0,
+      pathIndex === 0 ? Number(settings.safeZ) || 5 : betweenPathZ
+    );
+    lines.push(`G1 Z${num(startPoint.z)} F${plungeFeed}`);
+
+    for (let pointIndex = 1; pointIndex < path.points.length; pointIndex += 1) {
+      const point = path.points[pointIndex];
+      lines.push(`G1 X${num(point.x)} Y${num(point.y)} Z${num(point.z)} F${cutFeed}`);
+    }
+
+    const retractZ = pathIndex === plan.paths.length - 1 ? Number(settings.safeZ) || 5 : betweenPathZ;
+    lines.push(`G0 Z${num(retractZ)} F${rapidFeed}`);
+  });
+
+  lines.push('');
+}
+
+function appendSurfaceFinishCut(
+  lines: string[],
+  operation: SurfaceFinishOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  mesh: ImportedMesh | null | undefined,
+  useStartEndClearance = false
+): void {
+  const plan = buildSurfaceFinishPlan(operation, mesh, settings, tool);
+
+  if (tool) {
+    lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
+  }
+  lines.push(`; Surface finishing (${plan.scanAxis.toUpperCase()} pattern, stepover ${num(operation.stepOver)}mm)`);
+
+  if (!mesh) {
+    lines.push('; Imported mesh not found for surface finishing operation');
+    lines.push('');
+    return;
+  }
+
+  if (plan.paths.length === 0) {
+    lines.push('; No surface finishing paths were generated');
+    lines.push('');
+    return;
+  }
+
+  const preset = resolveToolPreset(tool, operation.materialId, settings);
+  const rapidFeed = num(preset.rapidFeedRate, 0);
+  const plungeFeed = num(preset.plungeFeedRate, 0);
+  const cutFeed = num(preset.cutFeedRate, 0);
+  const betweenPathZ = getOperationTravelZ(settings);
+
+  let currentPassIndex = -1;
+
+  plan.paths.forEach((path, pathIndex) => {
+    if (path.points.length < 2) {
+      return;
+    }
+
+    if (path.passIndex !== currentPassIndex) {
+      currentPassIndex = path.passIndex;
+      lines.push(`; Surface finishing pass ${path.passIndex + 1} (${num(path.passDepth)}mm)`);
+    }
+
+    lines.push(`; Finish row ${path.rowIndex + 1}`);
+
+    const startPoint = path.points[0];
+    appendEntryMove(
+      lines,
+      { x: startPoint.x, y: startPoint.y },
+      rapidFeed,
+      settings,
+      useStartEndClearance && pathIndex === 0,
+      pathIndex === 0 ? Number(settings.safeZ) || 5 : betweenPathZ
+    );
+    lines.push(`G1 Z${num(startPoint.z)} F${plungeFeed}`);
+
+    for (let pointIndex = 1; pointIndex < path.points.length; pointIndex += 1) {
+      const point = path.points[pointIndex];
+      lines.push(`G1 X${num(point.x)} Y${num(point.y)} Z${num(point.z)} F${cutFeed}`);
+    }
+
+    const retractZ = pathIndex === plan.paths.length - 1 ? Number(settings.safeZ) || 5 : betweenPathZ;
+    lines.push(`G0 Z${num(retractZ)} F${rapidFeed}`);
+  });
+
+  lines.push('');
+}
+
 function appendLineCut(
   lines: string[],
   operation: LineOperation,
@@ -479,9 +625,10 @@ function appendSketchCut(
   }
 }
 
-export function generateMarlinGcode({ operations, settings, tools }: GenerateMarlinGcodeArgs): string {
+export function generateMarlinGcode({ operations, settings, tools, importedMeshes = [] }: GenerateMarlinGcodeArgs): string {
   const lines: string[] = [];
   addHeader(lines, settings, operations.length);
+  const importedMeshMap = new Map(importedMeshes.map((mesh) => [mesh.id, mesh]));
 
   let previousTool: Tool | null = null;
   let previousToolKey: string | null = null;
@@ -525,6 +672,40 @@ export function generateMarlinGcode({ operations, settings, tools }: GenerateMar
       previousTool = tool;
       previousToolKey = toolKey;
       useStartEndClearance = false;
+      return;
+    }
+
+    if (operation.type === 'surface-rough') {
+      appendSurfaceRoughCut(
+        lines,
+        operation,
+        settings,
+        tool,
+        importedMeshMap.get(operation.meshId),
+        useStartEndClearance
+      );
+      previousTool = tool;
+      previousToolKey = toolKey;
+      useStartEndClearance = false;
+      return;
+    }
+
+    if (operation.type === 'surface-finish') {
+      appendSurfaceFinishCut(
+        lines,
+        operation,
+        settings,
+        tool,
+        importedMeshMap.get(operation.meshId),
+        useStartEndClearance
+      );
+      previousTool = tool;
+      previousToolKey = toolKey;
+      useStartEndClearance = false;
+      return;
+    }
+
+    if (!isPathOperation(operation)) {
       return;
     }
 

@@ -3,10 +3,13 @@ import { generateMarlinGcode } from './gcode';
 import {
   makeCircleOperation,
   makeDrillOperation,
+  makeImportedMesh,
   makeLineOperation,
   makeSketchOperation,
   makeRectOperation,
   makeSettings,
+  makeSurfaceFinishOperation,
+  makeSurfaceRoughOperation,
   makeTool,
   normalizeGcode,
 } from '../test/factories';
@@ -265,5 +268,129 @@ describe('generateMarlinGcode', () => {
     expect(depthPass1).toBeGreaterThanOrEqual(0);
     expect(contour2).toBeGreaterThan(depthPass1);
     expect(depthPass2).toBeGreaterThan(contour2);
+  });
+
+  it('emits raster XYZ moves for STL surface roughing operations', () => {
+    const gcode = normalizeGcode(
+      generateMarlinGcode({
+        operations: [
+          makeSurfaceRoughOperation({
+            depth: -2,
+            stepOver: 2,
+            stockToLeave: 0.5,
+            meshId: 'mesh-1',
+            toolId: 'tool-1',
+            materialId: 'mat-1',
+          }),
+        ],
+        settings: makeSettings({ safeZ: 5, startEndZ: 8 }),
+        tools: [
+          makeTool({
+            id: 'tool-1',
+            diameter: 4,
+            materialProfiles: {
+              'mat-1': {
+                cutFeedRate: 300,
+                plungeFeedRate: 120,
+                cutDepthPerPass: 1,
+                drillDepthPerPass: 1,
+              },
+            },
+          }),
+        ],
+        importedMeshes: [
+          makeImportedMesh({
+            id: 'mesh-1',
+            placement: { x: 20, y: 20 },
+            localBounds: {
+              minX: -5,
+              maxX: 5,
+              minY: -4,
+              maxY: 4,
+              minZ: -2,
+              maxZ: 0,
+            },
+            triangles: [
+              {
+                a: { x: -5, y: -4, z: -2 },
+                b: { x: 5, y: -4, z: -2 },
+                c: { x: 5, y: 4, z: -2 },
+              },
+              {
+                a: { x: -5, y: -4, z: -2 },
+                b: { x: 5, y: 4, z: -2 },
+                c: { x: -5, y: 4, z: -2 },
+              },
+            ],
+          }),
+        ],
+      })
+    );
+
+    expect(gcode).toContain('; Surface roughing pass 1 (-1.000mm)');
+    expect(gcode).toContain('; Surface roughing pass 2 (-2.000mm)');
+    expect(gcode.some((line) => /^G1 X.+ Y.+ Z-1\.500 F300$/.test(line))).toBe(true);
+  });
+
+  it('emits raster XYZ moves for STL surface finishing operations', () => {
+    const gcode = normalizeGcode(
+      generateMarlinGcode({
+        operations: [
+          makeSurfaceFinishOperation({
+            depth: -2,
+            stepOver: 2,
+            meshId: 'mesh-1',
+            toolId: 'tool-1',
+            materialId: 'mat-1',
+          }),
+        ],
+        settings: makeSettings({ safeZ: 5, startEndZ: 8 }),
+        tools: [
+          makeTool({
+            id: 'tool-1',
+            diameter: 4,
+            materialProfiles: {
+              'mat-1': {
+                cutFeedRate: 300,
+                plungeFeedRate: 120,
+                cutDepthPerPass: 1,
+                drillDepthPerPass: 1,
+              },
+            },
+          }),
+        ],
+        importedMeshes: [
+          makeImportedMesh({
+            id: 'mesh-1',
+            placement: { x: 20, y: 20 },
+            localBounds: {
+              minX: -5,
+              maxX: 5,
+              minY: -4,
+              maxY: 4,
+              minZ: -2,
+              maxZ: 0,
+            },
+            triangles: [
+              {
+                a: { x: -5, y: -4, z: -2 },
+                b: { x: 5, y: -4, z: -2 },
+                c: { x: 5, y: 4, z: 0 },
+              },
+              {
+                a: { x: -5, y: -4, z: -2 },
+                b: { x: 5, y: 4, z: 0 },
+                c: { x: -5, y: 4, z: 0 },
+              },
+            ],
+          }),
+        ],
+      })
+    );
+
+    expect(gcode).toContain('; Surface finishing pass 1 (-1.000mm)');
+    expect(gcode).toContain('; Surface finishing pass 2 (-2.000mm)');
+    expect(gcode.some((line) => /^G1 X.+ Y.+ Z0\.000 F300$/.test(line))).toBe(true);
+    expect(gcode.some((line) => /^G1 X.+ Y.+ Z-2\.000 F300$/.test(line))).toBe(true);
   });
 });

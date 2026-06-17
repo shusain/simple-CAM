@@ -78,9 +78,58 @@ export interface SketchOperation extends BaseOperation, TabbedCutFields, PocketF
   cutSide: CutSide;
 }
 
-export type Operation =
-  | DrillOperation
+export interface SurfaceOperationBase extends BaseOperation {
+  meshId: string;
+  stepOver: number;
+}
+
+export interface SurfaceRoughOperation extends SurfaceOperationBase {
+  type: 'surface-rough';
+  stockToLeave: number;
+}
+
+export interface SurfaceFinishOperation extends SurfaceOperationBase {
+  type: 'surface-finish';
+  pattern: 'x' | 'y' | 'crosshatch';
+}
+
+export type PathOperation =
   | LineOperation
   | RectOperation
   | CircleOperation
   | SketchOperation;
+
+export type SurfaceOperation =
+  | SurfaceRoughOperation
+  | SurfaceFinishOperation;
+
+export type Operation =
+  | DrillOperation
+  | PathOperation
+  | SurfaceOperation;
+
+export type OperationInput =
+  | Omit<DrillOperation, 'id'>
+  | Omit<LineOperation, 'id'>
+  | Omit<RectOperation, 'id'>
+  | Omit<CircleOperation, 'id'>
+  | Omit<SketchOperation, 'id'>
+  | Omit<SurfaceRoughOperation, 'id'>
+  | Omit<SurfaceFinishOperation, 'id'>;
+
+export function isSurfaceOperation(
+  operation: Operation | null | undefined
+): operation is SurfaceOperation {
+  return operation?.type === 'surface-rough' || operation?.type === 'surface-finish';
+}
+
+export function isPathOperation(
+  operation: Operation | null | undefined
+): operation is PathOperation {
+  return (
+    operation?.type === 'line' ||
+    operation?.type === 'rect' ||
+    operation?.type === 'circle' ||
+    operation?.type === 'sketch'
+  );
+}
