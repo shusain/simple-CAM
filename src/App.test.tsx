@@ -33,9 +33,13 @@ vi.mock('./components/OctoprintSettingsModal', () => ({
   default: () => null,
 }));
 
-vi.mock('./utils/toolpathPreview', () => ({
-  buildToolpathPreview: () => buildToolpathPreviewMock(),
-}));
+vi.mock('./utils/toolpathPreview', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./utils/toolpathPreview')>();
+  return {
+    ...actual,
+    buildToolpathPreview: () => buildToolpathPreviewMock(),
+  };
+});
 
 import App from './App';
 
@@ -62,6 +66,21 @@ describe('App', () => {
     expect(previewButton).not.toHaveClass('active');
     expect(screen.getByTestId('cam-canvas')).toHaveTextContent('preview-off');
     expect(camCanvasMock).toHaveBeenLastCalledWith(expect.objectContaining({ showToolpathPreview: false }));
+  });
+
+  it('switches the viewport between 2D canvas mode and 3D preview mode', () => {
+    render(<App />);
+
+    expect(screen.getByTestId('cam-canvas')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '3D preview' }));
+
+    expect(screen.queryByTestId('cam-canvas')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '3D toolpath preview' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '2D view' }));
+
+    expect(screen.getByTestId('cam-canvas')).toBeInTheDocument();
   });
 
   it('shows sketch-first topbar tools outside of sketch edit mode', () => {

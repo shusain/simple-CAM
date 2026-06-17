@@ -18,6 +18,7 @@ import CamCanvas from './components/CamCanvas';
 import ControlPanel from './components/ControlPanel';
 import OctoprintSettingsModal from './components/OctoprintSettingsModal';
 import OperationsPanel from './components/OperationsPanel';
+import ToolpathPreview3D from './components/ToolpathPreview3D';
 import { generateMarlinGcode } from './utils/gcode';
 import { deriveSketchState, getOperationBounds, getSketchSegments, moveOperation } from './utils/geometry';
 import { getDefaultPocketStepOver } from './utils/pocketing';
@@ -70,6 +71,7 @@ import {
   normalizeTransformAxis,
 } from './app/transforms';
 import { buildToolpathPreview } from './utils/toolpathPreview';
+import { buildToolpathPreview3D } from './utils/toolpathPreview3d';
 import { importDxfToSketchOperations } from './utils/importDxf';
 import type { ImportCutMode } from './utils/importCommon';
 import type {
@@ -98,6 +100,8 @@ interface PendingImport {
   filePath?: string;
   contents: string;
 }
+
+type ViewportMode = '2d' | '3d';
 
 function getToolButtonMeta(toolId: ActiveTool, hotkey: number): ToolbarButtonMeta {
   const title = `${toolId === 'sketch' ? 'Poly-Line' : toolId === 'arc' ? 'Poly-Arc' : TOOLS.find((tool) => tool.id === toolId)?.label || toolId} (Ctrl+${hotkey})`;
@@ -150,6 +154,7 @@ export default function App(): React.JSX.Element {
   const [showToolpathPreview, setShowToolpathPreview] = useState(true);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [viewportMode, setViewportMode] = useState<ViewportMode>('2d');
   const canvasPointerRef = useRef<Point | null>(null);
 
   const operations = operationsHistory.present;
@@ -181,6 +186,10 @@ export default function App(): React.JSX.Element {
   );
   const toolpathPreview = useMemo(
     () => buildToolpathPreview({ operations, settings, tools }),
+    [operations, settings, tools]
+  );
+  const toolpathPreview3D = useMemo(
+    () => buildToolpathPreview3D({ operations, settings, tools }),
     [operations, settings, tools]
   );
   const transformPreviewOperations = useMemo(
@@ -1410,6 +1419,26 @@ export default function App(): React.JSX.Element {
           ) : null}
         </div>
         <div className="topbar-view-controls">
+          <div className="view-mode-toggle" role="group" aria-label="Viewport mode">
+            <button
+              type="button"
+              className={`tool-button ${viewportMode === '2d' ? 'active' : ''}`}
+              aria-label="2D view"
+              title="2D drawing and editing view"
+              onClick={() => setViewportMode('2d')}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              className={`tool-button ${viewportMode === '3d' ? 'active' : ''}`}
+              aria-label="3D preview"
+              title="3D toolpath preview"
+              onClick={() => setViewportMode('3d')}
+            >
+              3D
+            </button>
+          </div>
           <button
             type="button"
             className={`tool-button ${showToolpathPreview ? 'active' : ''}`}
@@ -1473,33 +1502,37 @@ export default function App(): React.JSX.Element {
         </aside>
 
         <main className="center-pane">
-          <CamCanvas
-            activeTool={activeTool}
-            settings={settings}
-            operations={operations}
-            transformPreviewOperations={transformPreviewOperations}
-            selectedOperationIds={selectedIds}
-            onSelectOperation={handleSelectOperation}
-            onSetSelection={handleSetSelection}
-            onAddOperation={addOperation}
-            onPreviewMoveOperations={previewMoveSelectedOperations}
-            onCommitMoveOperations={commitMoveSelectedOperations}
-            activeToolId={activeToolId}
-            activeMaterialId={activeMaterialId}
-            defaultDrillDepth={settings.drillDepth}
-            zoomRequest={zoomRequest}
-            pastePreview={pastePreview}
-            onPlacePaste={placePastedOperations}
-            onPointerUpdate={updateCanvasPointer}
-            onCommitTransformPreview={commitTransformPreview}
-            sketchEdit={sketchEdit}
-            onUpdateOperation={updateOperation}
-            onSelectSketchSegment={selectSketchSegment}
-            onCancelSketchCreation={cancelSketchCreation}
-            showToolpathPreview={showToolpathPreview}
-            toolpathPreview={toolpathPreview}
-            transformHint={transformHint}
-          />
+          {viewportMode === '2d' ? (
+            <CamCanvas
+              activeTool={activeTool}
+              settings={settings}
+              operations={operations}
+              transformPreviewOperations={transformPreviewOperations}
+              selectedOperationIds={selectedIds}
+              onSelectOperation={handleSelectOperation}
+              onSetSelection={handleSetSelection}
+              onAddOperation={addOperation}
+              onPreviewMoveOperations={previewMoveSelectedOperations}
+              onCommitMoveOperations={commitMoveSelectedOperations}
+              activeToolId={activeToolId}
+              activeMaterialId={activeMaterialId}
+              defaultDrillDepth={settings.drillDepth}
+              zoomRequest={zoomRequest}
+              pastePreview={pastePreview}
+              onPlacePaste={placePastedOperations}
+              onPointerUpdate={updateCanvasPointer}
+              onCommitTransformPreview={commitTransformPreview}
+              sketchEdit={sketchEdit}
+              onUpdateOperation={updateOperation}
+              onSelectSketchSegment={selectSketchSegment}
+              onCancelSketchCreation={cancelSketchCreation}
+              showToolpathPreview={showToolpathPreview}
+              toolpathPreview={toolpathPreview}
+              transformHint={transformHint}
+            />
+          ) : (
+            <ToolpathPreview3D preview={toolpathPreview3D} />
+          )}
         </main>
 
         <aside className="right-pane">
