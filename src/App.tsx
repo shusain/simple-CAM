@@ -455,7 +455,8 @@ export default function App(): React.JSX.Element {
         type: 'surface-finish',
         meshId,
         depth,
-        stepOver: defaultStepOver,
+        stepOver: Math.max(0.1, defaultStepOver / 2),
+        pattern: 'crosshatch',
       } satisfies Omit<SurfaceFinishOperation, 'id'>);
       setStatus(`Created surface finishing operation for ${importedMesh.name}`);
     },

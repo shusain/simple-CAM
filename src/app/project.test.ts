@@ -52,6 +52,7 @@ describe('project helpers', () => {
       type: 'surface-finish',
       meshId: 'mesh-1',
       toolId: 'tool-finisher',
+      pattern: 'crosshatch',
     });
   });
 

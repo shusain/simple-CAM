@@ -290,6 +290,41 @@ describe('OperationsPanel', () => {
     expect(onUpdateOperation).toHaveBeenCalledWith('surface-rough-1', { stockToLeave: 0.4 });
   });
 
+  it('edits surface finishing pattern settings', () => {
+    const importedMesh = makeImportedMesh({ id: 'mesh-1', name: 'Hold Down' });
+    const finishOperation = {
+      id: 'surface-finish-1',
+      type: 'surface-finish' as const,
+      meshId: 'mesh-1',
+      depth: -3,
+      stepOver: 0.8,
+      pattern: 'crosshatch' as const,
+      toolId: 'tool-1',
+      materialId: 'material-1',
+    };
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [finishOperation],
+          importedMeshes: [importedMesh],
+          selectedOperation: finishOperation,
+          selectedOperationIds: [finishOperation.id],
+          selectedImportedMesh: null,
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByDisplayValue('Hold Down')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Finish pattern'), { target: { value: 'y' } });
+    fireEvent.change(screen.getByLabelText('Step-over'), { target: { value: '0.4' } });
+
+    expect(onUpdateOperation).toHaveBeenCalledWith('surface-finish-1', { pattern: 'y' });
+    expect(onUpdateOperation).toHaveBeenCalledWith('surface-finish-1', { stepOver: 0.4 });
+  });
+
   it('treats geometrically closed sketches as closed for cut-side and pocket controls', () => {
     const sketch = makeSketchOperation({
       id: 'sketch-detected-closed',

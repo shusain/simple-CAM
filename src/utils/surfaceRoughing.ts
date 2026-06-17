@@ -45,7 +45,7 @@ export interface SurfaceFinishPlan {
   meshId: string;
   rowStep: number;
   sampleStep: number;
-  scanAxis: 'x' | 'y';
+  scanAxis: 'x' | 'y' | 'crosshatch';
   passDepths: number[];
   paths: SurfaceFinishPath[];
 }
@@ -161,7 +161,8 @@ function sampleMeshTopZ(triangles: PreparedTriangle[], x: number, y: number): nu
 function getRasterSetup(
   mesh: ImportedMesh,
   stepOver: number,
-  tool: Tool | null
+  tool: Tool | null,
+  preferredAxis?: 'x' | 'y'
 ): {
   bounds: ReturnType<typeof getImportedMeshWorldBounds>;
   triangles: PreparedTriangle[];
@@ -179,7 +180,7 @@ function getRasterSetup(
   const bounds = getImportedMeshWorldBounds(mesh);
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
-  const scanAxis = width >= height ? 'x' : 'y';
+  const scanAxis = preferredAxis || (width >= height ? 'x' : 'y');
 
   return {
     bounds,
@@ -401,13 +402,14 @@ export function buildSurfaceFinishPlan(
       meshId: operation.meshId,
       rowStep: stepOver,
       sampleStep: fallbackSampleStep,
-      scanAxis: 'x',
+      scanAxis: operation.pattern,
       passDepths: [],
       paths: [],
     };
   }
 
-  const rasterSetup = getRasterSetup(mesh, stepOver, tool);
+  const preferredAxes =
+    operation.pattern === 'crosshatch' ? (['x', 'y'] as const) : ([operation.pattern] as const);
   const preset = resolveToolPreset(tool, operation.materialId, settings);
   const fallbackDepth = Math.min(0, mesh.localBounds.minZ);
   const finalDepth = toNegativeDepth(operation.depth, fallbackDepth);
@@ -416,31 +418,39 @@ export function buildSurfaceFinishPlan(
   const paths: SurfaceFinishPath[] = [];
 
   passDepths.forEach((passDepth, passIndex) => {
-    rasterSetup.rowValues.forEach((rowCoordinate, rowIndex) => {
-      const reverse = rowIndex % 2 === 1;
-      const rowPaths = buildFinishRowPaths(
-        rasterSetup.triangles,
-        operation,
-        rowCoordinate,
-        passDepth,
-        rowIndex,
-        rasterSetup.sampleValues,
-        rasterSetup.scanAxis,
-        reverse
-      ).map((path) => ({
-        ...path,
-        passIndex,
-      }));
-      paths.push(...rowPaths);
+    preferredAxes.forEach((axis, axisIndex) => {
+      const rasterSetup = getRasterSetup(mesh, stepOver, tool, axis);
+      rasterSetup.rowValues.forEach((rowCoordinate, rowIndex) => {
+        const combinedRowIndex = axisIndex * rasterSetup.rowValues.length + rowIndex;
+        const reverse = combinedRowIndex % 2 === 1;
+        const rowPaths = buildFinishRowPaths(
+          rasterSetup.triangles,
+          operation,
+          rowCoordinate,
+          passDepth,
+          combinedRowIndex,
+          rasterSetup.sampleValues,
+          rasterSetup.scanAxis,
+          reverse
+        ).map((path) => ({
+          ...path,
+          passIndex,
+        }));
+        paths.push(...rowPaths);
+      });
     });
   });
+
+  const sampleStep = Math.max(
+    ...preferredAxes.map((axis) => getRasterSetup(mesh, stepOver, tool, axis).sampleStep)
+  );
 
   return {
     operationId: operation.id,
     meshId: operation.meshId,
     rowStep: stepOver,
-    sampleStep: rasterSetup.sampleStep,
-    scanAxis: rasterSetup.scanAxis,
+    sampleStep,
+    scanAxis: operation.pattern,
     passDepths,
     paths,
   };

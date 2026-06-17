@@ -72,6 +72,13 @@ function normalizeCutSideValue(value: unknown, fallback: CutSide = 'along'): Cut
   return value === 'inside' || value === 'outside' || value === 'along' ? value : fallback;
 }
 
+function normalizeSurfaceFinishPattern(
+  value: unknown,
+  fallback: 'x' | 'y' | 'crosshatch' = 'crosshatch'
+): 'x' | 'y' | 'crosshatch' {
+  return value === 'x' || value === 'y' || value === 'crosshatch' ? value : fallback;
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -1324,6 +1331,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       meshId: data.meshId,
       depth,
       stepOver: toOptionalPositiveNumber(data.stepOver) ?? getDefaultPocketStepOver(),
+      pattern: normalizeSurfaceFinishPattern(data.pattern),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
     };

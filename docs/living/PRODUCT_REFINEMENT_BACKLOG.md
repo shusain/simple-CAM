@@ -118,7 +118,9 @@ Status:
 - [x] First STL scope is now top-down 3-axis `surface-rough` / `surface-finish` on rectangular stock with Onshape/mm assumptions
 - [x] STL meshes can now be imported, centered by default, moved in 2D silhouette form, and assigned new `surface-rough` / `surface-finish` operations
 - [x] `surface-rough` now produces first-pass raster toolpaths for preview and G-code export
-- [ ] `surface-finish` remains unimplemented and should stay blocked from export until its planner exists
+- [x] `surface-finish` now produces first-pass raster toolpaths for preview and G-code export
+- [x] `surface-finish` supports `x`, `y`, and `crosshatch` patterns, with a finer default stepover than roughing
+- [ ] Surface finishing strategy still needs quality refinement beyond simple raster/crosshatch output
 
 ## P2: Follow-On Workflow Work
 

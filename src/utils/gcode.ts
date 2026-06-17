@@ -398,7 +398,7 @@ function appendSurfaceFinishCut(
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
-  lines.push(`; Surface finishing (${plan.scanAxis.toUpperCase()} raster, stepover ${num(operation.stepOver)}mm)`);
+  lines.push(`; Surface finishing (${plan.scanAxis.toUpperCase()} pattern, stepover ${num(operation.stepOver)}mm)`);
 
   if (!mesh) {
     lines.push('; Imported mesh not found for surface finishing operation');

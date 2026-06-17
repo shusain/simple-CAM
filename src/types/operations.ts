@@ -90,6 +90,7 @@ export interface SurfaceRoughOperation extends SurfaceOperationBase {
 
 export interface SurfaceFinishOperation extends SurfaceOperationBase {
   type: 'surface-finish';
+  pattern: 'x' | 'y' | 'crosshatch';
 }
 
 export type PathOperation =

@@ -205,6 +205,7 @@ export function makeSurfaceFinishOperation(
     meshId: 'mesh-1',
     depth: -3,
     stepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
+    pattern: 'crosshatch',
     toolId: DEFAULT_TOOLS[0].id,
     materialId: DEFAULT_MATERIALS[0].id,
     ...overrides,

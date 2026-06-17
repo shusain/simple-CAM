@@ -372,7 +372,23 @@ export default function OperationsPanel({
                     })
                   }
                 />
-              ) : null}
+              ) : (
+                <label className="field-row">
+                  <span>Finish pattern</span>
+                  <select
+                    value={selectedOperation.pattern}
+                    onChange={(event) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        pattern: event.target.value as 'x' | 'y' | 'crosshatch',
+                      })
+                    }
+                  >
+                    <option value="crosshatch">Crosshatch</option>
+                    <option value="x">X raster</option>
+                    <option value="y">Y raster</option>
+                  </select>
+                </label>
+              )}
             </>
           ) : null}
 

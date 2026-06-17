@@ -211,6 +211,6 @@ The groundwork phase is now in place:
 - Imported meshes render as translucent context in the 3D preview
 - Dedicated `surface-rough` and `surface-finish` operations can now be created and configured against an imported mesh
 - `surface-rough` now has a first-pass raster planner that feeds both preview and G-code generation
-- `surface-finish` is still a placeholder operation with export intentionally blocked
+- `surface-finish` now has a first-pass raster/crosshatch planner with export and preview support
 
-The next implementation step should move into finishing-path strategy and refinement of mesh-aware planning quality. Full finish-path G-code generation should remain blocked until that planner is implemented and previewable.
+The next implementation step should move into finishing-path quality and mesh-aware planning refinement rather than basic plumbing.
