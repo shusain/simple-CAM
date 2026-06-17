@@ -1,5 +1,16 @@
-import type { MachineSettings, Operation, Point, Tool } from '../types';
+import type {
+  ImportedMesh,
+  MachineSettings,
+  Operation,
+  PathOperation,
+  Point,
+  SurfaceFinishOperation,
+  SurfaceRoughOperation,
+  Tool,
+} from '../types';
+import { isPathOperation } from '../types';
 import { buildIncrementDepths, getStartEndZ, toNegativeDepth, toPositiveStep } from './gcode/depth';
+import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 import { getOperationPlannedPaths } from './toolpathPreview';
 import { resolveToolPreset } from './tooling';
 
@@ -41,6 +52,7 @@ interface BuildToolpathPreview3DArgs {
   operations: Operation[];
   settings: MachineSettings;
   tools: Tool[];
+  importedMeshes?: ImportedMesh[];
 }
 
 function getOperationTool(operation: Operation, tools: Tool[]): Tool | null {
@@ -98,7 +110,7 @@ function appendSegment(
 
 function appendPathAtDepth(
   target: ToolpathPreview3DSegment[],
-  operation: Exclude<Operation, Extract<Operation, { type: 'drill' }>>,
+  operation: PathOperation,
   path: Point[],
   depth: number
 ): void {
@@ -136,6 +148,7 @@ export function buildToolpathPreview3D({
   operations,
   settings,
   tools,
+  importedMeshes = [],
 }: BuildToolpathPreview3DArgs): ToolpathPreview3D {
   const segments: ToolpathPreview3DSegment[] = [];
   const markers: ToolpathPreview3DMarker[] = [];
@@ -143,6 +156,7 @@ export function buildToolpathPreview3D({
   const safeZ = Number(settings.safeZ) || 5;
   const betweenPassClearanceZ = getOperationTravelZ(settings);
   let current = { x: 0, y: 0, z: startEndZ };
+  const importedMeshMap = new Map(importedMeshes.map((mesh) => [mesh.id, mesh]));
 
   markers.push({ kind: 'start', point: current });
 
@@ -176,6 +190,80 @@ export function buildToolpathPreview3D({
 
       appendSegment(segments, 'rapid', operation, operation.type, [current, { ...point, z: safeZ }]);
       current = { ...point, z: safeZ };
+      return;
+    }
+
+    if (operation.type === 'surface-rough') {
+      const tool = getOperationTool(operation, tools);
+      const mesh = importedMeshMap.get(operation.meshId);
+      const plan = buildSurfaceRoughPlan(operation as SurfaceRoughOperation, mesh, settings, tool);
+
+      plan.paths.forEach((path, pathIndex) => {
+        if (path.points.length < 2) {
+          return;
+        }
+
+        const startPoint = path.points[0];
+        const endPoint = path.points[path.points.length - 1];
+        const operationStartClearance = pathIndex === 0 ? safeZ : betweenPassClearanceZ;
+
+        if (current.z !== operationStartClearance) {
+          appendSegment(segments, 'rapid', operation, operation.type, [current, { ...current, z: operationStartClearance }]);
+          current = { ...current, z: operationStartClearance };
+        }
+        if (current.x !== startPoint.x || current.y !== startPoint.y) {
+          appendSegment(segments, 'rapid', operation, operation.type, [current, { x: startPoint.x, y: startPoint.y, z: current.z }]);
+          current = { x: startPoint.x, y: startPoint.y, z: current.z };
+        }
+
+        appendSegment(segments, 'plunge', operation, operation.type, [current, startPoint]);
+        current = startPoint;
+        appendSegment(segments, 'cut', operation, operation.type, path.points);
+        current = endPoint;
+
+        const retractZ = pathIndex === plan.paths.length - 1 ? safeZ : betweenPassClearanceZ;
+        appendSegment(segments, 'rapid', operation, operation.type, [current, { x: endPoint.x, y: endPoint.y, z: retractZ }]);
+        current = { x: endPoint.x, y: endPoint.y, z: retractZ };
+      });
+      return;
+    }
+
+    if (operation.type === 'surface-finish') {
+      const tool = getOperationTool(operation, tools);
+      const mesh = importedMeshMap.get(operation.meshId);
+      const plan = buildSurfaceFinishPlan(operation as SurfaceFinishOperation, mesh, settings, tool);
+
+      plan.paths.forEach((path, pathIndex) => {
+        if (path.points.length < 2) {
+          return;
+        }
+
+        const startPoint = path.points[0];
+        const endPoint = path.points[path.points.length - 1];
+        const operationStartClearance = pathIndex === 0 ? safeZ : betweenPassClearanceZ;
+
+        if (current.z !== operationStartClearance) {
+          appendSegment(segments, 'rapid', operation, operation.type, [current, { ...current, z: operationStartClearance }]);
+          current = { ...current, z: operationStartClearance };
+        }
+        if (current.x !== startPoint.x || current.y !== startPoint.y) {
+          appendSegment(segments, 'rapid', operation, operation.type, [current, { x: startPoint.x, y: startPoint.y, z: current.z }]);
+          current = { x: startPoint.x, y: startPoint.y, z: current.z };
+        }
+
+        appendSegment(segments, 'plunge', operation, operation.type, [current, startPoint]);
+        current = startPoint;
+        appendSegment(segments, 'cut', operation, operation.type, path.points);
+        current = endPoint;
+
+        const retractZ = pathIndex === plan.paths.length - 1 ? safeZ : betweenPassClearanceZ;
+        appendSegment(segments, 'rapid', operation, operation.type, [current, { x: endPoint.x, y: endPoint.y, z: retractZ }]);
+        current = { x: endPoint.x, y: endPoint.y, z: retractZ };
+      });
+      return;
+    }
+
+    if (!isPathOperation(operation)) {
       return;
     }
 

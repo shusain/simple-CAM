@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ToolpathPreview3D from './ToolpathPreview3D';
+import { makeImportedMesh } from '../test/factories';
 import type { ToolpathPreview3D as ToolpathPreview3DData } from '../utils/toolpathPreview3d';
 
 const preview: ToolpathPreview3DData = {
@@ -78,5 +79,11 @@ describe('ToolpathPreview3D', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
     expect(screen.getByText('0%')).toBeInTheDocument();
+  });
+
+  it('renders imported STL mesh geometry in the 3D scene', () => {
+    render(<ToolpathPreview3D preview={preview} importedMeshes={[makeImportedMesh()]} />);
+
+    expect(screen.getByRole('img', { name: '3D toolpath preview' }).querySelectorAll('polygon').length).toBeGreaterThan(1);
   });
 });

@@ -1,5 +1,6 @@
 import { getSketchSegments } from '../../utils/geometry';
 import type {
+  ImportedMesh,
   Material,
   Operation,
   SketchArcSegment,
@@ -29,6 +30,14 @@ export function formatOperationLabel(operation: Operation): string {
     return `Circle R${operation.radius.toFixed(2)} @ X${operation.x.toFixed(1)} Y${operation.y.toFixed(1)}`;
   }
 
+  if (operation.type === 'surface-rough') {
+    return `Surface roughing (${operation.stepOver.toFixed(3)}mm stepover)`;
+  }
+
+  if (operation.type === 'surface-finish') {
+    return `Surface finishing (${operation.stepOver.toFixed(3)}mm stepover)`;
+  }
+
   const segmentCount = getSketchSegments(operation).length + (operation.closed ? 1 : 0);
   return `Sketch ${operation.closed ? 'closed' : 'open'} (${segmentCount} segments)`;
 }
@@ -41,6 +50,11 @@ export function getToolName(toolId: string | undefined, tools: Tool[]): string {
 export function getMaterialName(materialId: string | undefined, materials: Material[]): string {
   const material = materials.find((item) => item.id === materialId);
   return material ? material.name : 'Unassigned material';
+}
+
+export function getImportedMeshName(meshId: string, importedMeshes: ImportedMesh[]): string {
+  const importedMesh = importedMeshes.find((mesh) => mesh.id === meshId);
+  return importedMesh ? importedMesh.name : 'Missing imported mesh';
 }
 
 export function updateSketchStart(

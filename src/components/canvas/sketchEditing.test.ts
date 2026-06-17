@@ -31,6 +31,8 @@ describe('canvas sketchEditing helpers', () => {
       startClient: null,
       selectedIds: null,
       sourceOperations: null,
+      importedMeshId: null,
+      sourceImportedMesh: null,
       additive: false,
       handle: null,
     });

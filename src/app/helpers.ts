@@ -1,4 +1,4 @@
-import type { MachineSettings, Material, OctoprintSettings, Operation, Tool } from '../types';
+import type { ImportedMesh, MachineSettings, Material, OctoprintSettings, Operation, Tool } from '../types';
 import { moveOperation } from '../utils/geometry';
 import { normalizeMaterial, normalizeTool, resolveMaterialId } from '../utils/tooling';
 import {
@@ -76,7 +76,7 @@ export function getInitialState(): InitialState {
       ? stored.activeToolId
       : tools[0].id;
 
-  return { settings, materials, tools, activeToolId };
+  return { settings, materials, tools, activeToolId, importedMeshes: [] };
 }
 
 export function computeBounds(operations: Operation[], getBounds: OperationBoundsGetter): OperationBounds | null {
@@ -101,6 +101,13 @@ export function isEditableElement(target: EventTarget | null): boolean {
 }
 
 export function operationsChanged(a: Operation[], b: Operation[]): boolean {
+  if (a === b) return false;
+  if (!Array.isArray(a) || !Array.isArray(b)) return true;
+  if (a.length !== b.length) return true;
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+export function importedMeshesChanged(a: ImportedMesh[], b: ImportedMesh[]): boolean {
   if (a === b) return false;
   if (!Array.isArray(a) || !Array.isArray(b)) return true;
   if (a.length !== b.length) return true;

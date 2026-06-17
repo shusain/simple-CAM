@@ -6,6 +6,7 @@ import type { OperationsPanelProps } from './operationsPanel/types';
 import {
   makeCircleOperation,
   makeDrillOperation,
+  makeImportedMesh,
   makeLineOperation,
   makeMaterial,
   makeRectOperation,
@@ -20,12 +21,21 @@ function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPa
 
   return {
     operations,
+    importedMeshes: [],
+    workWidth: 300,
+    workHeight: 200,
     selectedOperation: overrides.selectedOperation ?? operations[0] ?? null,
+    selectedImportedMesh: null,
     selectedOperationIds: overrides.selectedOperationIds ?? (operations[0] ? [operations[0].id] : []),
     materials,
     tools,
     onSelectOperation: vi.fn(),
+    onSelectImportedMesh: vi.fn(),
+    onCreateSurfaceRoughOperation: vi.fn(),
+    onCreateSurfaceFinishOperation: vi.fn(),
     onUpdateOperation: vi.fn(),
+    onUpdateImportedMesh: vi.fn(),
+    onDeleteImportedMesh: vi.fn(),
     onDeleteOperation: vi.fn(),
     onDeleteSelection: vi.fn(),
     onMoveOperation: vi.fn(),
@@ -223,6 +233,63 @@ describe('OperationsPanel', () => {
     expect(screen.getByText(/start and end are/i)).toBeInTheDocument();
   });
 
+  it('creates STL surface operations from imported mesh details and edits their fields', () => {
+    const importedMesh = makeImportedMesh({ id: 'mesh-1', name: 'Hold Down' });
+    const roughOperation = {
+      id: 'surface-rough-1',
+      type: 'surface-rough' as const,
+      meshId: 'mesh-1',
+      depth: -3,
+      stepOver: 1.5,
+      stockToLeave: 0.25,
+      toolId: 'tool-1',
+      materialId: 'material-1',
+    };
+    const onCreateSurfaceRoughOperation = vi.fn();
+    const onCreateSurfaceFinishOperation = vi.fn();
+    const onUpdateOperation = vi.fn();
+
+    const { rerender } = render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [],
+          importedMeshes: [importedMesh],
+          selectedOperation: null,
+          selectedImportedMesh: importedMesh,
+          selectedOperationIds: [],
+          onCreateSurfaceRoughOperation,
+          onCreateSurfaceFinishOperation,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create surface roughing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create surface finishing' }));
+
+    expect(onCreateSurfaceRoughOperation).toHaveBeenCalledWith('mesh-1');
+    expect(onCreateSurfaceFinishOperation).toHaveBeenCalledWith('mesh-1');
+
+    rerender(
+      <OperationsPanel
+        {...buildProps({
+          operations: [roughOperation],
+          importedMeshes: [importedMesh],
+          selectedOperation: roughOperation,
+          selectedOperationIds: [roughOperation.id],
+          selectedImportedMesh: null,
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByDisplayValue('Hold Down')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Step-over'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Stock to leave'), { target: { value: '0.4' } });
+
+    expect(onUpdateOperation).toHaveBeenCalledWith('surface-rough-1', { stepOver: 2 });
+    expect(onUpdateOperation).toHaveBeenCalledWith('surface-rough-1', { stockToLeave: 0.4 });
+  });
+
   it('treats geometrically closed sketches as closed for cut-side and pocket controls', () => {
     const sketch = makeSketchOperation({
       id: 'sketch-detected-closed',
@@ -330,6 +397,46 @@ describe('OperationsPanel', () => {
     expect(screen.getByRole('tab', { name: 'Operations' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: 'Details' })).not.toBeInTheDocument();
     expect(screen.getByText('No operations yet. Use tools above to place drill points or cut paths.')).toBeInTheDocument();
+  });
+
+  it('shows imported STL meshes in the list and details panel', () => {
+    const mesh = makeImportedMesh({ id: 'mesh-hold-down', name: 'Hold Down STL' });
+    const onSelectImportedMesh = vi.fn();
+    const onUpdateImportedMesh = vi.fn();
+    const onDeleteImportedMesh = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [],
+          importedMeshes: [mesh],
+          selectedOperation: null,
+          selectedImportedMesh: mesh,
+          selectedOperationIds: [],
+          onSelectImportedMesh,
+          onUpdateImportedMesh,
+          onDeleteImportedMesh,
+        })}
+      />
+    );
+
+    expect(screen.getByText('Selected: STL MESH')).toBeInTheDocument();
+    expect(screen.getByLabelText('Triangles')).toHaveValue(2);
+    fireEvent.change(screen.getByLabelText('Center X'), { target: { value: '125' } });
+    expect(onUpdateImportedMesh).toHaveBeenCalledWith(
+      'mesh-hold-down',
+      expect.objectContaining({ placement: expect.objectContaining({ x: 125 }) })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Center on stock' }));
+    expect(onUpdateImportedMesh).toHaveBeenCalledWith('mesh-hold-down', {
+      placement: { x: 150, y: 100 },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete imported mesh' }));
+    expect(onDeleteImportedMesh).toHaveBeenCalledWith('mesh-hold-down');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
+    fireEvent.click(screen.getByRole('button', { name: /Hold Down STL/i }));
+    expect(onSelectImportedMesh).toHaveBeenCalledWith('mesh-hold-down');
   });
 
   it('updates drill coordinates and deletes the selected operation', () => {

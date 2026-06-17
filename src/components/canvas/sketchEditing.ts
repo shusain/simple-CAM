@@ -20,6 +20,8 @@ export function createEmptyInteractionState(): InteractionState {
     startClient: null,
     selectedIds: null,
     sourceOperations: null,
+    importedMeshId: null,
+    sourceImportedMesh: null,
     additive: false,
     handle: null,
   };

@@ -1,9 +1,24 @@
-import type { CircleOperation, CutSide, DrillOperation, MachineSettings, Operation, Point, RectOperation, SketchOperation, Tool } from '../types';
+import type {
+  CircleOperation,
+  CutSide,
+  ImportedMesh,
+  MachineSettings,
+  Operation,
+  PathOperation,
+  Point,
+  RectOperation,
+  SurfaceFinishOperation,
+  SketchOperation,
+  SurfaceRoughOperation,
+  Tool,
+} from '../types';
+import { isPathOperation } from '../types';
 import { getSketchSubpaths, isClosedSketchPath } from './geometry';
 import { buildRoundedRectPath, clampRectCornerRadius, getCutSide, getToolRadius, interpolatePoint, normalizeRectGeometry, offsetClosedPath, pointsEqual } from './gcode/path';
 import type { TabRange } from './gcode/shared';
 import { getTabRanges } from './gcode/tabs';
 import { buildPocketContourPaths, buildRectPocketContourPaths } from './pocketing';
+import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 
 export type ToolpathPreviewSegmentKind = 'rapid' | 'cut' | 'tab';
 export type ToolpathPreviewMarkerKind = 'start' | 'end' | 'plunge' | 'drill';
@@ -41,6 +56,18 @@ interface BuildToolpathPreviewArgs {
   operations: Operation[];
   settings: MachineSettings;
   tools: Tool[];
+  importedMeshes?: ImportedMesh[];
+}
+
+function projectSurfacePath(points: { x: number; y: number }[]): Point[] {
+  const projected: Point[] = [];
+  points.forEach((point) => {
+    const previous = projected[projected.length - 1];
+    if (!previous || !pointsEqual(previous, point)) {
+      projected.push({ x: point.x, y: point.y });
+    }
+  });
+  return projected;
 }
 
 function getPathBounds(path: Point[]): { minX: number; maxX: number; minY: number; maxY: number } | null {
@@ -234,7 +261,7 @@ function buildSketchPaths(operation: SketchOperation, settings: MachineSettings,
 }
 
 export function getOperationPlannedPaths(
-  operation: Exclude<Operation, DrillOperation>,
+  operation: PathOperation,
   settings: MachineSettings,
   tool: Tool | null
 ): OperationPlannedPath[] {
@@ -327,11 +354,12 @@ export function slicePathByRange(pathPoints: Point[], range: TabRange): Point[] 
   return points.length >= 2 ? points : [];
 }
 
-export function buildToolpathPreview({ operations, settings, tools }: BuildToolpathPreviewArgs): ToolpathPreview {
+export function buildToolpathPreview({ operations, settings, tools, importedMeshes = [] }: BuildToolpathPreviewArgs): ToolpathPreview {
   const segments: ToolpathPreviewSegment[] = [];
   const markers: ToolpathPreviewMarker[] = [];
   const home = { x: 0, y: 0 };
   let previousEndPoint: Point | null = operations.length > 0 ? home : null;
+  const importedMeshMap = new Map(importedMeshes.map((mesh) => [mesh.id, mesh]));
 
   if (operations.length > 0) {
     markers.push({
@@ -360,6 +388,88 @@ export function buildToolpathPreview({ operations, settings, tools }: BuildToolp
         point,
       });
       previousEndPoint = point;
+      return;
+    }
+
+    if (operation.type === 'surface-rough') {
+      const tool = getOperationTool(operation, tools);
+      const mesh = importedMeshMap.get(operation.meshId);
+      const plan = buildSurfaceRoughPlan(operation as SurfaceRoughOperation, mesh, settings, tool);
+
+      plan.paths.forEach((path) => {
+        const projectedPath = projectSurfacePath(path.points);
+        if (projectedPath.length < 2) {
+          return;
+        }
+
+        const startPoint = projectedPath[0];
+        const endPoint = projectedPath[projectedPath.length - 1];
+        if (previousEndPoint && !pointsEqual(previousEndPoint, startPoint)) {
+          segments.push({
+            kind: 'rapid',
+            operationId: operation.id,
+            operationType: operation.type,
+            points: [previousEndPoint, startPoint],
+          });
+        }
+
+        markers.push({
+          kind: 'plunge',
+          operationId: operation.id,
+          operationType: operation.type,
+          point: startPoint,
+        });
+        segments.push({
+          kind: 'cut',
+          operationId: operation.id,
+          operationType: operation.type,
+          points: projectedPath,
+        });
+        previousEndPoint = endPoint;
+      });
+      return;
+    }
+
+    if (operation.type === 'surface-finish') {
+      const tool = getOperationTool(operation, tools);
+      const mesh = importedMeshMap.get(operation.meshId);
+      const plan = buildSurfaceFinishPlan(operation as SurfaceFinishOperation, mesh, settings, tool);
+
+      plan.paths.forEach((path) => {
+        const projectedPath = projectSurfacePath(path.points);
+        if (projectedPath.length < 2) {
+          return;
+        }
+
+        const startPoint = projectedPath[0];
+        const endPoint = projectedPath[projectedPath.length - 1];
+        if (previousEndPoint && !pointsEqual(previousEndPoint, startPoint)) {
+          segments.push({
+            kind: 'rapid',
+            operationId: operation.id,
+            operationType: operation.type,
+            points: [previousEndPoint, startPoint],
+          });
+        }
+
+        markers.push({
+          kind: 'plunge',
+          operationId: operation.id,
+          operationType: operation.type,
+          point: startPoint,
+        });
+        segments.push({
+          kind: 'cut',
+          operationId: operation.id,
+          operationType: operation.type,
+          points: projectedPath,
+        });
+        previousEndPoint = endPoint;
+      });
+      return;
+    }
+
+    if (!isPathOperation(operation)) {
       return;
     }
 

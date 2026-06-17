@@ -13,13 +13,16 @@ vi.mock('./components/CamCanvas', () => ({
 }));
 
 vi.mock('./components/ControlPanel', () => ({
-  default: (props: { onImportSvg: () => void; onImportDxf: () => void }) => (
+  default: (props: { onImportSvg: () => void; onImportDxf: () => void; onImportStl: () => void }) => (
     <div data-testid="control-panel">
       <button type="button" onClick={props.onImportSvg}>
         Import SVG
       </button>
       <button type="button" onClick={props.onImportDxf}>
         Import DXF
+      </button>
+      <button type="button" onClick={props.onImportStl}>
+        Import STL
       </button>
     </div>
   ),
@@ -167,5 +170,31 @@ describe('App', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Choose import cut type' })).not.toBeInTheDocument();
     expect(screen.getByText(/Imported 1 sketch path\(s\) from sample\.svg/i)).toBeInTheDocument();
+  });
+
+  it('imports an STL and reports the triangle count', async () => {
+    (window as Window & { electron?: unknown }).electron = {
+      openStlImport: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePath: '/tmp/hold-down.stl',
+        contents: `
+solid sample
+  facet normal 0 0 1
+    outer loop
+      vertex -1 -1 0
+      vertex 1 -1 0
+      vertex 1 1 0
+    endloop
+  endfacet
+endsolid sample
+        `,
+      }),
+    };
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import STL' }));
+
+    expect(await screen.findByText(/Imported STL hold-down\.stl \(1 triangle\(s\)\)/i)).toBeInTheDocument();
   });
 });

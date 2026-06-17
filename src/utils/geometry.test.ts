@@ -22,6 +22,7 @@ import {
   makeLineOperation,
   makeRectOperation,
   makeSketchOperation,
+  makeSurfaceRoughOperation,
 } from '../test/factories';
 
 describe('geometry', () => {
@@ -237,6 +238,14 @@ describe('geometry', () => {
     });
   });
 
+  it('keeps STL surface operations immutable in 2D geometry helpers', () => {
+    const operation = makeSurfaceRoughOperation({ meshId: 'mesh-9' });
+
+    expect(getOperationBounds(operation)).toBeNull();
+    expect(hitTestOperation(operation, { x: 0, y: 0 }, 1)).toBe(false);
+    expect(moveOperation(operation, 10, 5)).toEqual(operation);
+  });
+
   it('sanitizes legacy sketch operations and clamps tab values', () => {
     const sanitized = sanitizeOperation({
       id: 'legacy-1',
@@ -306,6 +315,22 @@ describe('geometry', () => {
 
     expect(
       sanitizeOperation({
+        id: 'surface-rough',
+        type: 'surface-rough',
+        meshId: 'mesh-1',
+        depth: -4,
+        stepOver: 1.2,
+        stockToLeave: 0.3,
+      })
+    ).toMatchObject({
+      type: 'surface-rough',
+      meshId: 'mesh-1',
+      stepOver: 1.2,
+      stockToLeave: 0.3,
+    });
+
+    expect(
+      sanitizeOperation({
         id: 'circle-raw',
         type: 'circle',
         x: 5,
@@ -318,6 +343,7 @@ describe('geometry', () => {
     });
 
     expect(sanitizeOperation({ type: 'circle', x: 'bad', y: 0, radius: 1 })).toBeNull();
+    expect(sanitizeOperation({ type: 'surface-finish', meshId: '', depth: -2 })).toBeNull();
     expect(sanitizeOperation({ type: 'unknown' })).toBeNull();
   });
 

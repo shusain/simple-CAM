@@ -1,10 +1,13 @@
 import type {
   CircleOperation,
   DrillOperation,
+  ImportedMesh,
   LineOperation,
   MachineSettings,
   Material,
   RectOperation,
+  SurfaceFinishOperation,
+  SurfaceRoughOperation,
   SketchOperation,
   SketchSegment,
   Tool,
@@ -141,6 +144,69 @@ export function makeSketchOperation(overrides: Partial<SketchOperation> = {}): S
     tabHeight: 1,
     pocketEnabled: false,
     pocketStepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
+    ...overrides,
+  };
+}
+
+export function makeImportedMesh(overrides: Partial<ImportedMesh> = {}): ImportedMesh {
+  return {
+    id: 'mesh-1',
+    type: 'stl',
+    name: 'Hold Down',
+    units: 'mm',
+    triangleCount: 2,
+    placement: { x: 100, y: 50 },
+    localBounds: {
+      minX: -10,
+      maxX: 10,
+      minY: -2.5,
+      maxY: 2.5,
+      minZ: -3,
+      maxZ: 0,
+    },
+    triangles: [
+      {
+        a: { x: -10, y: -2.5, z: 0 },
+        b: { x: 10, y: -2.5, z: 0 },
+        c: { x: 10, y: 2.5, z: -1.5 },
+      },
+      {
+        a: { x: -10, y: -2.5, z: 0 },
+        b: { x: 10, y: 2.5, z: -1.5 },
+        c: { x: -10, y: 2.5, z: -3 },
+      },
+    ],
+    ...overrides,
+  };
+}
+
+export function makeSurfaceRoughOperation(
+  overrides: Partial<SurfaceRoughOperation> = {}
+): SurfaceRoughOperation {
+  return {
+    id: 'surface-rough-1',
+    type: 'surface-rough',
+    meshId: 'mesh-1',
+    depth: -3,
+    stepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
+    stockToLeave: 0.25,
+    toolId: DEFAULT_TOOLS[0].id,
+    materialId: DEFAULT_MATERIALS[0].id,
+    ...overrides,
+  };
+}
+
+export function makeSurfaceFinishOperation(
+  overrides: Partial<SurfaceFinishOperation> = {}
+): SurfaceFinishOperation {
+  return {
+    id: 'surface-finish-1',
+    type: 'surface-finish',
+    meshId: 'mesh-1',
+    depth: -3,
+    stepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
+    toolId: DEFAULT_TOOLS[0].id,
+    materialId: DEFAULT_MATERIALS[0].id,
     ...overrides,
   };
 }

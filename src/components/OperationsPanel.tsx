@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
+import { getImportedMeshWorldBounds } from '../utils/importStl';
 import NumericInput from './common/NumericInput';
 import type {
   CutSide,
@@ -8,6 +9,7 @@ import type {
 import { CutSideEditor, DepthEditor } from './operationsPanel/controls';
 import {
   formatOperationLabel,
+  getImportedMeshName,
   getMaterialName,
   getToolName,
   updateSketchSegment,
@@ -49,12 +51,21 @@ function NumericFieldRow({
 
 export default function OperationsPanel({
   operations,
+  importedMeshes,
+  workWidth,
+  workHeight,
   selectedOperation,
+  selectedImportedMesh,
   selectedOperationIds,
   materials,
   tools,
   onSelectOperation,
+  onSelectImportedMesh,
+  onCreateSurfaceRoughOperation,
+  onCreateSurfaceFinishOperation,
   onUpdateOperation,
+  onUpdateImportedMesh,
+  onDeleteImportedMesh,
   onDeleteOperation,
   onDeleteSelection,
   onMoveOperation,
@@ -80,9 +91,16 @@ export default function OperationsPanel({
         )
       : 0;
   const selectedCount = selectedOperationIds?.length || 0;
+  const hasImportedMeshSelection = Boolean(selectedImportedMesh);
+  const hasDetailsSelection = selectedCount > 0 || hasImportedMeshSelection;
+  const importedMeshBounds = selectedImportedMesh ? getImportedMeshWorldBounds(selectedImportedMesh) : null;
   const sketchStart = selectedOperation?.type === 'sketch' ? getSketchStartPoint(selectedOperation) : null;
   const sketchSegments = selectedOperation?.type === 'sketch' ? getSketchSegments(selectedOperation) : [];
   const sketchIntegrity = selectedOperation?.type === 'sketch' ? analyzeSketchIntegrity(selectedOperation) : null;
+  const selectedSurfaceMesh =
+    selectedOperation?.type === 'surface-rough' || selectedOperation?.type === 'surface-finish'
+      ? importedMeshes.find((mesh) => mesh.id === selectedOperation.meshId) || null
+      : null;
   const effectiveSketchClosed =
     selectedOperation?.type === 'sketch'
       ? Boolean(sketchIntegrity?.detectedClosed || selectedOperation.closed)
@@ -99,20 +117,21 @@ export default function OperationsPanel({
     (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle' || selectedOperation?.type === 'sketch') &&
     selectedOperation.pocketEnabled &&
     selectedOperation.cutSide === 'inside';
-  const [activeTab, setActiveTab] = useState<'list' | 'details'>(selectedCount > 0 ? 'details' : 'list');
-  const previousSelectedCountRef = useRef(selectedCount);
+  const [activeTab, setActiveTab] = useState<'list' | 'details'>(hasDetailsSelection ? 'details' : 'list');
+  const previousSelectedCountRef = useRef(hasDetailsSelection ? 1 : 0);
 
   useEffect(() => {
     const previousSelectedCount = previousSelectedCountRef.current;
+    const currentSelectedCount = hasDetailsSelection ? 1 : 0;
 
-    if (selectedCount === 0) {
+    if (!hasDetailsSelection) {
       setActiveTab('list');
     } else if (previousSelectedCount === 0) {
       setActiveTab('details');
     }
 
-    previousSelectedCountRef.current = selectedCount;
-  }, [selectedCount]);
+    previousSelectedCountRef.current = currentSelectedCount;
+  }, [hasDetailsSelection]);
 
   useEffect(() => {
     setShowSegmentDetails(false);
@@ -130,7 +149,7 @@ export default function OperationsPanel({
         >
           Operations
         </button>
-        {selectedCount > 0 ? (
+        {hasDetailsSelection ? (
           <button
             type="button"
             role="tab"
@@ -143,7 +162,147 @@ export default function OperationsPanel({
         ) : null}
       </div>
 
-      {activeTab === 'details' ? (selectedOperation ? (
+      {activeTab === 'details' ? (selectedImportedMesh ? (
+        <div className="operation-editor">
+          <h3>Selected: STL MESH</h3>
+          <label className="field-row">
+            <span>Name</span>
+            <input type="text" readOnly value={selectedImportedMesh.name} />
+          </label>
+          <label className="field-row">
+            <span>Units</span>
+            <input type="text" readOnly value={selectedImportedMesh.units.toUpperCase()} />
+          </label>
+          <label className="field-row">
+            <span>Triangles</span>
+            <input type="number" readOnly value={selectedImportedMesh.triangleCount} />
+          </label>
+
+          <h3>Placement</h3>
+          <NumericFieldRow
+            label="Center X"
+            value={selectedImportedMesh.placement.x}
+            onChange={(value) =>
+              onUpdateImportedMesh(selectedImportedMesh.id, {
+                placement: {
+                  ...selectedImportedMesh.placement,
+                  x: value,
+                },
+              })
+            }
+          />
+          <NumericFieldRow
+            label="Center Y"
+            value={selectedImportedMesh.placement.y}
+            onChange={(value) =>
+              onUpdateImportedMesh(selectedImportedMesh.id, {
+                placement: {
+                  ...selectedImportedMesh.placement,
+                  y: value,
+                },
+              })
+            }
+          />
+
+          <h3>Mesh size</h3>
+          <label className="field-row">
+            <span>Width (mm)</span>
+            <input
+              type="number"
+              readOnly
+              value={Number((selectedImportedMesh.localBounds.maxX - selectedImportedMesh.localBounds.minX).toFixed(3))}
+            />
+          </label>
+          <label className="field-row">
+            <span>Height (mm)</span>
+            <input
+              type="number"
+              readOnly
+              value={Number((selectedImportedMesh.localBounds.maxY - selectedImportedMesh.localBounds.minY).toFixed(3))}
+            />
+          </label>
+          <label className="field-row">
+            <span>Depth (mm)</span>
+            <input
+              type="number"
+              readOnly
+              value={Number((selectedImportedMesh.localBounds.maxZ - selectedImportedMesh.localBounds.minZ).toFixed(3))}
+            />
+          </label>
+
+          {importedMeshBounds ? (
+            <>
+              <h3>Stock placement</h3>
+              <label className="field-row">
+                <span>Min X</span>
+                <input type="number" readOnly value={Number(importedMeshBounds.minX.toFixed(3))} />
+              </label>
+              <label className="field-row">
+                <span>Max X</span>
+                <input type="number" readOnly value={Number(importedMeshBounds.maxX.toFixed(3))} />
+              </label>
+              <label className="field-row">
+                <span>Min Y</span>
+                <input type="number" readOnly value={Number(importedMeshBounds.minY.toFixed(3))} />
+              </label>
+              <label className="field-row">
+                <span>Max Y</span>
+                <input type="number" readOnly value={Number(importedMeshBounds.maxY.toFixed(3))} />
+              </label>
+              <label className="field-row">
+                <span>Top Z</span>
+                <input type="number" readOnly value={Number(importedMeshBounds.maxZ.toFixed(3))} />
+              </label>
+              <label className="field-row">
+                <span>Bottom Z</span>
+                <input type="number" readOnly value={Number(importedMeshBounds.minZ.toFixed(3))} />
+              </label>
+            </>
+          ) : null}
+
+          <div className="button-column">
+            <button
+              type="button"
+              className="accent"
+              onClick={() =>
+                onUpdateImportedMesh(selectedImportedMesh.id, {
+                  placement: {
+                    x: workWidth / 2,
+                    y: workHeight / 2,
+                  },
+                })
+              }
+            >
+              Center on stock
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectImportedMesh(selectedImportedMesh.id)}
+            >
+              Select in canvas
+            </button>
+            <button
+              type="button"
+              className="accent"
+              onClick={() => onCreateSurfaceRoughOperation(selectedImportedMesh.id)}
+            >
+              Create surface roughing
+            </button>
+            <button
+              type="button"
+              onClick={() => onCreateSurfaceFinishOperation(selectedImportedMesh.id)}
+            >
+              Create surface finishing
+            </button>
+            <button type="button" className="danger" onClick={() => onDeleteImportedMesh(selectedImportedMesh.id)}>
+              Delete imported mesh
+            </button>
+          </div>
+          <p className="hint-text">
+            Drag the STL silhouette in the 2D canvas or edit the center position here before surface roughing or finishing operations are generated.
+          </p>
+        </div>
+      ) : selectedOperation ? (
         <div className="operation-editor">
           <h3>Selected: {selectedOperation.type.toUpperCase()}</h3>
 
@@ -177,6 +336,44 @@ export default function OperationsPanel({
               disabled={!effectiveSketchClosed}
               options={sketchCutOptions}
             />
+          ) : null}
+
+          {selectedOperation.type === 'surface-rough' || selectedOperation.type === 'surface-finish' ? (
+            <>
+              <label className="field-row">
+                <span>Mesh</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    selectedSurfaceMesh?.name ||
+                    getImportedMeshName(selectedOperation.meshId, importedMeshes)
+                  }
+                />
+              </label>
+              <NumericFieldRow
+                label="Step-over"
+                value={selectedOperation.stepOver}
+                min={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    stepOver: Math.max(0.1, value || 0.1),
+                  })
+                }
+              />
+              {selectedOperation.type === 'surface-rough' ? (
+                <NumericFieldRow
+                  label="Stock to leave"
+                  value={selectedOperation.stockToLeave}
+                  min={0}
+                  onChange={(value) =>
+                    onUpdateOperation(selectedOperation.id, {
+                      stockToLeave: Math.max(0, value || 0),
+                    })
+                  }
+                />
+              ) : null}
+            </>
           ) : null}
 
           <label className="field-row">
@@ -764,10 +961,39 @@ export default function OperationsPanel({
       {activeTab === 'list' ? (
         <>
           <h2>Operations list</h2>
-          {operations.length === 0 ? (
-            <p className="hint-text">No operations yet. Use tools above to place drill points or cut paths.</p>
+          {operations.length === 0 && importedMeshes.length === 0 ? (
+              <p className="hint-text">No operations yet. Use tools above to place drill points or cut paths.</p>
           ) : (
-            <ul className="operations-list">
+            <>
+              {operations.length === 0 && importedMeshes.length > 0 ? (
+                <p className="hint-text">
+                  No cut operations yet. Imported meshes can be positioned here before generating STL-derived toolpaths.
+                </p>
+              ) : null}
+              <ul className="operations-list">
+              {importedMeshes.map((mesh) => {
+                const isSelected = selectedImportedMesh?.id === mesh.id;
+                return (
+                  <li key={mesh.id}>
+                    <div className={`operation-item ${isSelected ? 'selected' : ''}`}>
+                      <button
+                        type="button"
+                        className="operation-main"
+                        onClick={() => onSelectImportedMesh(mesh.id)}
+                      >
+                        <span className="operation-type">STL</span>
+                        <span>{mesh.name}</span>
+                        <span className="operation-tool">{mesh.triangleCount} tris</span>
+                        <span className="operation-tool">
+                          {Number((mesh.localBounds.maxX - mesh.localBounds.minX).toFixed(1))} x{' '}
+                          {Number((mesh.localBounds.maxY - mesh.localBounds.minY).toFixed(1))} x{' '}
+                          {Number((mesh.localBounds.maxZ - mesh.localBounds.minZ).toFixed(1))}
+                        </span>
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
               {operations.map((operation, index) => {
                 const isSelected = selectedOperationIds?.includes(operation.id);
                 return (
@@ -810,7 +1036,8 @@ export default function OperationsPanel({
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </>
           )}
         </>
       ) : null}

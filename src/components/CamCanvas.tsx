@@ -9,8 +9,10 @@ import {
   normalizeRect,
   snapPoint,
 } from '../utils/geometry';
+import { hitTestImportedMesh } from '../utils/importStl';
 import type {
   DrawDraft,
+  ImportedMesh,
   Operation,
   Point,
   SelectBoxState,
@@ -49,13 +51,18 @@ export default function CamCanvas({
   activeTool,
   settings,
   operations,
+  importedMeshes,
   transformPreviewOperations,
   selectedOperationIds,
+  selectedImportedMeshId,
   onSelectOperation,
+  onSelectImportedMesh,
   onSetSelection,
   onAddOperation,
   onPreviewMoveOperations,
   onCommitMoveOperations,
+  onPreviewMoveImportedMesh,
+  onCommitMoveImportedMesh,
   activeToolId,
   activeMaterialId,
   defaultDrillDepth,
@@ -203,9 +210,11 @@ export default function CamCanvas({
       workHeight: settings.workHeight,
       workWidth: settings.workWidth,
       operations,
+      importedMeshes,
       transformPreviewOperations,
       toolpathPreview: showToolpathPreview ? toolpathPreview : null,
       selectedIds: selectedSet,
+      selectedImportedMeshId,
       pastePreviewOperations,
       draft,
       selectBox,
@@ -218,6 +227,7 @@ export default function CamCanvas({
   }, [
     draft,
     operations,
+    importedMeshes,
     editingSketchOperation,
     pastePreviewOperations,
     pointerMm,
@@ -232,6 +242,7 @@ export default function CamCanvas({
     transformPreviewOperations,
     toolpathPreview,
     transform,
+    selectedImportedMeshId,
   ]);
 
   const applyZoomAt = (factor: number, anchorPx: Point): void => {
@@ -384,6 +395,27 @@ export default function CamCanvas({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
+  function startImportedMeshDrag(
+    event: React.PointerEvent<HTMLCanvasElement>,
+    point: Point,
+    mesh: ImportedMesh
+  ): void {
+    interactionRef.current = {
+      mode: 'drag-mesh',
+      pointerId: event.pointerId,
+      start: point,
+      startCenter: null,
+      startClient: null,
+      selectedIds: null,
+      sourceOperations: null,
+      importedMeshId: mesh.id,
+      sourceImportedMesh: mesh,
+      additive: false,
+      handle: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>): void {
     event.preventDefault();
     defocusActiveEditor();
@@ -489,6 +521,17 @@ export default function CamCanvas({
       const hit = [...operations]
         .reverse()
         .find((operation) => hitTestOperation(operation, point, toleranceMm));
+
+      if (!hit) {
+        const importedMeshHit = [...importedMeshes]
+          .reverse()
+          .find((mesh) => hitTestImportedMesh(mesh, point));
+        if (importedMeshHit) {
+          onSelectImportedMesh(importedMeshHit.id);
+          startImportedMeshDrag(event, point, importedMeshHit);
+          return;
+        }
+      }
 
       if (!hit) {
         startMarqueeSelection(event, point);
@@ -734,6 +777,17 @@ export default function CamCanvas({
       return;
     }
 
+    if (interaction.mode === 'drag-mesh' && interaction.sourceImportedMesh && interaction.importedMeshId) {
+      const startPoint = interaction.start;
+      if (!startPoint) {
+        return;
+      }
+      const dx = point.x - startPoint.x;
+      const dy = point.y - startPoint.y;
+      onPreviewMoveImportedMesh(interaction.importedMeshId, interaction.sourceImportedMesh, dx, dy);
+      return;
+    }
+
     if (interaction.mode === 'marquee') {
       setSelectBox((current) => (current ? { ...current, current: point } : { start: point, current: point }));
       return;
@@ -855,6 +909,12 @@ export default function CamCanvas({
         dx,
         dy,
       });
+    }
+    if (interaction.mode === 'drag-mesh' && interaction.sourceImportedMesh && interaction.start && interaction.importedMeshId) {
+      const point = getPointerPoint(event, true);
+      const dx = point.x - interaction.start.x;
+      const dy = point.y - interaction.start.y;
+      onCommitMoveImportedMesh(interaction.importedMeshId, interaction.sourceImportedMesh, dx, dy);
     }
     if (interaction.mode === 'draw') {
       finalizeDraft();

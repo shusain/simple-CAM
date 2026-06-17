@@ -220,7 +220,7 @@ describe('canvas drawing helpers', () => {
       makeSketchOperation({ closed: false }),
     ];
 
-    drawMiniMap(ctx, transform, operations);
+    drawMiniMap(ctx, transform, operations, []);
     renderCanvasScene({
       canvas,
       transform,
@@ -228,9 +228,11 @@ describe('canvas drawing helpers', () => {
       workHeight: 80,
       workWidth: 100,
       operations,
+      importedMeshes: [],
       transformPreviewOperations: [makeLineOperation({ id: operations[1].id, x1: 3, y1: 3, x2: 13, y2: 3 })],
       toolpathPreview: null,
       selectedIds: new Set([operations[0].id]),
+      selectedImportedMeshId: null,
       pastePreviewOperations: [makeLineOperation({ id: 'line-ghost' })],
       draft: { type: 'line', start: { x: 0, y: 0 }, current: { x: 10, y: 10 } },
       selectBox: { start: { x: 2, y: 2 }, current: { x: 12, y: 8 } },
@@ -263,9 +265,11 @@ describe('canvas drawing helpers', () => {
         workHeight: 80,
         workWidth: 100,
         operations: [],
+        importedMeshes: [],
         transformPreviewOperations: [],
         toolpathPreview: null,
         selectedIds: new Set(),
+        selectedImportedMeshId: null,
         pastePreviewOperations: [],
         draft: null,
         selectBox: null,

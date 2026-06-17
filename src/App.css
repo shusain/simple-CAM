@@ -347,7 +347,7 @@ textarea {
 
 .project-action-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 12px;
 }
@@ -397,6 +397,15 @@ textarea {
 
 .import-dxf-button:hover {
   border-color: #facc15;
+}
+
+.import-stl-button {
+  border-color: #7c3aed;
+  color: #ddd6fe;
+}
+
+.import-stl-button:hover {
+  border-color: #a78bfa;
 }
 
 .save-sketch-button {

@@ -1,3 +1,4 @@
+import type { ImportedMesh } from './importedMesh';
 import type { Operation } from './operations';
 import type { Material, MachineSettings, Tool } from './tooling';
 
@@ -8,4 +9,5 @@ export interface CamProjectFile {
   tools: Tool[];
   activeToolId: string;
   operations: Operation[];
+  importedMeshes?: ImportedMesh[];
 }

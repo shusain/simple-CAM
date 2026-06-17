@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ImportedMesh } from '../types';
 import type { Point3D, ToolpathPreview3D } from '../utils/toolpathPreview3d';
+import { getImportedMeshWorldBounds } from '../utils/importStl';
 
 interface ToolpathPreview3DProps {
   preview: ToolpathPreview3D;
+  importedMeshes?: ImportedMesh[];
 }
 
 interface ProjectedPoint {
@@ -30,6 +33,11 @@ interface PlaybackLeg {
 interface PlaybackPoint {
   kind: 'rapid' | 'plunge' | 'cut';
   point: Point3D;
+}
+
+interface ProjectedTriangle {
+  points: [ProjectedPoint, ProjectedPoint, ProjectedPoint];
+  averageDepth: number;
 }
 
 const VIEW_WIDTH = 960;
@@ -165,7 +173,27 @@ function getPlaybackPoint(legs: PlaybackLeg[], totalLength: number, distance: nu
   };
 }
 
-export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): React.JSX.Element {
+function buildSceneBounds(preview: ToolpathPreview3D, importedMeshes: ImportedMesh[]): ToolpathPreview3D['bounds'] {
+  return importedMeshes.reduce(
+    (bounds, mesh) => {
+      const meshBounds = getImportedMeshWorldBounds(mesh);
+      return {
+        minX: Math.min(bounds.minX, meshBounds.minX),
+        maxX: Math.max(bounds.maxX, meshBounds.maxX),
+        minY: Math.min(bounds.minY, meshBounds.minY),
+        maxY: Math.max(bounds.maxY, meshBounds.maxY),
+        minZ: Math.min(bounds.minZ, meshBounds.minZ),
+        maxZ: Math.max(bounds.maxZ, meshBounds.maxZ),
+      };
+    },
+    { ...preview.bounds }
+  );
+}
+
+export default function ToolpathPreview3D({
+  preview,
+  importedMeshes = [],
+}: ToolpathPreview3DProps): React.JSX.Element {
   const [yaw, setYaw] = useState(-0.85);
   const [pitch, setPitch] = useState(-0.6);
   const [zoom, setZoom] = useState(1);
@@ -216,21 +244,23 @@ export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): 
     return () => window.clearInterval(timerId);
   }, [isPlaying, playback.totalLength, playbackDurationMs, playbackRate]);
 
+  const sceneBounds = useMemo(() => buildSceneBounds(preview, importedMeshes), [preview, importedMeshes]);
+
   const center = useMemo<Point3D>(
     () => ({
-      x: (preview.bounds.minX + preview.bounds.maxX) / 2,
-      y: (preview.bounds.minY + preview.bounds.maxY) / 2,
-      z: (preview.bounds.minZ + preview.bounds.maxZ) / 2,
+      x: (sceneBounds.minX + sceneBounds.maxX) / 2,
+      y: (sceneBounds.minY + sceneBounds.maxY) / 2,
+      z: (sceneBounds.minZ + sceneBounds.maxZ) / 2,
     }),
-    [preview.bounds]
+    [sceneBounds]
   );
 
   const fitRadius = useMemo(() => {
-    const width = preview.bounds.maxX - preview.bounds.minX;
-    const height = preview.bounds.maxY - preview.bounds.minY;
-    const depth = preview.bounds.maxZ - preview.bounds.minZ;
+    const width = sceneBounds.maxX - sceneBounds.minX;
+    const height = sceneBounds.maxY - sceneBounds.minY;
+    const depth = sceneBounds.maxZ - sceneBounds.minZ;
     return Math.max(1, Math.hypot(width, height, depth) / 2);
-  }, [preview.bounds]);
+  }, [sceneBounds]);
 
   const projected = useMemo(() => {
     const rawSegments = preview.segments.map((segment) => ({
@@ -241,7 +271,7 @@ export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): 
       ...marker,
       projected: rotatePoint(marker.point, center, yaw, pitch),
     }));
-    const rawBounds = buildBoundsBox(preview.bounds).map((edge) => edge.map((point) => rotatePoint(point, center, yaw, pitch)));
+    const rawBounds = buildBoundsBox(sceneBounds).map((edge) => edge.map((point) => rotatePoint(point, center, yaw, pitch)));
 
     const baseScale =
       (Math.min(VIEW_WIDTH - PADDING * 2, VIEW_HEIGHT - PADDING * 2) / (fitRadius * 2)) * zoom;
@@ -320,6 +350,41 @@ export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): 
     ] satisfies AxisGizmo[];
     axisVectors.sort((left, right) => left.end.depth - right.end.depth);
 
+    const meshTriangles: ProjectedTriangle[] = importedMeshes
+      .flatMap((mesh) =>
+        mesh.triangles.map((triangle) => {
+          const rotated = [
+            rotatePoint(
+              { x: triangle.a.x + mesh.placement.x, y: triangle.a.y + mesh.placement.y, z: triangle.a.z },
+              center,
+              yaw,
+              pitch
+            ),
+            rotatePoint(
+              { x: triangle.b.x + mesh.placement.x, y: triangle.b.y + mesh.placement.y, z: triangle.b.z },
+              center,
+              yaw,
+              pitch
+            ),
+            rotatePoint(
+              { x: triangle.c.x + mesh.placement.x, y: triangle.c.y + mesh.placement.y, z: triangle.c.z },
+              center,
+              yaw,
+              pitch
+            ),
+          ];
+          return {
+            points: [toScreen(rotated[0]), toScreen(rotated[1]), toScreen(rotated[2])] as [
+              ProjectedPoint,
+              ProjectedPoint,
+              ProjectedPoint,
+            ],
+            averageDepth: (rotated[0].z + rotated[1].z + rotated[2].z) / 3,
+          };
+        })
+      )
+      .sort((left, right) => left.averageDepth - right.averageDepth);
+
     const projectedTool = playbackPoint
       ? (() => {
           const tip = toScreen(rotatePoint(playbackPoint.point, center, yaw, pitch));
@@ -371,10 +436,11 @@ export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): 
         projected: toScreen(marker.projected),
       })),
       bounds: rawBounds.map((edge) => edge.map(toScreen)),
+      meshes: meshTriangles,
       gizmo: axisVectors,
       tool: projectedTool,
     };
-  }, [center, fitRadius, pitch, playbackPoint, preview, yaw, zoom]);
+  }, [center, fitRadius, importedMeshes, pitch, playbackPoint, preview, sceneBounds, yaw, zoom]);
 
   function getSegmentColor(kind: string): string {
     if (kind === 'rapid') return '#7dd3fc';
@@ -410,7 +476,7 @@ export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): 
 
   function handleWheel(event: React.WheelEvent<SVGSVGElement>): void {
     event.preventDefault();
-    setZoom((current) => Math.max(0.4, Math.min(3, current * (event.deltaY > 0 ? 0.92 : 1.08))));
+    setZoom((current) => Math.max(0.4, Math.min(5, current * (event.deltaY > 0 ? 0.92 : 1.08))));
   }
 
   function handlePlay(): void {
@@ -475,6 +541,16 @@ export default function ToolpathPreview3D({ preview }: ToolpathPreview3DProps): 
               stroke="#334155"
               strokeDasharray="6 6"
               strokeWidth="1"
+            />
+          ))}
+
+          {projected.meshes.map((triangle, index) => (
+            <polygon
+              key={`mesh-triangle-${index}`}
+              points={triangle.points.map((point) => `${point.x},${point.y}`).join(' ')}
+              fill="rgba(96, 165, 250, 0.22)"
+              stroke="rgba(125, 211, 252, 0.45)"
+              strokeWidth="0.8"
             />
           ))}
 

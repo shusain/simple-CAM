@@ -1,4 +1,4 @@
-import type { Material, MachineSettings, OctoprintSettings, Operation, Tool } from '../types';
+import type { ImportedMesh, Material, MachineSettings, OctoprintSettings, Operation, Tool } from '../types';
 import type { getOperationBounds } from '../utils/geometry';
 
 export interface PreferencesData {
@@ -13,6 +13,7 @@ export interface InitialState {
   materials: Material[];
   tools: Tool[];
   activeToolId: string;
+  importedMeshes: ImportedMesh[];
 }
 
 export interface SelectOptions {

@@ -79,11 +79,14 @@ Completed:
 ### 1. 3D groundwork for future STL import
 
 - [x] Add a 3D toolpath / stock preview direction that can explain Z motion, pass stacking, and top-vs-bottom cuts
-- [ ] Define the first supported 3D CAM scope before any STL parser work
-- [ ] Establish whether the first 3D workflow is height-map engraving, relief roughing, or simple mesh projection rather than general 3-axis machining
-- [ ] Identify the minimal operation model additions needed for 3D paths without destabilizing the current 2D workflow
-- [ ] Define the stock/origin assumptions the 3D workflow will use for STL-derived jobs
+- [x] Define the first supported 3D CAM scope before any STL parser work
+- [x] Establish whether the first 3D workflow is height-map engraving, relief roughing, or simple mesh projection rather than general 3-axis machining
+- [x] Define the stock/origin assumptions the 3D workflow will use for STL-derived jobs
+- [x] Identify the minimal operation model additions needed for 3D paths without destabilizing the current 2D workflow
 - [ ] Define the first mesh import constraints: supported STL variants, units/orientation handling, and triangle-count limits
+- [x] Add STL inspection/parsing that computes bounds, normalized Z, and centered default placement
+- [x] Add top-down silhouette placement/editing in the 2D view for imported meshes
+- [x] Implement a first-pass `surface-rough` planner that is previewable and exportable
 
 Why it matters:
 STL import is desirable, but mesh import without a trustworthy 3D preview and some form of 3D path-planning model would weaken confidence fast. The right next step is to build the visualization and planning foundations before taking on mesh ingestion.
@@ -94,21 +97,28 @@ Create a path to future STL-driven jobs that stays aligned with the app's curren
 Implementation direction:
 - [x] Keep STL import out of active implementation until preview/planning groundwork is in place
 - [x] Decide whether the first 3D visualization is a lightweight path viewer or a basic stock/tool simulation
-- [ ] Decide whether imported meshes become a new operation type or feed a derived surface/path workflow
+- [x] Decide whether imported meshes become a new operation type or feed a derived surface/path workflow
+- [x] Add first-pass `surface-rough` / `surface-finish` operation records tied to imported meshes
+- [x] Reuse shared planner output for both 3D preview and G-code where possible
 - [ ] Capture expected machine and performance constraints for desktop rendering before implementation
-- [ ] Decide whether STL work starts with roughing only or roughing + finishing from the start
+- [x] Decide whether STL work starts with roughing only or roughing + finishing from the start
 - [ ] Decide how 3D toolpath preview will communicate stock top, zero plane, and final depth envelope for mesh jobs
+- [ ] Decide whether first-pass silhouette editing supports translation only or translation + rotation
 
 Acceptance notes:
-- [ ] A future STL plan should name the first concrete supported machining scenario
+- [x] A future STL plan should name the first concrete supported machining scenario
 - [x] 3D preview requirements should be clear enough that later STL import work is not guessing at UX or path validation
 - [x] The 2D workflow should remain stable and understandable while 3D capabilities are introduced incrementally
-- [ ] STL import should not begin until units/orientation and stock assumptions are documented
+- [x] STL import should not begin until units/orientation and stock assumptions are documented
 
 Status:
 - [x] Do not take on full 3D model import until preview/planning groundwork is in place
 - [x] Active scope note is tracked in [STL_GROUNDWORK_PLAN.md](./STL_GROUNDWORK_PLAN.md)
 - [x] 3D preview toggle, orbit/zoom, bounds, path coloring, gizmo, and playback are now in place for existing jobs
+- [x] First STL scope is now top-down 3-axis `surface-rough` / `surface-finish` on rectangular stock with Onshape/mm assumptions
+- [x] STL meshes can now be imported, centered by default, moved in 2D silhouette form, and assigned new `surface-rough` / `surface-finish` operations
+- [x] `surface-rough` now produces first-pass raster toolpaths for preview and G-code export
+- [ ] `surface-finish` remains unimplemented and should stay blocked from export until its planner exists
 
 ## P2: Follow-On Workflow Work
 
@@ -217,11 +227,11 @@ Ideas:
 
 ## Suggested Next Sequence
 
-1. [ ] Lock the first STL machining scope and stock/origin assumptions
-2. [ ] Define STL import constraints and file-orientation/unit handling
-3. [ ] Better operation summaries
-4. [ ] Import warning and cleanup UX
-5. [ ] Sketch edit-mode polish after imported-geometry usage exercises the workflow harder
+1. [ ] Add STL inspection/parsing plus centered default placement and normalized Z handling
+2. [ ] Add top-down silhouette placement/editing in the 2D view
+3. [ ] Define STL import constraints and file-orientation/unit handling
+4. [ ] Better operation summaries
+5. [ ] Import warning and cleanup UX
 
 ## User-Driven Direction
 
@@ -230,3 +240,4 @@ Ideas:
 - [x] `Apply to all` is sufficient for current bulk-edit needs during alpha
 - [x] `SVG` and `DXF` import are both in place for the current alpha workflow
 - [x] STL import should wait for 3D path-planning and visualization groundwork
+- [x] First STL assumptions: Onshape/mm source, rectangular stock, stock-top `Z0`, centered placement, and dedicated `surface-rough` / `surface-finish` operations

@@ -8,6 +8,7 @@ import type {
   SketchSegment,
   TransformAxis,
 } from '../types';
+import { isSurfaceOperation as isSurfaceOperationType } from '../types';
 import { getDefaultPocketStepOver } from './pocketing';
 import { sanitizeMaterialId, sanitizeToolId } from './tooling';
 
@@ -731,6 +732,10 @@ export function getSketchPathPoints(operation: Operation | RawRecord | null | un
 export function getOperationBounds(operation: Operation | null | undefined): OperationBounds | null {
   if (!operation) return null;
 
+  if (isSurfaceOperationType(operation)) {
+    return null;
+  }
+
   if (operation.type === 'drill') {
     return { minX: operation.x, minY: operation.y, maxX: operation.x, maxY: operation.y };
   }
@@ -842,6 +847,10 @@ function isPointInRect(point: Point, rect: RectBounds): boolean {
 export function hitTestOperation(operation: Operation | null | undefined, point: Point, tolerance = 2): boolean {
   if (!operation) return false;
 
+  if (isSurfaceOperationType(operation)) {
+    return false;
+  }
+
   if (operation.type === 'drill') {
     return distance(point, { x: operation.x, y: operation.y }) <= tolerance * 1.5;
   }
@@ -886,6 +895,10 @@ export function hitTestOperation(operation: Operation | null | undefined, point:
 
 export function moveOperation(operation: Operation | null | undefined, dx: number, dy: number): Operation | null | undefined {
   if (!operation) return operation;
+
+  if (isSurfaceOperationType(operation)) {
+    return operation;
+  }
 
   if (operation.type === 'drill') {
     return { ...operation, x: operation.x + dx, y: operation.y + dy };
@@ -947,6 +960,10 @@ export function rotateOperation(
   pivot: Point
 ): Operation | null | undefined {
   if (!operation || Math.abs(angleRadians) <= 0.0000001) {
+    return operation;
+  }
+
+  if (isSurfaceOperationType(operation)) {
     return operation;
   }
 
@@ -1030,6 +1047,10 @@ export function scaleOperation(
   circleSegments = 48
 ): Operation | null | undefined {
   if (!operation || (Math.abs(scaleX - 1) <= 0.0000001 && Math.abs(scaleY - 1) <= 0.0000001)) {
+    return operation;
+  }
+
+  if (isSurfaceOperationType(operation)) {
     return operation;
   }
 
@@ -1270,6 +1291,41 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
       pocketEnabled: Boolean(data.pocketEnabled),
       pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
+    };
+  }
+
+  if (data.type === 'surface-rough') {
+    const depth = toNumber(data.depth, NaN);
+    if (!isFiniteNumber(depth) || typeof data.meshId !== 'string' || !data.meshId.trim()) {
+      return null;
+    }
+
+    return {
+      id: String(data.id ?? ''),
+      type: 'surface-rough',
+      meshId: data.meshId,
+      depth,
+      stepOver: toOptionalPositiveNumber(data.stepOver) ?? getDefaultPocketStepOver(),
+      stockToLeave: Math.max(0, toNumber(data.stockToLeave, 0.25)),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
+    };
+  }
+
+  if (data.type === 'surface-finish') {
+    const depth = toNumber(data.depth, NaN);
+    if (!isFiniteNumber(depth) || typeof data.meshId !== 'string' || !data.meshId.trim()) {
+      return null;
+    }
+
+    return {
+      id: String(data.id ?? ''),
+      type: 'surface-finish',
+      meshId: data.meshId,
+      depth,
+      stepOver: toOptionalPositiveNumber(data.stepOver) ?? getDefaultPocketStepOver(),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
     };
   }
 

@@ -91,6 +91,11 @@ function createAppMenu(): void {
           click: () => sendMenuEvent('menu:importDxf'),
         },
         {
+          label: 'Import STL',
+          accelerator: 'CmdOrCtrl+Shift+T',
+          click: () => sendMenuEvent('menu:importStl'),
+        },
+        {
           label: 'Save Project',
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuEvent('menu:save'),
@@ -268,6 +273,33 @@ ipcMain.handle('import:dxf:open', async () => {
     return {
       canceled: false,
       error: error instanceof Error ? error.message : 'Unknown error while importing DXF',
+    };
+  }
+});
+
+ipcMain.handle('import:stl:open', async () => {
+  try {
+    const { canceled, filePaths } = await showOpenDialog({
+      title: 'Import STL',
+      filters: [
+        { name: 'STL', extensions: ['stl'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = filePaths[0];
+    const contents = await fs.readFile(filePath, 'utf8');
+
+    return { canceled: false, filePath, contents };
+  } catch (error) {
+    return {
+      canceled: false,
+      error: error instanceof Error ? error.message : 'Unknown error while importing STL',
     };
   }
 });

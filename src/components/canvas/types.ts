@@ -1,8 +1,8 @@
 import type {
-  CircleOperation,
-  DrillOperation,
+  ImportedMesh,
   MachineSettings,
   Operation,
+  OperationInput,
   PastePreview,
   Point,
   SketchEditState,
@@ -10,8 +10,6 @@ import type {
   SketchOperation,
   SketchSegment,
   ZoomRequest,
-  LineOperation,
-  RectOperation,
 } from '../../types';
 import type { ToolpathPreview } from '../../utils/toolpathPreview';
 
@@ -20,13 +18,6 @@ export type CanvasTool = 'select' | 'drill' | 'line' | 'sketch' | 'arc' | 'rect'
 export type SketchInsertTool = 'sketch' | 'arc';
 
 export type SketchPreviewOperation = SketchOperation;
-
-export type OperationInput =
-  | Omit<DrillOperation, 'id'>
-  | Omit<LineOperation, 'id'>
-  | Omit<RectOperation, 'id'>
-  | Omit<CircleOperation, 'id'>
-  | Omit<SketchOperation, 'id'>;
 
 export interface ViewportSize {
   width: number;
@@ -83,13 +74,15 @@ export interface SelectOptions {
 }
 
 export interface InteractionState {
-  mode: 'pan' | 'marquee' | 'drag-ops' | 'draw' | 'drag-handle' | null;
+  mode: 'pan' | 'marquee' | 'drag-ops' | 'drag-mesh' | 'draw' | 'drag-handle' | null;
   pointerId: number | null;
   start: Point | null;
   startCenter: Point | null;
   startClient: Point | null;
   selectedIds: string[] | null;
   sourceOperations: Operation[] | null;
+  importedMeshId?: string | null;
+  sourceImportedMesh?: ImportedMesh | null;
   additive: boolean;
   handle?: SketchHandle | null;
 }
@@ -98,13 +91,18 @@ export interface CamCanvasProps {
   activeTool: CanvasTool;
   settings: MachineSettings;
   operations: Operation[];
+  importedMeshes: ImportedMesh[];
   transformPreviewOperations: Operation[];
   selectedOperationIds: string[];
+  selectedImportedMeshId: string | null;
   onSelectOperation: (id: string | null, options?: SelectOptions) => void;
+  onSelectImportedMesh: (id: string | null) => void;
   onSetSelection: (ids: string[], options?: { additive?: boolean }) => void;
   onAddOperation: (operation: OperationInput) => string;
   onPreviewMoveOperations: (args: MoveSelectedOperationsArgs) => void;
   onCommitMoveOperations: (args: MoveSelectedOperationsArgs) => void;
+  onPreviewMoveImportedMesh: (id: string, sourceMesh: ImportedMesh, dx: number, dy: number) => void;
+  onCommitMoveImportedMesh: (id: string, sourceMesh: ImportedMesh, dx: number, dy: number) => void;
   activeToolId: string;
   activeMaterialId: string;
   defaultDrillDepth: number;

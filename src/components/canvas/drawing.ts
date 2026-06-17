@@ -1,6 +1,7 @@
 import { clamp, distance, getSketchPathPoints, getSketchSubpaths, normalizeRect } from '../../utils/geometry';
 import type { ToolpathPreview } from '../../utils/toolpathPreview';
-import type { DrawDraft, Operation, Point, SelectBoxState, SketchOperation } from '../../types';
+import type { DrawDraft, ImportedMesh, Operation, Point, SelectBoxState, SketchOperation } from '../../types';
+import { getImportedMeshWorldBounds } from '../../utils/importStl';
 import {
   buildDraftSketchOperation,
   getSketchHandleDisplayMap,
@@ -189,6 +190,62 @@ export function drawOperation(
       ctx.stroke();
     });
   }
+
+  ctx.restore();
+}
+
+export function drawImportedMeshSilhouette(
+  ctx: CanvasRenderingContext2D,
+  transform: ViewTransform,
+  mesh: ImportedMesh,
+  options: { selected?: boolean } = {}
+): void {
+  const { selected = false } = options;
+  const fillColor = selected ? 'rgba(251, 146, 60, 0.24)' : 'rgba(96, 165, 250, 0.18)';
+  const strokeColor = selected ? '#f97316' : '#60a5fa';
+  const bounds = getImportedMeshWorldBounds(mesh);
+
+  ctx.save();
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = selected ? 2.2 : 1.4;
+
+  const silhouette = new Path2D();
+  mesh.triangles.forEach((triangle) => {
+    const a = worldToCanvas(
+      { x: triangle.a.x + mesh.placement.x, y: triangle.a.y + mesh.placement.y },
+      transform
+    );
+    const b = worldToCanvas(
+      { x: triangle.b.x + mesh.placement.x, y: triangle.b.y + mesh.placement.y },
+      transform
+    );
+    const c = worldToCanvas(
+      { x: triangle.c.x + mesh.placement.x, y: triangle.c.y + mesh.placement.y },
+      transform
+    );
+    silhouette.moveTo(a.x, a.y);
+    silhouette.lineTo(b.x, b.y);
+    silhouette.lineTo(c.x, c.y);
+    silhouette.closePath();
+  });
+
+  ctx.fill(silhouette);
+
+  const topLeft = worldToCanvas({ x: bounds.minX, y: bounds.maxY }, transform);
+  const width = (bounds.maxX - bounds.minX) * transform.scale;
+  const height = (bounds.maxY - bounds.minY) * transform.scale;
+  ctx.setLineDash(selected ? [8, 5] : []);
+  ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+
+  const center = worldToCanvas(mesh.placement, transform);
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(center.x - 8, center.y);
+  ctx.lineTo(center.x + 8, center.y);
+  ctx.moveTo(center.x, center.y - 8);
+  ctx.lineTo(center.x, center.y + 8);
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -487,7 +544,8 @@ export function drawSketchEditOverlay(
 export function drawMiniMap(
   ctx: CanvasRenderingContext2D,
   transform: ViewTransform,
-  operations: Operation[]
+  operations: Operation[],
+  importedMeshes: ImportedMesh[]
 ): void {
   const maxWidth = 190;
   const maxHeight = 130;
@@ -574,6 +632,22 @@ export function drawMiniMap(
     }
   });
 
+  ctx.fillStyle = 'rgba(96, 165, 250, 0.18)';
+  ctx.strokeStyle = '#60a5fa';
+  importedMeshes.forEach((mesh) => {
+    const path = new Path2D();
+    mesh.triangles.forEach((triangle) => {
+      const a = toMap({ x: triangle.a.x + mesh.placement.x, y: triangle.a.y + mesh.placement.y });
+      const b = toMap({ x: triangle.b.x + mesh.placement.x, y: triangle.b.y + mesh.placement.y });
+      const c = toMap({ x: triangle.c.x + mesh.placement.x, y: triangle.c.y + mesh.placement.y });
+      path.moveTo(a.x, a.y);
+      path.lineTo(b.x, b.y);
+      path.lineTo(c.x, c.y);
+      path.closePath();
+    });
+    ctx.fill(path);
+  });
+
   const viewLeft = clamp(transform.left, 0, transform.workWidth);
   const viewRight = clamp(transform.right, 0, transform.workWidth);
   const viewBottom = clamp(transform.bottom, 0, transform.workHeight);
@@ -599,9 +673,11 @@ export function renderCanvasScene(args: {
   workHeight: number;
   workWidth: number;
   operations: Operation[];
+  importedMeshes: ImportedMesh[];
   transformPreviewOperations: Operation[];
   toolpathPreview: ToolpathPreview | null;
   selectedIds: Set<string>;
+  selectedImportedMeshId: string | null;
   pastePreviewOperations: Operation[];
   draft: DrawDraft | null;
   selectBox: SelectBoxState | null;
@@ -618,9 +694,11 @@ export function renderCanvasScene(args: {
     workHeight,
     workWidth,
     operations,
+    importedMeshes,
     transformPreviewOperations,
     toolpathPreview,
     selectedIds,
+    selectedImportedMeshId,
     pastePreviewOperations,
     draft,
     selectBox,
@@ -649,6 +727,10 @@ export function renderCanvasScene(args: {
   ctx.lineWidth = 2;
   ctx.strokeRect(borderTopLeft.x, borderTopLeft.y, workWidth * transform.scale, workHeight * transform.scale);
   ctx.restore();
+
+  importedMeshes.forEach((mesh) => {
+    drawImportedMeshSilhouette(ctx, transform, mesh, { selected: selectedImportedMeshId === mesh.id });
+  });
 
   operations.forEach((operation) => {
     drawOperation(ctx, transform, operation, { selected: selectedIds.has(operation.id) });
@@ -696,7 +778,7 @@ export function renderCanvasScene(args: {
     );
   }
 
-  drawMiniMap(ctx, transform, operations);
+  drawMiniMap(ctx, transform, operations, importedMeshes);
 
   const cursor = worldToCanvas(pointerMm, transform);
   ctx.save();

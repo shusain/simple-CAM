@@ -26,6 +26,7 @@ import { resolveMaterialId } from './utils/tooling';
 import { importSvgToSketchOperations } from './utils/importSvg';
 import type {
   HistoryState,
+  ImportedMesh,
   MachineSettings,
   Material,
   OctoprintSettings,
@@ -37,8 +38,12 @@ import type {
   ZoomRequest,
   SketchEditState,
   Point,
+  OperationInput,
+  SurfaceFinishOperation,
+  SurfaceRoughOperation,
   TransformSession,
 } from './types';
+import { isSurfaceOperation } from './types';
 import type { ElectronBridge } from './types/electron';
 import {
   DEFAULT_OCTOPRINT_SETTINGS,
@@ -74,6 +79,7 @@ import { buildToolpathPreview } from './utils/toolpathPreview';
 import { buildToolpathPreview3D } from './utils/toolpathPreview3d';
 import { importDxfToSketchOperations } from './utils/importDxf';
 import type { ImportCutMode } from './utils/importCommon';
+import { importStlModel, offsetImportedMesh } from './utils/importStl';
 import type {
   InitialState,
   MoveSelectedOperationsArgs,
@@ -155,6 +161,8 @@ export default function App(): React.JSX.Element {
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [viewportMode, setViewportMode] = useState<ViewportMode>('2d');
+  const [importedMeshes, setImportedMeshes] = useState<ImportedMesh[]>(initialState.importedMeshes);
+  const [selectedImportedMeshId, setSelectedImportedMeshId] = useState<string | null>(null);
   const canvasPointerRef = useRef<Point | null>(null);
 
   const operations = operationsHistory.present;
@@ -170,6 +178,10 @@ export default function App(): React.JSX.Element {
       DEFAULT_SETTINGS.activeMaterialId
     ) || DEFAULT_SETTINGS.activeMaterialId;
   const activeMaterial = materials.find((material) => material.id === activeMaterialId) || materials[0] || null;
+  const selectedImportedMesh = useMemo(
+    () => importedMeshes.find((mesh) => mesh.id === selectedImportedMeshId) || null,
+    [importedMeshes, selectedImportedMeshId]
+  );
   const selectedOperation = useMemo(() => {
     if (selectedIds.length !== 1) return null;
     return operations.find((op) => op.id === selectedIds[0]) || null;
@@ -185,12 +197,12 @@ export default function App(): React.JSX.Element {
     [operations, sketchEdit.operationId]
   );
   const toolpathPreview = useMemo(
-    () => buildToolpathPreview({ operations, settings, tools }),
-    [operations, settings, tools]
+    () => buildToolpathPreview({ operations, settings, tools, importedMeshes }),
+    [importedMeshes, operations, settings, tools]
   );
   const toolpathPreview3D = useMemo(
-    () => buildToolpathPreview3D({ operations, settings, tools }),
-    [operations, settings, tools]
+    () => buildToolpathPreview3D({ operations, settings, tools, importedMeshes }),
+    [importedMeshes, operations, settings, tools]
   );
   const transformPreviewOperations = useMemo(
     () => (transformSession ? buildTransformPreview(transformSession, settings.circleSegments) : []),
@@ -305,6 +317,7 @@ export default function App(): React.JSX.Element {
     if (!id) {
       if (!additive) {
         setSelectedIds([]);
+        setSelectedImportedMeshId(null);
       }
       return;
     }
@@ -319,6 +332,7 @@ export default function App(): React.JSX.Element {
       }
       return [id];
     });
+    setSelectedImportedMeshId(null);
   }, []);
 
   const handleSetSelection = useCallback((ids: string[], options: { additive?: boolean } = {}) => {
@@ -331,10 +345,55 @@ export default function App(): React.JSX.Element {
       }
       return Array.from(new Set([...prev, ...unique]));
     });
+    if (unique.length > 0 || !additive) {
+      setSelectedImportedMeshId(null);
+    }
   }, []);
 
+  const handleSelectImportedMesh = useCallback((id: string | null) => {
+    setSelectedImportedMeshId(id);
+    if (id) {
+      setSelectedIds([]);
+      setActiveTool('select');
+    }
+  }, []);
+
+  const previewMoveImportedMesh = useCallback((id: string, sourceMesh: ImportedMesh, dx: number, dy: number) => {
+    setImportedMeshes((previous) =>
+      previous.map((mesh) => (mesh.id === id ? offsetImportedMesh(sourceMesh, dx, dy) : mesh))
+    );
+  }, []);
+
+  const commitMoveImportedMesh = useCallback((id: string, sourceMesh: ImportedMesh, dx: number, dy: number) => {
+    setImportedMeshes((previous) =>
+      previous.map((mesh) => (mesh.id === id ? offsetImportedMesh(sourceMesh, dx, dy) : mesh))
+    );
+    setStatus(`Moved ${sourceMesh.name}`);
+  }, []);
+
+  const updateImportedMesh = useCallback((id: string, updates: Partial<ImportedMesh>) => {
+    setImportedMeshes((previous) =>
+      previous.map((mesh) => (mesh.id === id ? { ...mesh, ...updates } : mesh))
+    );
+  }, []);
+
+  const deleteImportedMesh = useCallback((id: string) => {
+    setImportedMeshes((previous) => previous.filter((mesh) => mesh.id !== id));
+    commitOperations((previous) =>
+      previous.filter((operation) => !isSurfaceOperation(operation) || operation.meshId !== id)
+    );
+    setSelectedImportedMeshId((previous) => (previous === id ? null : previous));
+    setSelectedIds((previous) =>
+      previous.filter((operationId) => {
+        const operation = operations.find((item) => item.id === operationId);
+        return !operation || !isSurfaceOperation(operation) || operation.meshId !== id;
+      })
+    );
+    setStatus('Deleted imported mesh');
+  }, [commitOperations, operations]);
+
   const addOperation = useCallback(
-    (operation: Omit<Operation, 'id'>) => {
+    (operation: OperationInput) => {
       const selectedToolId = operation.toolId || activeToolId || tools[0]?.id || null;
       const selectedTool = tools.find((tool) => tool.id === selectedToolId) || tools[0] || null;
       const selectedMaterialId = resolveMaterialId(
@@ -365,6 +424,42 @@ export default function App(): React.JSX.Element {
       return id;
     },
     [activeMaterialId, activeToolId, commitOperations, materials, tools]
+  );
+
+  const addSurfaceOperation = useCallback(
+    (meshId: string, mode: 'rough' | 'finish') => {
+      const importedMesh = importedMeshes.find((mesh) => mesh.id === meshId);
+      if (!importedMesh) {
+        setStatus('Imported mesh no longer exists');
+        return;
+      }
+
+      const selectedTool =
+        tools.find((tool) => tool.id === activeToolId) || tools[0] || null;
+      const defaultStepOver = getDefaultPocketStepOver(selectedTool?.diameter);
+      const depth = Number(importedMesh.localBounds.minZ) || -1;
+
+      if (mode === 'rough') {
+        addOperation({
+          type: 'surface-rough',
+          meshId,
+          depth,
+          stepOver: defaultStepOver,
+          stockToLeave: 0.25,
+        } satisfies Omit<SurfaceRoughOperation, 'id'>);
+        setStatus(`Created surface roughing operation for ${importedMesh.name}`);
+        return;
+      }
+
+      addOperation({
+        type: 'surface-finish',
+        meshId,
+        depth,
+        stepOver: defaultStepOver,
+      } satisfies Omit<SurfaceFinishOperation, 'id'>);
+      setStatus(`Created surface finishing operation for ${importedMesh.name}`);
+    },
+    [activeToolId, addOperation, importedMeshes, tools]
   );
 
   const updateOperation = useCallback(
@@ -861,7 +956,9 @@ export default function App(): React.JSX.Element {
 
   const handleNew = useCallback(() => {
     setOperationsDirect([]);
+    setImportedMeshes([]);
     setSelectedIds([]);
+    setSelectedImportedMeshId(null);
     setClipboard(null);
     setPastePreview(null);
     setProjectName('project.cam.json');
@@ -893,7 +990,9 @@ export default function App(): React.JSX.Element {
     setTools(hydrated.tools);
     setActiveToolId(hydrated.activeToolId);
     setOperationsDirect(hydrated.operations);
+    setImportedMeshes(hydrated.importedMeshes);
     setSelectedIds([]);
+    setSelectedImportedMeshId(null);
     setClipboard(null);
     setPastePreview(null);
     const filename = fileNameFromPath(result.filePath);
@@ -953,6 +1052,49 @@ export default function App(): React.JSX.Element {
     });
   }, [electron]);
 
+  const handleImportStl = useCallback(async () => {
+    if (!electron?.openStlImport) {
+      setStatus('STL import is available in desktop mode only');
+      return;
+    }
+
+    const result = await electron.openStlImport();
+    if (!result || result.canceled) {
+      return;
+    }
+    if (result.error) {
+      setStatus(`STL import failed: ${result.error}`);
+      return;
+    }
+    if (!result.contents) {
+      setStatus('STL import failed: file contents were empty');
+      return;
+    }
+
+    const imported = importStlModel(result.contents, {
+      createId: newId,
+      filePath: result.filePath,
+      workWidth: settings.workWidth,
+      workHeight: settings.workHeight,
+    });
+
+    if (!imported.mesh) {
+      setStatus(imported.warnings[0] || 'STL import failed');
+      return;
+    }
+
+    setImportedMeshes((previous) => [...previous, imported.mesh as ImportedMesh]);
+    setSelectedImportedMeshId(imported.mesh.id);
+    setSelectedIds([]);
+    setViewportMode('2d');
+    setActiveTool('select');
+    setStatus(
+      `Imported STL ${imported.mesh.name} (${imported.mesh.triangleCount} triangle(s))${
+        imported.warnings.length > 0 ? ` (${imported.warnings.length} warning(s))` : ''
+      }`
+    );
+  }, [electron, settings.workHeight, settings.workWidth]);
+
   const runPendingImport = useCallback(
     (cutMode: ImportCutMode) => {
       if (!pendingImport) {
@@ -996,7 +1138,7 @@ export default function App(): React.JSX.Element {
       return;
     }
 
-    const project = buildProjectFile({ settings, materials, tools, activeToolId, operations });
+    const project = buildProjectFile({ settings, materials, tools, activeToolId, operations, importedMeshes });
     const result = await electron.saveProject({
       suggestedName: projectName,
       project,
@@ -1011,10 +1153,10 @@ export default function App(): React.JSX.Element {
     const filename = fileNameFromPath(result.filePath);
     if (filename) setProjectName(filename);
     setStatus(`Saved ${filename || projectName}`);
-  }, [activeToolId, electron, materials, operations, projectName, settings, tools]);
+  }, [activeToolId, electron, importedMeshes, materials, operations, projectName, settings, tools]);
 
   const handleExport = useCallback(async () => {
-    const gcode = generateMarlinGcode({ operations, settings, tools });
+    const gcode = generateMarlinGcode({ operations, settings, tools, importedMeshes });
 
     if (electron?.exportGcode) {
       const result = await electron.exportGcode({ suggestedName: 'output.gcode', gcode });
@@ -1035,7 +1177,7 @@ export default function App(): React.JSX.Element {
     a.click();
     URL.revokeObjectURL(url);
     setStatus('Exported G-code download');
-  }, [electron, operations, settings, tools]);
+  }, [electron, importedMeshes, operations, settings, tools]);
 
   const openOctoprintSettings = useCallback(() => {
     setIsOctoprintModalOpen(true);
@@ -1068,7 +1210,7 @@ export default function App(): React.JSX.Element {
 
   const handleSendToOctoprint = useCallback(
     async (runAfterUpload: boolean) => {
-      const gcode = generateMarlinGcode({ operations, settings, tools });
+      const gcode = generateMarlinGcode({ operations, settings, tools, importedMeshes });
       const fileName = buildGcodeFileName(projectName);
 
       if (!electron?.uploadToOctoprint) {
@@ -1093,7 +1235,7 @@ export default function App(): React.JSX.Element {
           : `Sent to OctoPrint (${fileName})`
       );
     },
-    [electron, operations, projectName, settings, tools]
+    [electron, importedMeshes, operations, projectName, settings, tools]
   );
 
   useEffect(() => {
@@ -1179,6 +1321,7 @@ export default function App(): React.JSX.Element {
       electron.onMenuOpen?.(handleOpen),
       electron.onMenuImportSvg?.(handleImportSvg),
       electron.onMenuImportDxf?.(handleImportDxf),
+      electron.onMenuImportStl?.(handleImportStl),
       electron.onMenuSave?.(handleSave),
       electron.onMenuExportGcode?.(handleExport),
       electron.onMenuOctoprintSettings?.(openOctoprintSettings),
@@ -1190,7 +1333,7 @@ export default function App(): React.JSX.Element {
     return () => {
       unsubs.forEach((fn) => fn());
     };
-  }, [electron, handleExport, handleImportDxf, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
+  }, [electron, handleExport, handleImportDxf, handleImportStl, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1490,6 +1633,7 @@ export default function App(): React.JSX.Element {
             onOpenProject={handleOpen}
             onImportSvg={handleImportSvg}
             onImportDxf={handleImportDxf}
+            onImportStl={handleImportStl}
             onSaveProject={handleSave}
             onExportGcode={handleExport}
             canSendToOctoprint={hasOctoprintSettings}
@@ -1507,13 +1651,18 @@ export default function App(): React.JSX.Element {
               activeTool={activeTool}
               settings={settings}
               operations={operations}
+              importedMeshes={importedMeshes}
               transformPreviewOperations={transformPreviewOperations}
               selectedOperationIds={selectedIds}
+              selectedImportedMeshId={selectedImportedMeshId}
               onSelectOperation={handleSelectOperation}
+              onSelectImportedMesh={handleSelectImportedMesh}
               onSetSelection={handleSetSelection}
               onAddOperation={addOperation}
               onPreviewMoveOperations={previewMoveSelectedOperations}
               onCommitMoveOperations={commitMoveSelectedOperations}
+              onPreviewMoveImportedMesh={previewMoveImportedMesh}
+              onCommitMoveImportedMesh={commitMoveImportedMesh}
               activeToolId={activeToolId}
               activeMaterialId={activeMaterialId}
               defaultDrillDepth={settings.drillDepth}
@@ -1531,19 +1680,28 @@ export default function App(): React.JSX.Element {
               transformHint={transformHint}
             />
           ) : (
-            <ToolpathPreview3D preview={toolpathPreview3D} />
+            <ToolpathPreview3D preview={toolpathPreview3D} importedMeshes={importedMeshes} />
           )}
         </main>
 
         <aside className="right-pane">
           <OperationsPanel
             operations={operations}
+            importedMeshes={importedMeshes}
+            workWidth={settings.workWidth}
+            workHeight={settings.workHeight}
             selectedOperation={selectedOperation}
+            selectedImportedMesh={selectedImportedMesh}
             selectedOperationIds={selectedIds}
             materials={materials}
             tools={tools}
             onSelectOperation={handleSelectOperation}
+            onSelectImportedMesh={handleSelectImportedMesh}
+            onCreateSurfaceRoughOperation={(meshId) => addSurfaceOperation(meshId, 'rough')}
+            onCreateSurfaceFinishOperation={(meshId) => addSurfaceOperation(meshId, 'finish')}
             onUpdateOperation={updateOperation}
+            onUpdateImportedMesh={updateImportedMesh}
+            onDeleteImportedMesh={deleteImportedMesh}
             onDeleteOperation={deleteOperation}
             onDeleteSelection={deleteSelection}
             onMoveOperation={moveOperation}

@@ -278,8 +278,8 @@ LINE
     expect(result.warnings.some((warning) => warning.includes('Unsupported DXF entity "SPLINE"'))).toBe(true);
   });
 
-  it('imports the Onshape Release 14 sample without unit warnings', () => {
-    const dxf = fs.readFileSync('src/test/samples/Part Studio 2 - Part 1.dxf', 'utf8');
+  it('imports the Onshape Release 14 hold-down sample without unit warnings', () => {
+    const dxf = fs.readFileSync('src/test/samples/hold-down.dxf', 'utf8');
 
     const result = importDxfToSketchOperations(dxf, buildOptions());
 

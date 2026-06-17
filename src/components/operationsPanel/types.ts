@@ -1,4 +1,4 @@
-import type { Material, Operation, Tool } from '../../types';
+import type { ImportedMesh, Material, Operation, Tool } from '../../types';
 
 export interface RepeatArgs {
   count: number;
@@ -8,12 +8,21 @@ export interface RepeatArgs {
 
 export interface OperationsPanelProps {
   operations: Operation[];
+  importedMeshes: ImportedMesh[];
+  workWidth: number;
+  workHeight: number;
   selectedOperation: Operation | null;
+  selectedImportedMesh: ImportedMesh | null;
   selectedOperationIds: string[];
   materials: Material[];
   tools: Tool[];
   onSelectOperation: (id: string | null, options?: { additive?: boolean; toggle?: boolean }) => void;
+  onSelectImportedMesh: (id: string | null) => void;
+  onCreateSurfaceRoughOperation: (meshId: string) => void;
+  onCreateSurfaceFinishOperation: (meshId: string) => void;
   onUpdateOperation: (id: string, updates: Partial<Operation>) => void;
+  onUpdateImportedMesh: (id: string, updates: Partial<ImportedMesh>) => void;
+  onDeleteImportedMesh: (id: string) => void;
   onDeleteOperation: (id: string) => void;
   onDeleteSelection: () => void;
   onMoveOperation: (id: string, direction: number) => void;
