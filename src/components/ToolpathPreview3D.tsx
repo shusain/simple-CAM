@@ -1,43 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ImportedMesh } from '../types';
 import type { Point3D, ToolpathPreview3D } from '../utils/toolpathPreview3d';
-import { getImportedMeshWorldBounds } from '../utils/importStl';
+import { buildPlaybackLegs, getPlaybackPoint } from './toolpathPreview3d/playback';
+import { buildSceneBounds, projectScene } from './toolpathPreview3d/projection';
 
 interface ToolpathPreview3DProps {
   preview: ToolpathPreview3D;
   importedMeshes?: ImportedMesh[];
-}
-
-interface ProjectedPoint {
-  x: number;
-  y: number;
-  depth: number;
-}
-
-interface AxisGizmo {
-  id: 'x' | 'y' | 'z';
-  label: string;
-  color: string;
-  start: ProjectedPoint;
-  end: ProjectedPoint;
-}
-
-interface PlaybackLeg {
-  kind: 'rapid' | 'plunge' | 'cut';
-  start: Point3D;
-  end: Point3D;
-  length: number;
-  cumulativeStart: number;
-}
-
-interface PlaybackPoint {
-  kind: 'rapid' | 'plunge' | 'cut';
-  point: Point3D;
-}
-
-interface ProjectedTriangle {
-  points: [ProjectedPoint, ProjectedPoint, ProjectedPoint];
-  averageDepth: number;
 }
 
 const VIEW_WIDTH = 960;
@@ -51,144 +20,6 @@ const PLAYBACK_MAX_DURATION_MS = 24000;
 const PLAYBACK_SLOW_RATE = 0.25;
 const TOOL_CONE_HEIGHT = 8;
 const TOOL_CONE_RADIUS = 5.5;
-
-function rotatePoint(point: Point3D, center: Point3D, yaw: number, pitch: number): Point3D {
-  const dx = point.x - center.x;
-  const dy = point.y - center.y;
-  const dz = point.z - center.z;
-
-  const cosYaw = Math.cos(yaw);
-  const sinYaw = Math.sin(yaw);
-  const yawX = dx * cosYaw - dy * sinYaw;
-  const yawY = dx * sinYaw + dy * cosYaw;
-
-  const cosPitch = Math.cos(pitch);
-  const sinPitch = Math.sin(pitch);
-  const pitchY = yawY * cosPitch - dz * sinPitch;
-  const pitchZ = yawY * sinPitch + dz * cosPitch;
-
-  return {
-    x: yawX,
-    y: pitchY,
-    z: pitchZ,
-  };
-}
-
-function buildBoundsBox(bounds: ToolpathPreview3D['bounds']): Point3D[][] {
-  const { minX, maxX, minY, maxY, minZ, maxZ } = bounds;
-  const p000 = { x: minX, y: minY, z: minZ };
-  const p100 = { x: maxX, y: minY, z: minZ };
-  const p110 = { x: maxX, y: maxY, z: minZ };
-  const p010 = { x: minX, y: maxY, z: minZ };
-  const p001 = { x: minX, y: minY, z: maxZ };
-  const p101 = { x: maxX, y: minY, z: maxZ };
-  const p111 = { x: maxX, y: maxY, z: maxZ };
-  const p011 = { x: minX, y: maxY, z: maxZ };
-
-  return [
-    [p000, p100],
-    [p100, p110],
-    [p110, p010],
-    [p010, p000],
-    [p001, p101],
-    [p101, p111],
-    [p111, p011],
-    [p011, p001],
-    [p000, p001],
-    [p100, p101],
-    [p110, p111],
-    [p010, p011],
-  ];
-}
-
-function getDistance3d(start: Point3D, end: Point3D): number {
-  return Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z);
-}
-
-function buildPlaybackLegs(preview: ToolpathPreview3D): { legs: PlaybackLeg[]; totalLength: number } {
-  let cumulative = 0;
-  const legs = preview.segments.flatMap((segment) =>
-    segment.points.slice(1).flatMap((point, index) => {
-      const start = segment.points[index];
-      const length = getDistance3d(start, point);
-      if (length <= 0.0001) {
-        return [];
-      }
-
-      const leg: PlaybackLeg = {
-        kind: segment.kind,
-        start,
-        end: point,
-        length,
-        cumulativeStart: cumulative,
-      };
-      cumulative += length;
-      return [leg];
-    })
-  );
-
-  return { legs, totalLength: cumulative };
-}
-
-function getPlaybackPoint(legs: PlaybackLeg[], totalLength: number, distance: number): PlaybackPoint | null {
-  if (legs.length === 0) {
-    return null;
-  }
-
-  if (distance <= 0) {
-    return {
-      kind: legs[0].kind,
-      point: legs[0].start,
-    };
-  }
-
-  if (distance >= totalLength) {
-    const lastLeg = legs[legs.length - 1];
-    return {
-      kind: lastLeg.kind,
-      point: lastLeg.end,
-    };
-  }
-
-  const activeLeg = legs.find(
-    (leg) => distance >= leg.cumulativeStart && distance <= leg.cumulativeStart + leg.length
-  );
-  if (!activeLeg) {
-    const lastLeg = legs[legs.length - 1];
-    return {
-      kind: lastLeg.kind,
-      point: lastLeg.end,
-    };
-  }
-
-  const localDistance = distance - activeLeg.cumulativeStart;
-  const ratio = activeLeg.length <= 0 ? 0 : localDistance / activeLeg.length;
-  return {
-    kind: activeLeg.kind,
-    point: {
-      x: activeLeg.start.x + (activeLeg.end.x - activeLeg.start.x) * ratio,
-      y: activeLeg.start.y + (activeLeg.end.y - activeLeg.start.y) * ratio,
-      z: activeLeg.start.z + (activeLeg.end.z - activeLeg.start.z) * ratio,
-    },
-  };
-}
-
-function buildSceneBounds(preview: ToolpathPreview3D, importedMeshes: ImportedMesh[]): ToolpathPreview3D['bounds'] {
-  return importedMeshes.reduce(
-    (bounds, mesh) => {
-      const meshBounds = getImportedMeshWorldBounds(mesh);
-      return {
-        minX: Math.min(bounds.minX, meshBounds.minX),
-        maxX: Math.max(bounds.maxX, meshBounds.maxX),
-        minY: Math.min(bounds.minY, meshBounds.minY),
-        maxY: Math.max(bounds.maxY, meshBounds.maxY),
-        minZ: Math.min(bounds.minZ, meshBounds.minZ),
-        maxZ: Math.max(bounds.maxZ, meshBounds.maxZ),
-      };
-    },
-    { ...preview.bounds }
-  );
-}
 
 export default function ToolpathPreview3D({
   preview,
@@ -262,185 +93,27 @@ export default function ToolpathPreview3D({
     return Math.max(1, Math.hypot(width, height, depth) / 2);
   }, [sceneBounds]);
 
-  const projected = useMemo(() => {
-    const rawSegments = preview.segments.map((segment) => ({
-      ...segment,
-      projected: segment.points.map((point) => rotatePoint(point, center, yaw, pitch)),
-    }));
-    const rawMarkers = preview.markers.map((marker) => ({
-      ...marker,
-      projected: rotatePoint(marker.point, center, yaw, pitch),
-    }));
-    const rawBounds = buildBoundsBox(sceneBounds).map((edge) => edge.map((point) => rotatePoint(point, center, yaw, pitch)));
-
-    const baseScale =
-      (Math.min(VIEW_WIDTH - PADDING * 2, VIEW_HEIGHT - PADDING * 2) / (fitRadius * 2)) * zoom;
-
-    function toScreen(point: Point3D): ProjectedPoint {
-      return {
-        x: point.x * baseScale + VIEW_WIDTH / 2,
-        y: VIEW_HEIGHT / 2 - point.y * baseScale,
-        depth: point.z,
-      };
-    }
-
-    const gizmoLength = Math.max(18, fitRadius * 0.2);
-    const gizmoCenter = {
-      x: 84,
-      y: VIEW_HEIGHT - 84,
-    };
-    const axisVectors = [
-      {
-        id: 'x' as const,
-        label: 'X',
-        color: '#f87171',
-        start: { x: gizmoCenter.x, y: gizmoCenter.y, depth: 0 },
-        end: (() => {
-          const rotated = rotatePoint(
-            { x: center.x + gizmoLength, y: center.y, z: center.z },
-            center,
-            yaw,
-            pitch
-          );
-          return {
-            x: gizmoCenter.x + rotated.x * 0.9,
-            y: gizmoCenter.y - rotated.y * 0.9,
-            depth: rotated.z,
-          };
-        })(),
-      },
-      {
-        id: 'y' as const,
-        label: 'Y',
-        color: '#4ade80',
-        start: { x: gizmoCenter.x, y: gizmoCenter.y, depth: 0 },
-        end: (() => {
-          const rotated = rotatePoint(
-            { x: center.x, y: center.y + gizmoLength, z: center.z },
-            center,
-            yaw,
-            pitch
-          );
-          return {
-            x: gizmoCenter.x + rotated.x * 0.9,
-            y: gizmoCenter.y - rotated.y * 0.9,
-            depth: rotated.z,
-          };
-        })(),
-      },
-      {
-        id: 'z' as const,
-        label: 'Z',
-        color: '#60a5fa',
-        start: { x: gizmoCenter.x, y: gizmoCenter.y, depth: 0 },
-        end: (() => {
-          const rotated = rotatePoint(
-            { x: center.x, y: center.y, z: center.z + gizmoLength },
-            center,
-            yaw,
-            pitch
-          );
-          return {
-            x: gizmoCenter.x + rotated.x * 0.9,
-            y: gizmoCenter.y - rotated.y * 0.9,
-            depth: rotated.z,
-          };
-        })(),
-      },
-    ] satisfies AxisGizmo[];
-    axisVectors.sort((left, right) => left.end.depth - right.end.depth);
-
-    const meshTriangles: ProjectedTriangle[] = importedMeshes
-      .flatMap((mesh) =>
-        mesh.triangles.map((triangle) => {
-          const rotated = [
-            rotatePoint(
-              { x: triangle.a.x + mesh.placement.x, y: triangle.a.y + mesh.placement.y, z: triangle.a.z },
-              center,
-              yaw,
-              pitch
-            ),
-            rotatePoint(
-              { x: triangle.b.x + mesh.placement.x, y: triangle.b.y + mesh.placement.y, z: triangle.b.z },
-              center,
-              yaw,
-              pitch
-            ),
-            rotatePoint(
-              { x: triangle.c.x + mesh.placement.x, y: triangle.c.y + mesh.placement.y, z: triangle.c.z },
-              center,
-              yaw,
-              pitch
-            ),
-          ];
-          return {
-            points: [toScreen(rotated[0]), toScreen(rotated[1]), toScreen(rotated[2])] as [
-              ProjectedPoint,
-              ProjectedPoint,
-              ProjectedPoint,
-            ],
-            averageDepth: (rotated[0].z + rotated[1].z + rotated[2].z) / 3,
-          };
-        })
-      )
-      .sort((left, right) => left.averageDepth - right.averageDepth);
-
-    const projectedTool = playbackPoint
-      ? (() => {
-          const tip = toScreen(rotatePoint(playbackPoint.point, center, yaw, pitch));
-          const baseCenter = toScreen(
-            rotatePoint(
-              {
-                x: playbackPoint.point.x,
-                y: playbackPoint.point.y,
-                z: playbackPoint.point.z + TOOL_CONE_HEIGHT,
-              },
-              center,
-              yaw,
-              pitch
-            )
-          );
-          const dx = tip.x - baseCenter.x;
-          const dy = tip.y - baseCenter.y;
-          const length = Math.max(1, Math.hypot(dx, dy));
-          const perpendicularX = (-dy / length) * TOOL_CONE_RADIUS;
-          const perpendicularY = (dx / length) * TOOL_CONE_RADIUS;
-          return {
-            kind: playbackPoint.kind,
-            tip,
-            baseLeft: {
-              x: baseCenter.x + perpendicularX,
-              y: baseCenter.y + perpendicularY,
-              depth: baseCenter.depth,
-            },
-            baseRight: {
-              x: baseCenter.x - perpendicularX,
-              y: baseCenter.y - perpendicularY,
-              depth: baseCenter.depth,
-            },
-            baseCenter,
-          };
-        })()
-      : null;
-
-    return {
-      segments: rawSegments
-        .map((segment) => ({
-          ...segment,
-          projected: segment.projected.map(toScreen),
-          averageDepth: segment.projected.reduce((sum, point) => sum + point.z, 0) / segment.projected.length,
-        }))
-        .sort((left, right) => left.averageDepth - right.averageDepth),
-      markers: rawMarkers.map((marker) => ({
-        ...marker,
-        projected: toScreen(marker.projected),
-      })),
-      bounds: rawBounds.map((edge) => edge.map(toScreen)),
-      meshes: meshTriangles,
-      gizmo: axisVectors,
-      tool: projectedTool,
-    };
-  }, [center, fitRadius, importedMeshes, pitch, playbackPoint, preview, sceneBounds, yaw, zoom]);
+  const projected = useMemo(
+    () =>
+      projectScene({
+        preview,
+        importedMeshes,
+        center,
+        yaw,
+        pitch,
+        zoom,
+        fitRadius,
+        viewWidth: VIEW_WIDTH,
+        viewHeight: VIEW_HEIGHT,
+        padding: PADDING,
+        gizmoOffset: 84,
+        toolConeHeight: TOOL_CONE_HEIGHT,
+        toolConeRadius: TOOL_CONE_RADIUS,
+        playbackPoint,
+        sceneBounds,
+      }),
+    [center, fitRadius, importedMeshes, pitch, playbackPoint, preview, sceneBounds, yaw, zoom]
+  );
 
   function getSegmentColor(kind: string): string {
     if (kind === 'rapid') return '#7dd3fc';

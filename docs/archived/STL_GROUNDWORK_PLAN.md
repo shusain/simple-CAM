@@ -1,5 +1,9 @@
 # STL Groundwork Plan
 
+Archived status:
+- The groundwork phase described here has been completed and shipped.
+- Ongoing STL follow-up work now lives in [../living/PRODUCT_REFINEMENT_BACKLOG.md](../living/PRODUCT_REFINEMENT_BACKLOG.md).
+
 This document defines the first groundwork needed before `simple-CAM` takes on STL import.
 
 ## Why This Exists
@@ -186,7 +190,7 @@ Prepare the mesh ingestion assumptions before parsing STL into operations.
 7. [x] Add STL inspection/parsing that computes bounds, normalized placement, and triangle counts
 8. [x] Add a 2D silhouette placement model for imported meshes
 9. [x] Define the first STL-derived operation model and its parameters
-10. [ ] Only then start generating STL-derived toolpaths
+10. [x] Start generating STL-derived toolpaths
 
 ## Open Questions
 
@@ -213,4 +217,4 @@ The groundwork phase is now in place:
 - `surface-rough` now has a first-pass raster planner that feeds both preview and G-code generation
 - `surface-finish` now has a first-pass raster/crosshatch planner with export and preview support
 
-The next implementation step should move into finishing-path quality and mesh-aware planning refinement rather than basic plumbing.
+The next implementation step should move into validation, preview-performance work, and mesh-aware planning refinement rather than basic plumbing.
