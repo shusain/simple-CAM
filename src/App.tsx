@@ -20,12 +20,11 @@ import OctoprintSettingsModal from './components/OctoprintSettingsModal';
 import OperationsPanel from './components/OperationsPanel';
 import ToolpathPreview3D from './components/ToolpathPreview3D';
 import { generateMarlinGcode } from './utils/gcode';
-import { deriveSketchState, getOperationBounds, getSketchSegments, moveOperation } from './utils/geometry';
+import { deriveSketchState, getOperationBounds, getSketchSegments } from './utils/geometry';
 import { getDefaultPocketStepOver } from './utils/pocketing';
 import { resolveMaterialId } from './utils/tooling';
 import { importSvgToSketchOperations } from './utils/importSvg';
 import type {
-  HistoryState,
   ImportedMesh,
   MachineSettings,
   Material,
@@ -49,7 +48,6 @@ import {
   DEFAULT_OCTOPRINT_SETTINGS,
   DEFAULT_SETTINGS,
   DEFAULT_TOOLS,
-  HISTORY_LIMIT,
   TOOLS,
   type ActiveTool,
 } from './app/defaults';
@@ -67,6 +65,7 @@ import {
   saveBrowserOctoprintSettings,
   savePreferences,
 } from './app/helpers';
+import { useOperationHistory } from './app/useOperationHistory';
 import { buildProjectFile, hydrateProjectFile } from './app/project';
 import {
   beginTransformSession,
@@ -83,8 +82,6 @@ import { importStlModel, offsetImportedMesh } from './utils/importStl';
 import type {
   InitialState,
   MoveSelectedOperationsArgs,
-  OperationBounds,
-  OperationsUpdater,
   OperationUpdates,
   RepeatArgs,
   SelectOptions,
@@ -137,11 +134,6 @@ export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<MachineSettings>(initialState.settings);
   const [materials, setMaterials] = useState<Material[]>(initialState.materials);
   const [activeTool, setActiveTool] = useState<ActiveTool>('select');
-  const [operationsHistory, setOperationsHistory] = useState<HistoryState<Operation[]>>({
-    past: [],
-    present: [],
-    future: [],
-  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<PastePreview | null>(null);
   const [pastePreview, setPastePreview] = useState<PastePreview | null>(null);
@@ -164,8 +156,15 @@ export default function App(): React.JSX.Element {
   const [importedMeshes, setImportedMeshes] = useState<ImportedMesh[]>(initialState.importedMeshes);
   const [selectedImportedMeshId, setSelectedImportedMeshId] = useState<string | null>(null);
   const canvasPointerRef = useRef<Point | null>(null);
-
-  const operations = operationsHistory.present;
+  const {
+    operationsHistory,
+    operations,
+    commitOperations,
+    previewOperations,
+    resetOperations: setOperationsDirect,
+    commitPreviewedOperations,
+    setOperationsHistory,
+  } = useOperationHistory();
 
   const selectedOperations = useMemo(
     () => operations.filter((op) => selectedIds.includes(op.id)),
@@ -241,48 +240,6 @@ export default function App(): React.JSX.Element {
   const hasOctoprintSettings =
     Boolean(octoprintSettings.baseUrl && octoprintSettings.baseUrl.trim()) &&
     Boolean(octoprintSettings.apiKey && octoprintSettings.apiKey.trim());
-
-  const commitOperations = useCallback((nextOrUpdater: OperationsUpdater) => {
-    setOperationsHistory((previous) => {
-      const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(previous.present) : nextOrUpdater;
-      if (!Array.isArray(next)) {
-        return previous;
-      }
-
-      if (!operationsChanged(previous.present, next)) {
-        return previous;
-      }
-
-      const past = [...previous.past, previous.present];
-      if (past.length > HISTORY_LIMIT) {
-        past.shift();
-      }
-
-      return {
-        past,
-        present: next,
-        future: [],
-      };
-    });
-  }, []);
-
-  const previewOperations = useCallback((nextOrUpdater: OperationsUpdater) => {
-    setOperationsHistory((previous) => {
-      const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(previous.present) : nextOrUpdater;
-      if (!Array.isArray(next) || !operationsChanged(previous.present, next)) {
-        return previous;
-      }
-
-      return {
-        ...previous,
-        present: next,
-      };
-    });
-  }, []);
-
-  const setOperationsDirect = useCallback((nextOperations: Operation[]) => {
-    setOperationsHistory({ past: [], present: nextOperations, future: [] });
-  }, []);
 
   const completeImportedOperations = useCallback(
     (
@@ -768,20 +725,9 @@ export default function App(): React.JSX.Element {
         return;
       }
 
-      setOperationsHistory((previous) => {
-        const past = [...previous.past, sourceOperations];
-        if (past.length > HISTORY_LIMIT) {
-          past.shift();
-        }
-
-        return {
-          past,
-          present: nextOperations,
-          future: [],
-        };
-      });
+      commitPreviewedOperations(sourceOperations, nextOperations);
     },
-    [previewOperations]
+    [commitPreviewedOperations, previewOperations]
   );
 
   const deleteOperation = useCallback(

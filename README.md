@@ -16,20 +16,16 @@ I am doing what I can to test and validate the generated output, but machine beh
 
 This app lets you:
 
-- Draw CAM operations on a 2D work area (drill, line, rectangle, circle)
-- Manage operation order and per-operation tool assignment
-- Assign materials per operation and apply a material across the whole job
-- Configure machine settings (safe Z, feed rates, depth settings, spindle options)
-- Configure tool library values (diameter plus per-material feed and stepdown presets)
-- Export Marlin-compatible G-code
-- Save/open project files (`.cam.json`)
+- Draw CAM operations on a 2D work area (`drill`, `line`, `rectangle`, `circle`, and editable sketch paths)
+- Edit sketch geometry with `Poly-Line` / `Poly-Arc`, segment handles, transforms, and numeric entry
+- Preview planned 2D toolpaths with rapids, cut direction, retaining tabs, and pocket/clear-area motion
+- Import `SVG`, `DXF`, and first-pass `STL` geometry into the normal authoring workflow
+- Assign tools and materials with per-tool/per-material feeds and pass-depth presets
+- Create first-pass STL-derived `surface-rough` and `surface-finish` operations
+- Inspect jobs in a 3D preview with orbit/zoom, bounds, orientation gizmo, and playback controls
+- Export Marlin-compatible G-code, save/open project files (`.cam.json`), and send jobs to OctoPrint
 
-Recent workflow features include:
-
-- Multi-select (Shift+click + drag-select)
-- Group move in canvas
-- Copy/paste placement workflow (keyboard)
-- Undo/redo history (keyboard)
+The project docs and active planning notes live under [docs/](./docs/README.md).
 
 ## Requirements
 
