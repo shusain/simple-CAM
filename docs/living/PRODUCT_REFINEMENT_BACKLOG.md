@@ -13,6 +13,7 @@ The app now has the following core capabilities in place:
 - [x] Pocket / clear-area support for inside cuts on rectangles, circles, and closed sketches
 - [x] SVG import into native sketch geometry with editable imported paths
 - [x] DXF import into the same normalized sketch pipeline for first-pass CAD geometry
+- [x] Excellon / DRL drill import into native drill operations
 - [x] STL import with centered placement, 2D silhouette editing, and dedicated surface operations
 - [x] Material-aware tool presets with per-tool/per-material feeds and pass depth
 - [x] Keyboard transform workflow (`G`, `R`, `S`, axis locks, numeric entry, confirm/cancel)
@@ -63,18 +64,21 @@ Completed:
 - [x] Compact project actions with icon buttons
 - [x] Left/right panel layout cleanup and details/list separation
 - [x] Lucide icon adoption started for main controls
+- [x] Drill-to-circle conversion helper for pocketing larger holes without forcing an immediate tool change
 
 ### Imported geometry workflow
 
 Completed:
 - [x] `SVG` import into native sketch geometry
 - [x] `DXF` import with support for `LINE`, `ARC`, `CIRCLE`, `LWPOLYLINE`, and legacy `POLYLINE`
+- [x] `DRL` / Excellon import into native drill operations with first-pass KiCad support
 - [x] `STL` import into centered, movable mesh placement with dedicated 3D operations
 - [x] Import cut choice moved to a post-file-pick modal before conversion
 - [x] Imported geometry arrives as editable sketch operations and respects cut side / pocket settings where valid
 - [x] Onshape `Release 14` DXF export path validated against a real sample
 - [ ] Richer import warning review UI beyond status text
 - [ ] Support for more DXF entities such as splines, blocks, or ellipses where that adds real value
+- [x] Add Excellon / DRL import for PCB drill maps, creating native drill operations with editable depths/tools
 
 ### STL groundwork
 
@@ -90,7 +94,41 @@ Reference:
 
 ## P1: Near-Term Focus
 
-### 1. Physical validation and preview-performance hardening for mesh workflows
+### 1. Text tool and glyph-based path workflow
+
+- [x] Add a `text` authoring tool that creates a new text operation
+- [x] Let the user enter text content, choose a font, and set size/placement
+- [x] Convert glyph outlines into an editable parametric text operation that regenerates geometry on edit
+- [x] Support `cut along`, `cut outside`, and `cut inside` for closed glyph shapes where valid
+- [x] Support retaining tabs on `cut outside` text contours
+- [ ] Support `cut inside + clear area` for enclosed glyph regions without breaking counters/holes in letters
+- [x] Keep text editable after creation by storing text/font/layout parameters on the text operation and regenerating geometry when edited
+
+Status:
+Initial text-tool authoring is good enough for alpha use. The next text-specific phase is pocket/clear-area support for filled glyphs.
+
+Why it matters:
+Text is a high-value authoring feature for signs, labels, engravings, and fixture marking, and it fits the existing 2D workflow better than introducing another isolated mode.
+
+Goal:
+Let users create usable toolpaths from text without depending on external SVG/DXF generation for every label or engraving job.
+
+### 1a. Excellon / DRL drill import
+
+- [x] Parse first-pass KiCad/Excellon drill files into native drill operations
+- [x] Handle unit assumptions explicitly enough for reliable first-pass KiCad import
+- [x] Keep imported drill hits editable/re-orderable like manually placed drill operations
+- [ ] Expand beyond the current first-pass assumptions for zero-suppressed / ambiguous Excellon coordinate formats
+- [ ] Map plated/non-plated tool hits into drill operations with richer tool-diameter-aware summaries where practical
+- [ ] Surface import warnings for unsupported commands or ambiguous format declarations
+
+Why it matters:
+PCB drilling and template/fixture workflows often begin from Excellon output, and importing those holes directly is a good fit for the existing drill operation model.
+
+Goal:
+Let users bring in KiCad-style drill maps without manually placing every hole.
+
+### 2. Physical validation and preview-performance hardening for mesh workflows
 
 - [ ] Capture machine-test findings for `surface-rough` and `surface-finish` using the alpha feedback template
 - [ ] Optimize dense 2D preview rendering for surface operations so the canvas stays responsive during `surface-finish`
@@ -103,7 +141,7 @@ The STL workflow is implemented, but confidence now depends on how well preview 
 Goal:
 Keep STL workflows trustworthy under real machine use before adding more strategy complexity.
 
-### 2. Mesh placement polish
+### 3. Mesh placement polish
 
 - [ ] Add XY rotation for imported mesh placement in the 2D silhouette workflow
 - [ ] Decide whether rotation should snap by default or allow free-angle numeric entry
@@ -112,7 +150,7 @@ Keep STL workflows trustworthy under real machine use before adding more strateg
 Why it matters:
 Translation-only placement is already useful, but rotation is the next practical lever for fitting imported parts into real stock.
 
-### 3. STL import constraints and warning UX
+### 4. STL import constraints and warning UX
 
 - [ ] Define first-pass supported STL variants explicitly in-product and/or in docs
 - [ ] Set a triangle-count threshold for warn vs refuse behavior
@@ -121,7 +159,18 @@ Translation-only placement is already useful, but rotation is the next practical
 
 ## P2: Follow-On Workflow Work
 
-### 4. Surface-finish strategy refinement
+### 5. Hybrid clear-area planning
+
+Why it matters:
+Pure contour-offset clearing works, but it makes complete material removal harder in some shapes and is not ideal for future glyph/text clearing or more complex enclosed regions.
+
+Scope:
+- [ ] Keep contour passes near the outer boundary of a `clear area` operation
+- [ ] Fill the remaining interior with a raster or line-by-line clearing strategy
+- [ ] Continue respecting tool/material depth-per-pass settings
+- [ ] Reuse the same strategy for shape pockets and text/glyph interior clearing where possible
+
+### 6. Surface-finish strategy refinement
 
 Reason for sequencing:
 Useful, but intentionally deferred until more physical validation is complete on the current roughing/finishing output.
@@ -131,7 +180,18 @@ Scope:
 - [ ] Revisit finish stepover defaults based on machine testing
 - [ ] Evaluate whether hybrid finishing patterns outperform simple raster/crosshatch for the first supported mesh parts
 
-### 5. Better operation summaries
+### 7. Playback timing modes
+
+Why it matters:
+The current preview is useful for quick review, but a closer-to-real-time mode would make it more useful for validating job sequence and operator expectations.
+
+Scope:
+- [ ] Add a `real-time` playback mode that approximates motion timing from feed/plunge rates and path length
+- [ ] Keep the current fast preview mode and slow-mo mode
+- [ ] Decide how rapid moves should be timed when exact machine acceleration is unknown
+- [ ] Show enough UI feedback that users understand the timing is approximate, not a simulation
+
+### 8. Better operation summaries
 
 Why it matters:
 The operations list should help confirm setup and catch invalid state without constant reselection.
@@ -141,7 +201,7 @@ Scope:
 - [ ] Show open/closed sketch state directly in the list
 - [ ] Flag invalid or incomplete operations inline
 
-### 6. Sketch edit-mode polish
+### 9. Sketch edit-mode polish
 
 Why it matters:
 The sketch flow is functional now, but edit mode can still be clearer and more deliberate.
@@ -151,7 +211,7 @@ Scope:
 - [ ] Clarify open-vs-closed finish choices where relevant
 - [ ] Improve repair/reconnect affordances for open sketches
 
-### 7. Numeric geometry editing follow-through
+### 10. Numeric geometry editing follow-through
 
 Why it matters:
 Most important numeric editing is in place, but there are still remaining opportunities to make exact edits faster.
@@ -161,7 +221,7 @@ Scope:
 - [ ] Improve focus/dirty-state feedback where useful
 - [ ] Evaluate whether common derived values like line length or circle diameter should be editable directly
 
-### 8. Import warning and cleanup UX
+### 11. Import warning and cleanup UX
 
 Why it matters:
 The importers work well enough for real jobs now, but warning visibility and post-import cleanup can still be improved for larger or messier files.
@@ -171,7 +231,7 @@ Scope:
 - [ ] Show a better import summary for counts of open vs closed paths
 - [ ] Consider lightweight per-import cleanup actions for simplification or rejection
 
-### 9. Codebase refactor pass
+### 12. Codebase refactor pass
 
 Why it matters:
 The recent feature growth landed well, but several high-traffic files are now large enough that the next round of changes will be slower and riskier without another decomposition pass.
@@ -250,11 +310,11 @@ Ideas:
 
 ## Suggested Next Sequence
 
-1. [ ] Run physical validation on representative STL roughing/finishing jobs and record findings
-2. [ ] Optimize dense surface preview rendering in the 2D canvas
-3. [ ] Add rotation to imported mesh placement
-4. [ ] Define STL import limits/warnings and improve mesh import summaries
-5. [ ] Start the next refactor pass before another large feature wave
+1. [ ] Define the first text-operation data model and font-to-path conversion flow
+2. [ ] Define how the editable text operation stores content/font/layout and regenerates tool geometry on change
+3. [ ] Improve clear-area generation with contour-plus-raster behavior for complete interior cleanup
+4. [ ] Add approximate real-time playback alongside the existing fast and slow-mo preview modes
+5. [ ] Return to STL physical validation and preview-performance work with machine-test findings
 
 ## User-Driven Direction
 
@@ -264,3 +324,5 @@ Ideas:
 - [x] `SVG` and `DXF` import are both in place for the current alpha workflow
 - [x] STL import now uses the completed 3D path-planning and visualization groundwork
 - [x] First STL assumptions: Onshape/mm source, rectangular stock, stock-top `Z0`, centered placement, and dedicated `surface-rough` / `surface-finish` operations
+- [x] Next 2D authoring expansion should include native text/glyph path creation rather than relying only on imported artwork
+- [x] Text operations should remain directly editable after creation instead of flattening immediately to static geometry

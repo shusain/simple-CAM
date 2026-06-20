@@ -9,6 +9,7 @@ import type {
   Point,
   RectOperation,
   SketchOperation,
+  TextOperation,
   SurfaceFinishOperation,
   SurfaceRoughOperation,
   Tool,
@@ -625,6 +626,48 @@ function appendSketchCut(
   }
 }
 
+function appendTextCut(
+  lines: string[],
+  operation: TextOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  useStartEndClearance = false
+): void {
+  if (tool) {
+    lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
+  }
+
+  const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
+  if (plannedPaths.length === 0) {
+    return;
+  }
+
+  const label = operation.text.trim().replace(/\s+/g, ' ') || 'Text';
+  lines.push(`; Cut text "${label}" (${plannedPaths.length} contour(s))`);
+
+  plannedPaths.forEach((plannedPath, index) => {
+    if (plannedPath.fallbackToAlongPath) {
+      lines.push(`; Text contour ${index + 1} offset failed, falling back to along path`);
+    } else {
+      lines.push(`; Text contour ${index + 1} (${plannedPath.cutSide} path)`);
+    }
+
+    appendCutPath(
+      lines,
+      plannedPath.path,
+      operation,
+      settings,
+      tool,
+      {
+        useStartEndClearance: useStartEndClearance && index === 0,
+        betweenPassClearanceZ: getOperationTravelZ(settings),
+        finalRetractZ:
+          index === plannedPaths.length - 1 ? Number(settings.safeZ) || 5 : getOperationTravelZ(settings),
+      }
+    );
+  });
+}
+
 export function generateMarlinGcode({ operations, settings, tools, importedMeshes = [] }: GenerateMarlinGcodeArgs): string {
   const lines: string[] = [];
   addHeader(lines, settings, operations.length);
@@ -709,7 +752,11 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
       return;
     }
 
-    appendSketchCut(lines, operation, settings, tool, useStartEndClearance);
+    if (operation.type === 'text') {
+      appendTextCut(lines, operation, settings, tool, useStartEndClearance);
+    } else {
+      appendSketchCut(lines, operation, settings, tool, useStartEndClearance);
+    }
     previousTool = tool;
     previousToolKey = toolKey;
     useStartEndClearance = false;

@@ -34,6 +34,7 @@ function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPa
     onCreateSurfaceRoughOperation: vi.fn(),
     onCreateSurfaceFinishOperation: vi.fn(),
     onUpdateOperation: vi.fn(),
+    onConvertDrillToCircle: vi.fn(),
     onUpdateImportedMesh: vi.fn(),
     onDeleteImportedMesh: vi.fn(),
     onDeleteOperation: vi.fn(),
@@ -83,6 +84,26 @@ describe('OperationsPanel', () => {
 
     fireEvent.click(screen.getByLabelText('Retaining tabs'));
     expect(onUpdateOperation).toHaveBeenCalledWith('rect-1', { tabsEnabled: true });
+  });
+
+  it('offers drill conversion into an inside-cut circle operation', () => {
+    const drill = makeDrillOperation({ id: 'drill-convert', x: 12, y: 18 });
+    const onConvertDrillToCircle = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [drill],
+          selectedOperation: drill,
+          selectedOperationIds: [drill.id],
+          onConvertDrillToCircle,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert to inside cut circle' }));
+
+    expect(onConvertDrillToCircle).toHaveBeenCalledWith('drill-convert');
   });
 
   it('shows pocket controls for inside rounded rectangles', () => {

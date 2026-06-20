@@ -11,6 +11,7 @@ import {
   ScanSearch,
   Save,
   Target,
+  Type,
   Workflow,
   XCircle,
 } from 'lucide-react';
@@ -77,6 +78,7 @@ import {
 import { buildToolpathPreview } from './utils/toolpathPreview';
 import { buildToolpathPreview3D } from './utils/toolpathPreview3d';
 import { importDxfToSketchOperations } from './utils/importDxf';
+import { importDrlToDrillOperations } from './utils/importDrl';
 import type { ImportCutMode } from './utils/importCommon';
 import { importStlModel, offsetImportedMesh } from './utils/importStl';
 import type {
@@ -116,6 +118,8 @@ function getToolButtonMeta(toolId: ActiveTool, hotkey: number): ToolbarButtonMet
       return { icon: <Target aria-hidden="true" size={16} />, title };
     case 'line':
       return { icon: <Ruler aria-hidden="true" size={16} />, title };
+    case 'text':
+      return { icon: <Type aria-hidden="true" size={16} />, title };
     case 'sketch':
       return { icon: <PenLine aria-hidden="true" size={16} />, title };
     case 'arc':
@@ -259,6 +263,28 @@ export default function App(): React.JSX.Element {
       const warningText =
         imported.warnings.length > 0 ? ` (${imported.warnings.length} warning(s))` : '';
       setStatus(`Imported ${imported.operations.length} sketch path(s) from ${filename}${warningText}`);
+    },
+    [commitOperations]
+  );
+
+  const completeImportedDrills = useCallback(
+    (
+      filePath: string | undefined,
+      imported: { operations: Operation[]; warnings: string[] }
+    ) => {
+      if (imported.operations.length === 0) {
+        setStatus(imported.warnings[0] || 'DRL import failed: no drill hits were found');
+        return;
+      }
+
+      commitOperations((previous) => [...previous, ...imported.operations]);
+      setSelectedIds(imported.operations.map((operation) => operation.id));
+      setSelectedImportedMeshId(null);
+      setActiveTool('select');
+      const filename = fileNameFromPath(filePath) || 'DRL';
+      const warningText =
+        imported.warnings.length > 0 ? ` (${imported.warnings.length} warning(s))` : '';
+      setStatus(`Imported ${imported.operations.length} drill hit(s) from ${filename}${warningText}`);
     },
     [commitOperations]
   );
@@ -425,6 +451,42 @@ export default function App(): React.JSX.Element {
       commitOperations((prev) => prev.map((op) => (op.id === id ? ({ ...op, ...updates } as Operation) : op)));
     },
     [commitOperations]
+  );
+
+  const convertDrillToCircle = useCallback(
+    (id: string) => {
+      const drill = operations.find((operation) => operation.id === id && operation.type === 'drill');
+      if (!drill || drill.type !== 'drill') {
+        setStatus('Selected drill no longer exists');
+        return;
+      }
+
+      const tool =
+        tools.find((item) => item.id === drill.toolId) ||
+        tools.find((item) => item.id === activeToolId) ||
+        tools[0] ||
+        null;
+      const defaultRadius = Math.max(0.5, (Number(tool?.diameter) || 1) / 2);
+
+      addOperation({
+        type: 'circle',
+        x: drill.x,
+        y: drill.y,
+        radius: defaultRadius,
+        depth: drill.depth,
+        cutSide: 'inside',
+        tabsEnabled: false,
+        tabCount: 2,
+        tabWidth: 1,
+        tabHeight: 1,
+        pocketEnabled: true,
+        pocketStepOver: 0,
+        toolId: drill.toolId,
+        materialId: drill.materialId,
+      });
+      setStatus('Created inside-cut circle from drill location');
+    },
+    [activeToolId, addOperation, operations, tools]
   );
 
   const startSketchEdit = useCallback(() => {
@@ -1042,6 +1104,36 @@ export default function App(): React.JSX.Element {
     );
   }, [electron, settings.workHeight, settings.workWidth]);
 
+  const handleImportDrl = useCallback(async () => {
+    if (!electron?.openDrlImport) {
+      setStatus('DRL import is available in desktop mode only');
+      return;
+    }
+
+    const result = await electron.openDrlImport();
+    if (!result || result.canceled) {
+      return;
+    }
+    if (result.error) {
+      setStatus(`DRL import failed: ${result.error}`);
+      return;
+    }
+    if (!result.contents) {
+      setStatus('DRL import failed: file contents were empty');
+      return;
+    }
+
+    const imported = importDrlToDrillOperations(result.contents, {
+      createId: newId,
+      depth: settings.drillDepth,
+      activeToolId,
+      tools,
+      materialId: activeMaterialId,
+    });
+
+    completeImportedDrills(result.filePath, imported);
+  }, [activeMaterialId, activeToolId, completeImportedDrills, electron, settings.drillDepth, tools]);
+
   const runPendingImport = useCallback(
     (cutMode: ImportCutMode) => {
       if (!pendingImport) {
@@ -1269,6 +1361,7 @@ export default function App(): React.JSX.Element {
       electron.onMenuImportSvg?.(handleImportSvg),
       electron.onMenuImportDxf?.(handleImportDxf),
       electron.onMenuImportStl?.(handleImportStl),
+      electron.onMenuImportDrl?.(handleImportDrl),
       electron.onMenuSave?.(handleSave),
       electron.onMenuExportGcode?.(handleExport),
       electron.onMenuOctoprintSettings?.(openOctoprintSettings),
@@ -1280,7 +1373,7 @@ export default function App(): React.JSX.Element {
     return () => {
       unsubs.forEach((fn) => fn());
     };
-  }, [electron, handleExport, handleImportDxf, handleImportStl, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
+  }, [electron, handleExport, handleImportDrl, handleImportDxf, handleImportStl, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1581,6 +1674,7 @@ export default function App(): React.JSX.Element {
             onImportSvg={handleImportSvg}
             onImportDxf={handleImportDxf}
             onImportStl={handleImportStl}
+            onImportDrl={handleImportDrl}
             onSaveProject={handleSave}
             onExportGcode={handleExport}
             canSendToOctoprint={hasOctoprintSettings}
@@ -1647,6 +1741,7 @@ export default function App(): React.JSX.Element {
             onCreateSurfaceRoughOperation={(meshId) => addSurfaceOperation(meshId, 'rough')}
             onCreateSurfaceFinishOperation={(meshId) => addSurfaceOperation(meshId, 'finish')}
             onUpdateOperation={updateOperation}
+            onConvertDrillToCircle={convertDrillToCircle}
             onUpdateImportedMesh={updateImportedMesh}
             onDeleteImportedMesh={deleteImportedMesh}
             onDeleteOperation={deleteOperation}

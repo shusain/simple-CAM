@@ -10,6 +10,7 @@ import type {
   SurfaceRoughOperation,
   SketchOperation,
   SketchSegment,
+  TextOperation,
   Tool,
 } from '../types';
 import { DEFAULT_MATERIALS, DEFAULT_SETTINGS, DEFAULT_TOOLS } from '../app/defaults';
@@ -138,6 +139,33 @@ export function makeSketchOperation(overrides: Partial<SketchOperation> = {}): S
     toolId: DEFAULT_TOOLS[0].id,
     materialId: DEFAULT_MATERIALS[0].id,
     cutSide: 'outside',
+    tabsEnabled: false,
+    tabCount: 2,
+    tabWidth: 1,
+    tabHeight: 1,
+    pocketEnabled: false,
+    pocketStepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
+    ...overrides,
+  };
+}
+
+export function makeTextOperation(overrides: Partial<TextOperation> = {}): TextOperation {
+  return {
+    id: 'text-1',
+    type: 'text',
+    x: 10,
+    y: 10,
+    text: 'CAM',
+    fontId: 'liberation-sans',
+    fontSize: 12,
+    lineHeight: 1.2,
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
+    depth: -1,
+    toolId: DEFAULT_TOOLS[0].id,
+    materialId: DEFAULT_MATERIALS[0].id,
+    cutSide: 'along',
     tabsEnabled: false,
     tabCount: 2,
     tabWidth: 1,

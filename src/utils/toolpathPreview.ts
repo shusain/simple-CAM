@@ -10,6 +10,7 @@ import type {
   SurfaceFinishOperation,
   SketchOperation,
   SurfaceRoughOperation,
+  TextOperation,
   Tool,
 } from '../types';
 import { isPathOperation } from '../types';
@@ -19,6 +20,8 @@ import type { TabRange } from './gcode/shared';
 import { getTabRanges } from './gcode/tabs';
 import { buildPocketContourPaths, buildRectPocketContourPaths } from './pocketing';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
+import { getTextOperationContours } from './text';
+import { EndType, FillRule, inflatePathsD, JoinType, unionD } from 'clipper2-ts';
 
 export type ToolpathPreviewSegmentKind = 'rapid' | 'cut' | 'tab';
 export type ToolpathPreviewMarkerKind = 'start' | 'end' | 'plunge' | 'drill';
@@ -103,6 +106,46 @@ function getPathArea(path: Point[]): number {
   }
 
   return Math.abs(area / 2);
+}
+
+function getSignedPathArea(path: Point[]): number {
+  if (!Array.isArray(path) || path.length < 3) {
+    return 0;
+  }
+
+  let area = 0;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const current = path[index];
+    const next = path[index + 1];
+    area += current.x * next.y - next.x * current.y;
+  }
+
+  return area / 2;
+}
+
+function stripClosingPoint(path: Point[]): Point[] {
+  if (path.length >= 2 && pointsEqual(path[0], path[path.length - 1])) {
+    return path.slice(0, -1);
+  }
+  return [...path];
+}
+
+function ensureClosedPath(path: Point[]): Point[] {
+  if (path.length === 0) {
+    return [];
+  }
+  return pointsEqual(path[0], path[path.length - 1]) ? [...path] : [...path, path[0]];
+}
+
+function orientClosedPath(path: Point[], clockwise: boolean): Point[] {
+  const openPath = stripClosingPoint(path);
+  if (openPath.length < 3) {
+    return [];
+  }
+
+  const isClockwise = getSignedPathArea([...openPath, openPath[0]]) < 0;
+  const oriented = isClockwise === clockwise ? openPath : [...openPath].reverse();
+  return ensureClosedPath(oriented);
 }
 
 function isValidInwardOffset(basePath: Point[], candidatePath: Point[]): boolean {
@@ -260,6 +303,70 @@ function buildSketchPaths(operation: SketchOperation, settings: MachineSettings,
     .flat();
 }
 
+function buildTextPaths(operation: TextOperation, _settings: MachineSettings, tool: Tool | null): OperationPlannedPath[] {
+  const contours = getTextOperationContours(operation);
+  const cutSide = getCutSide(operation, 'along');
+  const toolRadius = getToolRadius(tool);
+
+  if (cutSide === 'along' || toolRadius <= 0) {
+    return contours
+      .filter((contour) => contour.points.length >= 2)
+      .map((contour) => ({
+        operationId: operation.id,
+        operationType: operation.type,
+        cutSide,
+        path: contour.points,
+        tabRanges: cutSide === 'outside' ? getTabRanges(contour.points, operation, tool) : [],
+        fallbackToAlongPath: false,
+        isPocketPath: false,
+      }));
+  }
+
+  const filledGeometry = unionD(
+    contours
+      .map((contour) => orientClosedPath(contour.points, contour.isHole))
+      .filter((path) => path.length >= 4)
+      .map((path) => stripClosingPoint(path)),
+    FillRule.NonZero
+  );
+
+  const offsetPaths = inflatePathsD(
+    filledGeometry,
+    cutSide === 'outside' ? toolRadius : -toolRadius,
+    JoinType.Round,
+    EndType.Polygon,
+    2,
+    3
+  );
+
+  if (offsetPaths.length === 0) {
+    return contours
+      .filter((contour) => contour.points.length >= 2)
+      .map((contour) => ({
+        operationId: operation.id,
+        operationType: operation.type,
+        cutSide,
+        path: contour.points,
+        tabRanges: cutSide === 'outside' ? getTabRanges(contour.points, operation, tool) : [],
+        fallbackToAlongPath: true,
+        isPocketPath: false,
+      }));
+  }
+
+  return offsetPaths
+    .map((path) => ensureClosedPath(path))
+    .filter((path) => path.length >= 4)
+    .map((path) => ({
+      operationId: operation.id,
+      operationType: operation.type,
+      cutSide,
+      path,
+      tabRanges: cutSide === 'outside' ? getTabRanges(path, operation, tool) : [],
+      fallbackToAlongPath: false,
+      isPocketPath: false,
+    }));
+}
+
 export function getOperationPlannedPaths(
   operation: PathOperation,
   settings: MachineSettings,
@@ -288,6 +395,10 @@ export function getOperationPlannedPaths(
 
   if (operation.type === 'circle') {
     return buildCirclePath(operation, settings, tool);
+  }
+
+  if (operation.type === 'text') {
+    return buildTextPaths(operation, settings, tool);
   }
 
   return buildSketchPaths(operation, settings, tool);

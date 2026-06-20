@@ -22,7 +22,7 @@ module.exports = {
           loader: 'babel-loader',
           options: {
             presets: [
-              ['@babel/preset-env', { modules: 'commonjs' }],
+              ['@babel/preset-env', { modules: false }],
               '@babel/preset-react',
               '@babel/preset-typescript',
             ],
@@ -33,6 +33,10 @@ module.exports = {
       {
         test: /\.css$/,
         use: ['style-loader', 'css-loader'],
+      },
+      {
+        test: /\.ttf$/i,
+        type: 'asset/inline',
       },
     ],
   },

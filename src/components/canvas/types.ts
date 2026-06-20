@@ -13,7 +13,7 @@ import type {
 } from '../../types';
 import type { ToolpathPreview } from '../../utils/toolpathPreview';
 
-export type CanvasTool = 'select' | 'drill' | 'line' | 'sketch' | 'arc' | 'rect' | 'circle';
+export type CanvasTool = 'select' | 'drill' | 'line' | 'text' | 'sketch' | 'arc' | 'rect' | 'circle';
 
 export type SketchInsertTool = 'sketch' | 'arc';
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
 import { getImportedMeshWorldBounds } from '../utils/importStl';
+import { TEXT_FONT_OPTIONS } from '../utils/text';
 import NumericInput from './common/NumericInput';
 import type {
   CutSide,
@@ -64,6 +65,7 @@ export default function OperationsPanel({
   onCreateSurfaceRoughOperation,
   onCreateSurfaceFinishOperation,
   onUpdateOperation,
+  onConvertDrillToCircle,
   onUpdateImportedMesh,
   onDeleteImportedMesh,
   onDeleteOperation,
@@ -338,6 +340,17 @@ export default function OperationsPanel({
             />
           ) : null}
 
+          {selectedOperation.type === 'text' ? (
+            <CutSideEditor
+              value={selectedOperation.cutSide || 'along'}
+              onChange={(value) =>
+                onUpdateOperation(selectedOperation.id, {
+                  cutSide: value,
+                })
+              }
+            />
+          ) : null}
+
           {selectedOperation.type === 'surface-rough' || selectedOperation.type === 'surface-finish' ? (
             <>
               <label className="field-row">
@@ -424,6 +437,13 @@ export default function OperationsPanel({
             <>
               <NumericFieldRow label="X (mm)" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
               <NumericFieldRow label="Y (mm)" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
+              <button
+                type="button"
+                className="accent"
+                onClick={() => onConvertDrillToCircle(selectedOperation.id)}
+              >
+                Convert to inside cut circle
+              </button>
             </>
           ) : null}
 
@@ -433,6 +453,142 @@ export default function OperationsPanel({
               <NumericFieldRow label="Y1" value={selectedOperation.y1} onChange={(value) => onUpdateOperation(selectedOperation.id, { y1: value })} />
               <NumericFieldRow label="X2" value={selectedOperation.x2} onChange={(value) => onUpdateOperation(selectedOperation.id, { x2: value })} />
               <NumericFieldRow label="Y2" value={selectedOperation.y2} onChange={(value) => onUpdateOperation(selectedOperation.id, { y2: value })} />
+            </>
+          ) : null}
+
+          {selectedOperation.type === 'text' ? (
+            <>
+              <NumericFieldRow label="Anchor X" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
+              <NumericFieldRow label="Anchor Y" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
+              <label className="field-row" style={{ alignItems: 'flex-start' }}>
+                <span>Text</span>
+                <textarea
+                  aria-label="Text"
+                  value={selectedOperation.text}
+                  rows={4}
+                  onChange={(event) =>
+                    onUpdateOperation(selectedOperation.id, {
+                      text: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="field-row">
+                <span>Font</span>
+                <select
+                  value={selectedOperation.fontId}
+                  onChange={(event) =>
+                    onUpdateOperation(selectedOperation.id, {
+                      fontId: event.target.value,
+                    })
+                  }
+                >
+                  {TEXT_FONT_OPTIONS.map((font) => (
+                    <option key={font.id} value={font.id}>
+                      {font.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <NumericFieldRow
+                label="Font size"
+                value={selectedOperation.fontSize}
+                min={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    fontSize: Math.max(0.1, value || 0.1),
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Line height"
+                value={selectedOperation.lineHeight}
+                min={0.5}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    lineHeight: Math.max(0.5, value || 0.5),
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Rotation (deg)"
+                value={(selectedOperation.rotation * 180) / Math.PI}
+                step={1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    rotation: (value * Math.PI) / 180,
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Scale X"
+                value={selectedOperation.scaleX}
+                step={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    scaleX: Math.abs(value) <= 0.0001 ? 0.1 : value,
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Scale Y"
+                value={selectedOperation.scaleY}
+                step={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    scaleY: Math.abs(value) <= 0.0001 ? 0.1 : value,
+                  })
+                }
+              />
+              {selectedOperation.cutSide === 'outside' ? (
+                <>
+                  <label className="field-row checkbox-row">
+                    <span>Retaining tabs</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedOperation.tabsEnabled)}
+                      onChange={(event) =>
+                        onUpdateOperation(selectedOperation.id, { tabsEnabled: event.target.checked })
+                      }
+                    />
+                  </label>
+                  {selectedOperation.tabsEnabled ? (
+                    <>
+                      <NumericFieldRow
+                        label="Tab count"
+                        value={selectedOperation.tabCount ?? 2}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateOperation(selectedOperation.id, {
+                            tabCount: Math.max(1, Math.round(value || 1)),
+                          })
+                        }
+                      />
+                      <NumericFieldRow
+                        label="Tab width"
+                        value={selectedOperation.tabWidth ?? 1}
+                        min={0.1}
+                        onChange={(value) =>
+                          onUpdateOperation(selectedOperation.id, {
+                            tabWidth: Math.max(0.1, value || 0.1),
+                          })
+                        }
+                      />
+                      <NumericFieldRow
+                        label="Tab height"
+                        value={selectedOperation.tabHeight ?? 1}
+                        min={0.1}
+                        onChange={(value) =>
+                          onUpdateOperation(selectedOperation.id, {
+                            tabHeight: Math.max(0.1, value || 0.1),
+                          })
+                        }
+                      />
+                    </>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
 
