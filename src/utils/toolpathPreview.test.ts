@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTool } from '../test/factories';
+import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTextOperation, makeTool } from '../test/factories';
 import { getDefaultPocketStepOver } from './pocketing';
 import { buildToolpathPreview, getOperationPlannedPaths, slicePathByRange } from './toolpathPreview';
 
@@ -71,6 +71,37 @@ describe('toolpathPreview', () => {
 
     expect(planned.path[0]).not.toEqual({ x: 0, y: 0 });
     expect(planned.tabRanges).toHaveLength(2);
+  });
+
+  it('offsets text contours for outside cuts instead of leaving them along the glyph path', () => {
+    const tool = makeTool({ diameter: 2 });
+    const alongPaths = getOperationPlannedPaths(
+      makeTextOperation({ text: 'A', fontSize: 12, cutSide: 'along' }),
+      makeSettings(),
+      tool
+    );
+    const outsidePaths = getOperationPlannedPaths(
+      makeTextOperation({ text: 'A', fontSize: 12, cutSide: 'outside' }),
+      makeSettings(),
+      tool
+    );
+
+    expect(alongPaths.length).toBeGreaterThan(0);
+    expect(outsidePaths.length).toBe(alongPaths.length);
+    expect(outsidePaths.some((path) => !path.fallbackToAlongPath)).toBe(true);
+    expect(outsidePaths[0]?.path[0]).not.toEqual(alongPaths[0]?.path[0]);
+  });
+
+  it('adds text retaining tab ranges for outside cuts', () => {
+    const tool = makeTool({ diameter: 2 });
+    const plannedPaths = getOperationPlannedPaths(
+      makeTextOperation({ text: 'A', fontSize: 12, cutSide: 'outside', tabsEnabled: true, tabCount: 1, tabWidth: 1 }),
+      makeSettings(),
+      tool
+    );
+
+    expect(plannedPaths.length).toBeGreaterThan(0);
+    expect(plannedPaths.some((path) => path.tabRanges.length > 0)).toBe(true);
   });
 
   it('defaults pocket stepover to half the tool diameter', () => {

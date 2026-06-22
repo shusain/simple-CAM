@@ -11,6 +11,7 @@ import type {
 import { isSurfaceOperation as isSurfaceOperationType } from '../types';
 import { getDefaultPocketStepOver } from './pocketing';
 import { sanitizeMaterialId, sanitizeToolId } from './tooling';
+import { getTextOperationPathPoints } from './text';
 
 type RawRecord = Record<string, unknown>;
 type OperationBounds = { minX: number; minY: number; maxX: number; maxY: number };
@@ -775,6 +776,20 @@ export function getOperationBounds(operation: Operation | null | undefined): Ope
     };
   }
 
+  if (operation.type === 'text') {
+    const points = getTextOperationPathPoints(operation).flat();
+    if (points.length === 0) return null;
+    return points.reduce<OperationBounds>(
+      (acc, point) => ({
+        minX: Math.min(acc.minX, point.x),
+        minY: Math.min(acc.minY, point.y),
+        maxX: Math.max(acc.maxX, point.x),
+        maxY: Math.max(acc.maxY, point.y),
+      }),
+      { minX: points[0].x, minY: points[0].y, maxX: points[0].x, maxY: points[0].y }
+    );
+  }
+
   const points = getSketchSubpaths(operation).flat();
   if (points.length === 0) return null;
   return points.reduce<OperationBounds>(
@@ -895,6 +910,12 @@ export function hitTestOperation(operation: Operation | null | undefined, point:
     return Math.abs(d - operation.radius) <= tolerance || d < operation.radius;
   }
 
+  if (operation.type === 'text') {
+    return getTextOperationPathPoints(operation).some((path) =>
+      path.some((_, index) => index > 0 && pointToSegmentDistance(point, path[index - 1], path[index]) <= tolerance)
+    );
+  }
+
   return getSketchSubpaths(operation).some((path) =>
     path.some((_, index) => index > 0 && pointToSegmentDistance(point, path[index - 1], path[index]) <= tolerance)
   );
@@ -930,6 +951,14 @@ export function moveOperation(operation: Operation | null | undefined, dx: numbe
   }
 
   if (operation.type === 'circle') {
+    return {
+      ...operation,
+      x: operation.x + dx,
+      y: operation.y + dy,
+    };
+  }
+
+  if (operation.type === 'text') {
     return {
       ...operation,
       x: operation.x + dx,
@@ -996,6 +1025,16 @@ export function rotateOperation(
       ...operation,
       x: center.x,
       y: center.y,
+    };
+  }
+
+  if (operation.type === 'text') {
+    const anchor = rotatePoint({ x: operation.x, y: operation.y }, pivot, angleRadians);
+    return {
+      ...operation,
+      x: anchor.x,
+      y: anchor.y,
+      rotation: (operation.rotation || 0) + angleRadians,
     };
   }
 
@@ -1122,6 +1161,19 @@ export function scaleOperation(
     return {
       ...sketch,
       ...deriveSketchState(sketch, transformedSegments),
+    };
+  }
+
+  if (operation.type === 'text') {
+    const anchor = scalePoint({ x: operation.x, y: operation.y }, pivot, scaleX, scaleY);
+    const nextScaleX = (operation.scaleX || 1) * scaleX;
+    const nextScaleY = (operation.scaleY || 1) * scaleY;
+    return {
+      ...operation,
+      x: anchor.x,
+      y: anchor.y,
+      scaleX: Math.abs(nextScaleX) <= 0.000001 ? 0.0001 : nextScaleX,
+      scaleY: Math.abs(nextScaleY) <= 0.000001 ? 0.0001 : nextScaleY,
     };
   }
 
@@ -1334,6 +1386,36 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       pattern: normalizeSurfaceFinishPattern(data.pattern),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+    };
+  }
+
+  if (data.type === 'text') {
+    const x = toNumber(data.x, NaN);
+    const y = toNumber(data.y, NaN);
+    if (![x, y].every(isFiniteNumber)) return null;
+
+    return {
+      id: String(data.id ?? ''),
+      type: 'text',
+      x,
+      y,
+      text: typeof data.text === 'string' ? data.text : 'TEXT',
+      fontId: typeof data.fontId === 'string' && data.fontId.trim() ? data.fontId : 'liberation-sans',
+      fontSize: Math.max(0.1, Math.abs(toNumber(data.fontSize, 12))),
+      lineHeight: Math.max(0.5, toNumber(data.lineHeight, 1.2)),
+      rotation: toNumber(data.rotation, 0),
+      scaleX: toNumber(data.scaleX, 1),
+      scaleY: toNumber(data.scaleY, 1),
+      depth: toNumber(data.depth, undefined),
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
+      cutSide: normalizeCutSideValue(data.cutSide, 'along'),
+      tabsEnabled: Boolean(data.tabsEnabled),
+      tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
+      tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
+      tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
+      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
 

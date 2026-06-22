@@ -23,6 +23,7 @@ import {
   makeRectOperation,
   makeSketchOperation,
   makeSurfaceRoughOperation,
+  makeTextOperation,
 } from '../test/factories';
 
 describe('geometry', () => {
@@ -212,12 +213,20 @@ describe('geometry', () => {
     const line = makeLineOperation({ x1: 0, y1: 0, x2: 10, y2: 0 });
     const circle = makeCircleOperation({ x: 10, y: 10, radius: 5 });
     const drill = makeDrillOperation({ x: 2, y: 2 });
+    const text = makeTextOperation({ x: 30, y: 40, text: 'A', fontSize: 8 });
 
     expect(getOperationBounds(rect)).toEqual({ minX: 5, minY: 10, maxX: 25, maxY: 14 });
     expect(hitTestOperation(line, { x: 5, y: 0.5 }, 1)).toBe(true);
     expect(hitTestOperation(rect, { x: 6, y: 11 }, 1)).toBe(true);
     expect(hitTestOperation(circle, { x: 10, y: 14.5 }, 1)).toBe(true);
     expect(hitTestOperation(drill, { x: 3, y: 2 }, 1)).toBe(true);
+    expect(getOperationBounds(text)).toMatchObject({
+      minX: expect.any(Number),
+      minY: expect.any(Number),
+      maxX: expect.any(Number),
+      maxY: expect.any(Number),
+    });
+    expect(hitTestOperation(text, { x: 32, y: 45 }, 2)).toBe(true);
     expect(hitTestOperation(makeRectOperation({ width: 0.5, height: 0.5 }), { x: 0.25, y: 0.25 }, 1)).toBe(true);
   });
 
@@ -235,6 +244,33 @@ describe('geometry', () => {
       y1: -3,
       x2: 12,
       y2: -3,
+    });
+  });
+
+  it('moves and sanitizes text operations', () => {
+    const text = makeTextOperation({ x: 12, y: 18, text: 'Hi' });
+    const moved = moveOperation(text, 5, -3);
+
+    expect(moved).toMatchObject({
+      type: 'text',
+      x: 17,
+      y: 15,
+      text: 'Hi',
+    });
+
+    expect(
+      sanitizeOperation({
+        ...text,
+        type: 'text',
+        text: 'Hello',
+        fontSize: '14',
+        lineHeight: '1.4',
+      })
+    ).toMatchObject({
+      type: 'text',
+      text: 'Hello',
+      fontSize: 14,
+      lineHeight: 1.4,
     });
   });
 

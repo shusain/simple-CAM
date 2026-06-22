@@ -89,12 +89,14 @@ describe('App', () => {
   it('shows sketch-first topbar tools outside of sketch edit mode', () => {
     render(<App />);
 
+    expect(screen.getByRole('button', { name: 'Text' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New Sketch' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Poly-Arc' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cut Rect' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cut Circle' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Select' })).toHaveAttribute('title', 'Select (Ctrl+1)');
-    expect(screen.getByRole('button', { name: 'New Sketch' })).toHaveAttribute('title', 'Poly-Line (Ctrl+4)');
+    expect(screen.getByRole('button', { name: 'Text' })).toHaveAttribute('title', 'Text (Ctrl+4)');
+    expect(screen.getByRole('button', { name: 'New Sketch' })).toHaveAttribute('title', 'Poly-Line (Ctrl+5)');
   });
 
   it('creates a sketch and enters sketch edit tools when clicking New Sketch', () => {
@@ -132,7 +134,7 @@ describe('App', () => {
   it('starts a new sketch from ctrl+number and exposes sketch edit tools', () => {
     render(<App />);
 
-    fireEvent.keyDown(window, { key: '4', ctrlKey: true });
+    fireEvent.keyDown(window, { key: '5', ctrlKey: true });
 
     expect(screen.getByRole('button', { name: 'Poly-Line' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Poly-Arc' })).toBeInTheDocument();
@@ -141,7 +143,7 @@ describe('App', () => {
   it('switches between sketch edit tools with ctrl+number hotkeys', () => {
     render(<App />);
 
-    fireEvent.keyDown(window, { key: '4', ctrlKey: true });
+    fireEvent.keyDown(window, { key: '5', ctrlKey: true });
     fireEvent.keyDown(window, { key: '3', ctrlKey: true });
 
     expect(screen.getByRole('button', { name: 'Poly-Arc' })).toHaveClass('active');

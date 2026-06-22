@@ -30,6 +30,11 @@ export function formatOperationLabel(operation: Operation): string {
     return `Circle R${operation.radius.toFixed(2)} @ X${operation.x.toFixed(1)} Y${operation.y.toFixed(1)}`;
   }
 
+  if (operation.type === 'text') {
+    const label = operation.text.trim().replace(/\s+/g, ' ') || 'Text';
+    return `Text "${label.slice(0, 24)}${label.length > 24 ? '…' : ''}"`;
+  }
+
   if (operation.type === 'surface-rough') {
     return `Surface roughing (${operation.stepOver.toFixed(3)}mm stepover)`;
   }

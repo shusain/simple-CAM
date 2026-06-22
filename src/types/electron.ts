@@ -50,6 +50,13 @@ export interface OpenStlImportResult {
   contents?: string;
 }
 
+export interface OpenDrlImportResult {
+  canceled: boolean;
+  error?: string;
+  filePath?: string;
+  contents?: string;
+}
+
 export interface SaveOctoprintSettingsPayload {
   settings: OctoprintSettings;
 }
@@ -79,6 +86,7 @@ export interface ElectronBridge {
   openSvgImport?: () => Promise<OpenSvgImportResult>;
   openDxfImport?: () => Promise<OpenDxfImportResult>;
   openStlImport?: () => Promise<OpenStlImportResult>;
+  openDrlImport?: () => Promise<OpenDrlImportResult>;
   saveProject?: (payload: SaveProjectPayload) => Promise<SaveProjectResult>;
   exportGcode?: (payload: ExportGcodePayload) => Promise<ExportGcodeResult>;
   getOctoprintSettings?: () => Promise<OctoprintSettingsResult>;
@@ -89,6 +97,7 @@ export interface ElectronBridge {
   onMenuImportSvg?: (callback: () => void) => () => void;
   onMenuImportDxf?: (callback: () => void) => () => void;
   onMenuImportStl?: (callback: () => void) => () => void;
+  onMenuImportDrl?: (callback: () => void) => () => void;
   onMenuSave?: (callback: () => void) => () => void;
   onMenuExportGcode?: (callback: () => void) => () => void;
   onMenuOctoprintSettings?: (callback: () => void) => () => void;

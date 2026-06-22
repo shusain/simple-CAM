@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Box, FileInput, FileOutput, FilePlus2, FolderOpen, Save } from 'lucide-react';
+import { Box, FileInput, FileOutput, FilePlus2, FolderOpen, Save, Target } from 'lucide-react';
 import { resolveToolPreset } from '../utils/tooling';
 import NumberField from './controlPanel/NumberField';
 import MaterialManagerModal from './controlPanel/MaterialManagerModal';
@@ -27,6 +27,7 @@ export default function ControlPanel({
   onImportSvg,
   onImportDxf,
   onImportStl,
+  onImportDrl,
   onSaveProject,
   onExportGcode,
   canSendToOctoprint,
@@ -82,6 +83,15 @@ export default function ControlPanel({
             onClick={onImportStl}
           >
             <Box aria-hidden="true" size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-button import-drl-button"
+            aria-label="Import DRL / Excellon"
+            title="Import DRL / Excellon"
+            onClick={onImportDrl}
+          >
+            <Target aria-hidden="true" size={18} />
           </button>
           <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
             <Save aria-hidden="true" size={18} />

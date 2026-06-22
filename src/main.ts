@@ -96,6 +96,11 @@ function createAppMenu(): void {
           click: () => sendMenuEvent('menu:importStl'),
         },
         {
+          label: 'Import DRL',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => sendMenuEvent('menu:importDrl'),
+        },
+        {
           label: 'Save Project',
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuEvent('menu:save'),
@@ -300,6 +305,34 @@ ipcMain.handle('import:stl:open', async () => {
     return {
       canceled: false,
       error: error instanceof Error ? error.message : 'Unknown error while importing STL',
+    };
+  }
+});
+
+ipcMain.handle('import:drl:open', async () => {
+  try {
+    const { canceled, filePaths } = await showOpenDialog({
+      title: 'Import DRL / Excellon',
+      filters: [
+        { name: 'Excellon / DRL', extensions: ['drl', 'xln'] },
+        { name: 'Text', extensions: ['txt'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = filePaths[0];
+    const contents = await fs.readFile(filePath, 'utf8');
+
+    return { canceled: false, filePath, contents };
+  } catch (error) {
+    return {
+      canceled: false,
+      error: error instanceof Error ? error.message : 'Unknown error while importing DRL',
     };
   }
 });

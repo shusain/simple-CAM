@@ -21,6 +21,7 @@ export interface OperationsPanelProps {
   onCreateSurfaceRoughOperation: (meshId: string) => void;
   onCreateSurfaceFinishOperation: (meshId: string) => void;
   onUpdateOperation: (id: string, updates: Partial<Operation>) => void;
+  onConvertDrillToCircle: (id: string) => void;
   onUpdateImportedMesh: (id: string, updates: Partial<ImportedMesh>) => void;
   onDeleteImportedMesh: (id: string) => void;
   onDeleteOperation: (id: string) => void;

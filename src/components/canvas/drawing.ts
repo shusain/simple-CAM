@@ -1,4 +1,5 @@
 import { clamp, distance, getSketchPathPoints, getSketchSubpaths, normalizeRect } from '../../utils/geometry';
+import { getTextOperationPathPoints } from '../../utils/text';
 import type { ToolpathPreview } from '../../utils/toolpathPreview';
 import type { DrawDraft, ImportedMesh, Operation, Point, SelectBoxState, SketchOperation } from '../../types';
 import { getImportedMeshWorldBounds } from '../../utils/importStl';
@@ -174,6 +175,21 @@ export function drawOperation(
     ctx.beginPath();
     ctx.arc(center.x, center.y, operation.radius * transform.scale, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  if (operation.type === 'text') {
+    const subpaths = getTextOperationPathPoints(operation);
+    subpaths.forEach((path) => {
+      if (path.length < 2) return;
+      ctx.beginPath();
+      const start = worldToCanvas(path[0], transform);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < path.length; i += 1) {
+        const point = worldToCanvas(path[i], transform);
+        ctx.lineTo(point.x, point.y);
+      }
+      ctx.stroke();
+    });
   }
 
   if (operation.type === 'sketch') {
@@ -613,6 +629,22 @@ export function drawMiniMap(
       ctx.beginPath();
       ctx.arc(center.x, center.y, operation.radius * scale, 0, Math.PI * 2);
       ctx.stroke();
+      return;
+    }
+
+    if (operation.type === 'text') {
+      const subpaths = getTextOperationPathPoints(operation);
+      subpaths.forEach((path) => {
+        if (path.length < 2) return;
+        ctx.beginPath();
+        const start = toMap(path[0]);
+        ctx.moveTo(start.x, start.y);
+        for (let i = 1; i < path.length; i += 1) {
+          const point = toMap(path[i]);
+          ctx.lineTo(point.x, point.y);
+        }
+        ctx.stroke();
+      });
       return;
     }
 

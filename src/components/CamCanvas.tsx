@@ -43,6 +43,7 @@ import {
   switchSketchInsertDraftMode,
   updateSketchHandle,
 } from './canvas/sketchEditing';
+import { createDefaultTextOperation } from '../utils/text';
 
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 14;
@@ -579,6 +580,17 @@ export default function CamCanvas({
         depth: defaultDrillDepth,
         toolId: activeToolId,
         materialId: activeMaterialId,
+      });
+      onSelectOperation(id);
+      return;
+    }
+
+    if (activeTool === 'text') {
+      const id = onAddOperation({
+        ...createDefaultTextOperation(point.x, point.y),
+        toolId: activeToolId,
+        materialId: activeMaterialId,
+        depth: settings.cutDepth,
       });
       onSelectOperation(id);
       return;

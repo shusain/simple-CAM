@@ -5,6 +5,7 @@ import {
   makeLineOperation,
   makeRectOperation,
   makeSketchOperation,
+  makeTextOperation,
   makeTool,
 } from '../../test/factories';
 
@@ -60,6 +61,25 @@ describe('gcode tab helpers', () => {
     expect(manyRectTabs[manyRectTabs.length - 1].end).toBeLessThanOrEqual(60);
     expect(openSketchTabs).toEqual([]);
     expect(lineTabs).toEqual([]);
+  });
+
+  it('supports outside text contours for retaining tabs', () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 0, y: 10 },
+      { x: 0, y: 0 },
+    ];
+
+    const textTabs = getTabRanges(
+      path,
+      makeTextOperation({ cutSide: 'outside', tabsEnabled: true, tabCount: 2, tabWidth: 1 }),
+      makeTool({ diameter: 2 })
+    );
+
+    expect(textTabs).toHaveLength(2);
+    expect(textTabs[0].end - textTabs[0].start).toBeCloseTo(3);
   });
 
   it('emits tab moves in up-over-down order with comments', () => {

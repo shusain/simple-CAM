@@ -10,6 +10,7 @@ import {
   makeSettings,
   makeSurfaceFinishOperation,
   makeSurfaceRoughOperation,
+  makeTextOperation,
   makeTool,
   normalizeGcode,
 } from '../test/factories';
@@ -59,6 +60,52 @@ describe('generateMarlinGcode', () => {
     expect(gcode).toContain('; Cut line');
     expect(gcode).toContain('G1 X5.000 Y5.000 F600');
     expect(gcode).toContain('M5');
+  });
+
+  it('generates outline cuts for editable text operations', () => {
+    const gcode = generateMarlinGcode({
+      operations: [makeTextOperation({ text: 'A', fontSize: 8, cutSide: 'outside' })],
+      settings: makeSettings(),
+      tools: [makeTool()],
+    });
+
+    expect(gcode).toContain('; Cut text "A"');
+    expect(gcode).toContain('; Text contour 1');
+    expect(gcode).toContain('G1 Z-1.000 F220');
+  });
+
+  it('adds retaining tabs to outside text cuts on each pass', () => {
+    const tool = makeTool({
+      diameter: 2,
+      materialProfiles: {
+        'material-generic': {
+          cutFeedRate: 600,
+          plungeFeedRate: 220,
+          drillDepthPerPass: 1,
+          cutDepthPerPass: 1,
+        },
+      },
+    });
+
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeTextOperation({
+          text: 'A',
+          fontSize: 8,
+          cutSide: 'outside',
+          depth: -2,
+          tabsEnabled: true,
+          tabCount: 1,
+          tabWidth: 1,
+          tabHeight: 0.5,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [tool],
+    });
+
+    expect(gcode).toContain('; Tab 1 start');
+    expect(gcode).toContain('; Tab 1 end');
   });
 
   it('leaves retaining tabs on every cutting pass', () => {

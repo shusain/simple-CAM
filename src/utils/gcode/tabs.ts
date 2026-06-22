@@ -115,6 +115,10 @@ export function getTabRanges(pathPoints: Point[], operation: PathOperation, tool
     return buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter);
   }
 
+  if (operation.type === 'text' && operation.cutSide === 'outside') {
+    return buildEvenTabRanges(totalLength, tabCount, tabWidth, toolDiameter);
+  }
+
   return [];
 }
 

@@ -64,19 +64,22 @@ export function buildCanvasOverlayHints({
     case 'line':
       hints.unshift('Cut Line (Ctrl+3): click and drag to define a line cut');
       return hints;
+    case 'text':
+      hints.unshift('Text (Ctrl+4): click to place editable text');
+      return hints;
     case 'sketch':
       hints.unshift(
-        'New Sketch (Ctrl+4): click to place the first point, continue clicking to build the path, then click the first point again to close it'
+        'New Sketch (Ctrl+5): click to place the first point, continue clicking to build the path, then click the first point again to close it'
       );
       return hints;
     case 'arc':
       hints.unshift('Poly-Arc: start or edit a sketch first, then place arc end and bulge points');
       return hints;
     case 'rect':
-      hints.unshift('Cut Rect (Ctrl+5): click and drag to define a rectangle profile');
+      hints.unshift('Cut Rect (Ctrl+6): click and drag to define a rectangle profile');
       return hints;
     case 'circle':
-      hints.unshift('Cut Circle (Ctrl+6): click and drag from center to define the radius');
+      hints.unshift('Cut Circle (Ctrl+7): click and drag from center to define the radius');
       return hints;
     default:
       return hints;

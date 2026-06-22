@@ -78,6 +78,20 @@ export interface SketchOperation extends BaseOperation, TabbedCutFields, PocketF
   cutSide: CutSide;
 }
 
+export interface TextOperation extends BaseOperation, TabbedCutFields, PocketFields {
+  type: 'text';
+  x: number;
+  y: number;
+  text: string;
+  fontId: string;
+  fontSize: number;
+  lineHeight: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  cutSide: CutSide;
+}
+
 export interface SurfaceOperationBase extends BaseOperation {
   meshId: string;
   stepOver: number;
@@ -97,7 +111,8 @@ export type PathOperation =
   | LineOperation
   | RectOperation
   | CircleOperation
-  | SketchOperation;
+  | SketchOperation
+  | TextOperation;
 
 export type SurfaceOperation =
   | SurfaceRoughOperation
@@ -114,6 +129,7 @@ export type OperationInput =
   | Omit<RectOperation, 'id'>
   | Omit<CircleOperation, 'id'>
   | Omit<SketchOperation, 'id'>
+  | Omit<TextOperation, 'id'>
   | Omit<SurfaceRoughOperation, 'id'>
   | Omit<SurfaceFinishOperation, 'id'>;
 
@@ -130,6 +146,7 @@ export function isPathOperation(
     operation?.type === 'line' ||
     operation?.type === 'rect' ||
     operation?.type === 'circle' ||
-    operation?.type === 'sketch'
+    operation?.type === 'sketch' ||
+    operation?.type === 'text'
   );
 }

@@ -59,6 +59,7 @@ export const TOOLS = [
   { id: 'select', label: 'Select' },
   { id: 'drill', label: 'Drill' },
   { id: 'line', label: 'Cut Line' },
+  { id: 'text', label: 'Text' },
   { id: 'sketch', label: 'Poly-Line' },
   { id: 'arc', label: 'Poly-Arc' },
   { id: 'rect', label: 'Cut Rect' },
