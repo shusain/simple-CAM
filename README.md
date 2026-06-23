@@ -77,6 +77,22 @@ npm run test:coverage
 
 The GitHub Actions CI workflow runs `typecheck`, `test:coverage`, and `build` on pushes to `main` and on pull requests.
 
+## Self-hosted web build
+
+This repo can also be built as a browser-hosted app from the webpack `dist/` output.
+
+The included Docker/Drone/Kubernetes files are set up for that path:
+
+- `Dockerfile` builds the renderer and serves it with nginx
+- `.drone.yml` verifies the app on pull requests and builds/deploys on pushes to `main`
+- `k8s/` contains a minimal deployment, service, and ingress
+
+Browser-hosted mode works for the core editor and G-code export download, but desktop-only flows remain disabled there:
+
+- native open/save dialogs
+- SVG/DXF/STL/DRL file-picker imports
+- direct OctoPrint upload
+
 ## Releases
 
 Tagged GitHub releases are built automatically by GitHub Actions.

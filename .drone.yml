@@ -1,0 +1,69 @@
+kind: pipeline
+type: docker
+name: default
+
+clone:
+  disable: true
+
+steps:
+- name: custom_clone
+  image: alpine/git:latest
+  commands:
+  - >
+    url="http://gitea.shaun-husain.com:3000/${DRONE_REPO}.git";
+    git clone "$url" .;
+    git checkout "$DRONE_COMMIT_SHA"
+
+- name: verify
+  image: node:20-alpine
+  commands:
+  - npm ci
+  - npm run typecheck
+  - npm run test:coverage
+  - npm run build
+  when:
+    event:
+    - push
+    - pull_request
+
+- name: docker
+  image: plugins/docker
+  settings:
+    repo: registry.shaun-husain.com:5000/simple-cam
+    tags:
+    - ${DRONE_BUILD_NUMBER}
+    - latest
+    registry: registry.shaun-husain.com:5000
+    dockerfile: Dockerfile
+    insecure: true
+    purge: false
+  when:
+    branch:
+    - main
+    event:
+    - push
+
+- name: kubectl_apply
+  image: bitnami/kubectl:latest
+  environment:
+    K8S_NAMESPACE: automation
+    KUBECONFIG: /.kube/config
+  volumes:
+  - name: kubeconfig
+    path: /.kube/config
+  commands:
+  - kubectl get ns "${K8S_NAMESPACE}" || kubectl create ns "${K8S_NAMESPACE}"
+  - kubectl apply -f k8s/
+  - kubectl rollout restart deploy/simple-cam -n "${K8S_NAMESPACE}"
+  - kubectl rollout status deploy/simple-cam -n "${K8S_NAMESPACE}" --timeout=180s || true
+  - kubectl get deploy,svc,ingress -n "${K8S_NAMESPACE}"
+  when:
+    branch:
+    - main
+    event:
+    - push
+
+volumes:
+- name: kubeconfig
+  host:
+    path: /home/shaun/.kube/config

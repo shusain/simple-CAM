@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: simple-cam
+  namespace: automation
+spec:
+  rules:
+  - host: simple-cam.shaun-husain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: simple-cam-service
+            port:
+              number: 80
