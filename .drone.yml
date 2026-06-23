@@ -29,11 +29,11 @@ steps:
 - name: docker
   image: plugins/docker
   settings:
-    repo: registry.shaun-husain.com:5000/simple-cam
+    repo: registry.shaun-husain.com/simple-cam
     tags:
     - ${DRONE_BUILD_NUMBER}
     - latest
-    registry: registry.shaun-husain.com:5000
+    registry: registry.shaun-husain.com
     dockerfile: Dockerfile
     insecure: true
     purge: false
