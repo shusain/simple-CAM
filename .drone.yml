@@ -46,17 +46,16 @@ steps:
 - name: kubectl_apply
   image: bitnami/kubectl:latest
   environment:
-    K8S_NAMESPACE: automation
     KUBECONFIG: /.kube/config
   volumes:
   - name: kubeconfig
     path: /.kube/config
   commands:
-  - kubectl get ns "${K8S_NAMESPACE}" || kubectl create ns "${K8S_NAMESPACE}"
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl get ns "$NS" || kubectl create ns "$NS"
   - kubectl apply -f k8s/
-  - kubectl rollout restart deploy/simple-cam -n "${K8S_NAMESPACE}"
-  - kubectl rollout status deploy/simple-cam -n "${K8S_NAMESPACE}" --timeout=180s || true
-  - kubectl get deploy,svc,ingress -n "${K8S_NAMESPACE}"
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl rollout restart deploy/simple-cam -n "$NS"
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl rollout status deploy/simple-cam -n "$NS" --timeout=180s || true
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl get deploy,svc,ingress -n "$NS"
   when:
     branch:
     - main
