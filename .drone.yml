@@ -53,8 +53,8 @@ steps:
   commands:
   - NS="${K8S_NAMESPACE:-automation}"; kubectl get ns "$NS" || kubectl create ns "$NS"
   - kubectl apply -f k8s/
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl rollout restart deploy/simple-cam -n "$NS"
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl rollout status deploy/simple-cam -n "$NS" --timeout=600s
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl delete pod -n "$NS" -l app=simple-cam --wait=true
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl wait --for=condition=available deploy/simple-cam -n "$NS" --timeout=90s
   - NS="${K8S_NAMESPACE:-automation}"; kubectl get deploy,svc,ingress,pods -n "$NS" -o wide
   when:
     branch:
