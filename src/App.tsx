@@ -108,6 +108,57 @@ interface PendingImport {
 
 type ViewportMode = '2d' | '3d';
 
+interface BrowserImportFile {
+  filePath: string;
+  contents: string;
+}
+
+function openBrowserImportFile(accept: string): Promise<BrowserImportFile | null> {
+  if (typeof document === 'undefined') {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+
+    const cleanup = () => {
+      input.value = '';
+      input.remove();
+    };
+
+    input.addEventListener(
+      'change',
+      async () => {
+        const file = input.files?.[0];
+        if (!file) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        try {
+          const contents = await file.text();
+          cleanup();
+          resolve({
+            filePath: file.name,
+            contents,
+          });
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Unable to read selected file'));
+        }
+      },
+      { once: true }
+    );
+
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
 function getToolButtonMeta(toolId: ActiveTool, hotkey: number): ToolbarButtonMeta {
   const title = `${toolId === 'sketch' ? 'Poly-Line' : toolId === 'arc' ? 'Poly-Arc' : TOOLS.find((tool) => tool.id === toolId)?.label || toolId} (Ctrl+${hotkey})`;
 
@@ -1011,7 +1062,22 @@ export default function App(): React.JSX.Element {
 
   const handleImportSvg = useCallback(async () => {
     if (!electron?.openSvgImport) {
-      setStatus('SVG import is available in desktop mode only');
+      try {
+        const result = await openBrowserImportFile('.svg,image/svg+xml');
+        if (!result) return;
+        if (!result.contents) {
+          setStatus('SVG import failed: file contents were empty');
+          return;
+        }
+
+        setPendingImport({
+          kind: 'svg',
+          filePath: result.filePath,
+          contents: result.contents,
+        });
+      } catch (error) {
+        setStatus(`SVG import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
       return;
     }
 
@@ -1037,7 +1103,22 @@ export default function App(): React.JSX.Element {
 
   const handleImportDxf = useCallback(async () => {
     if (!electron?.openDxfImport) {
-      setStatus('DXF import is available in desktop mode only');
+      try {
+        const result = await openBrowserImportFile('.dxf,application/dxf');
+        if (!result) return;
+        if (!result.contents) {
+          setStatus('DXF import failed: file contents were empty');
+          return;
+        }
+
+        setPendingImport({
+          kind: 'dxf',
+          filePath: result.filePath,
+          contents: result.contents,
+        });
+      } catch (error) {
+        setStatus(`DXF import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
       return;
     }
 
@@ -1063,7 +1144,39 @@ export default function App(): React.JSX.Element {
 
   const handleImportStl = useCallback(async () => {
     if (!electron?.openStlImport) {
-      setStatus('STL import is available in desktop mode only');
+      try {
+        const result = await openBrowserImportFile('.stl,model/stl');
+        if (!result) return;
+        if (!result.contents) {
+          setStatus('STL import failed: file contents were empty');
+          return;
+        }
+
+        const imported = importStlModel(result.contents, {
+          createId: newId,
+          filePath: result.filePath,
+          workWidth: settings.workWidth,
+          workHeight: settings.workHeight,
+        });
+
+        if (!imported.mesh) {
+          setStatus(imported.warnings[0] || 'STL import failed');
+          return;
+        }
+
+        setImportedMeshes((previous) => [...previous, imported.mesh as ImportedMesh]);
+        setSelectedImportedMeshId(imported.mesh.id);
+        setSelectedIds([]);
+        setViewportMode('2d');
+        setActiveTool('select');
+        setStatus(
+          `Imported STL ${imported.mesh.name} (${imported.mesh.triangleCount} triangle(s))${
+            imported.warnings.length > 0 ? ` (${imported.warnings.length} warning(s))` : ''
+          }`
+        );
+      } catch (error) {
+        setStatus(`STL import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
       return;
     }
 
@@ -1106,7 +1219,26 @@ export default function App(): React.JSX.Element {
 
   const handleImportDrl = useCallback(async () => {
     if (!electron?.openDrlImport) {
-      setStatus('DRL import is available in desktop mode only');
+      try {
+        const result = await openBrowserImportFile('.drl,.txt,text/plain');
+        if (!result) return;
+        if (!result.contents) {
+          setStatus('DRL import failed: file contents were empty');
+          return;
+        }
+
+        const imported = importDrlToDrillOperations(result.contents, {
+          createId: newId,
+          depth: settings.drillDepth,
+          activeToolId,
+          tools,
+          materialId: activeMaterialId,
+        });
+
+        completeImportedDrills(result.filePath, imported);
+      } catch (error) {
+        setStatus(`DRL import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
       return;
     }
 
