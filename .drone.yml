@@ -15,7 +15,7 @@ steps:
     git checkout "$DRONE_COMMIT_SHA"
 
 - name: verify
-  image: node:20-alpine
+  image: node:24-alpine
   commands:
   - npm ci
   - npm run typecheck

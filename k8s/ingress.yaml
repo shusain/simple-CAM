@@ -4,6 +4,7 @@ metadata:
   name: simple-cam
   namespace: automation
 spec:
+  ingressClassName: traefik
   rules:
   - host: simple-cam.shaun-husain.com
     http:
