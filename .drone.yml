@@ -53,7 +53,7 @@ steps:
   commands:
   - NS="${K8S_NAMESPACE:-automation}"; kubectl get ns "$NS" || kubectl create ns "$NS"
   - kubectl apply -f k8s/
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl set image deploy/simple-cam simple-cam=registry.shaun-husain.com/simple-cam:${DRONE_BUILD_NUMBER} -n "$NS"
+  - NS="${K8S_NAMESPACE:-automation}"; kubectl rollout restart deploy/simple-cam -n "$NS"
   - NS="${K8S_NAMESPACE:-automation}"; kubectl rollout status deploy/simple-cam -n "$NS" --timeout=600s
   - NS="${K8S_NAMESPACE:-automation}"; kubectl get deploy,svc,ingress,pods -n "$NS" -o wide
   when:
