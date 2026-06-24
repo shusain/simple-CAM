@@ -3,6 +3,9 @@ kind: Ingress
 metadata:
   name: simple-cam
   namespace: automation
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   ingressClassName: traefik
   rules:
