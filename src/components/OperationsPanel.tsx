@@ -71,6 +71,7 @@ export default function OperationsPanel({
   onDeleteOperation,
   onDeleteSelection,
   onMoveOperation,
+  onMoveOperationToEdge,
   onRepeatOperation,
   isEditingSelectedSketch,
   selectedSketchSegmentIndex,
@@ -1174,10 +1175,15 @@ export default function OperationsPanel({
                       <button
                         type="button"
                         className="operation-main"
+                        onDoubleClick={() => {
+                          onSelectOperation(operation.id);
+                          setActiveTab('details');
+                        }}
                         onClick={(event) =>
                           onSelectOperation(operation.id, {
-                            additive: event.shiftKey,
-                            toggle: event.shiftKey,
+                            additive: false,
+                            toggle: Boolean((event.ctrlKey || event.metaKey) && !event.shiftKey),
+                            range: event.shiftKey,
                           })
                         }
                       >
@@ -1187,6 +1193,15 @@ export default function OperationsPanel({
                         <span className="operation-tool">{getMaterialName(operation.materialId, materials)}</span>
                       </button>
                       <div className="operation-order-controls">
+                        <button
+                          type="button"
+                          onClick={() => onMoveOperationToEdge(operation.id, 'top')}
+                          disabled={index === 0}
+                          title="Move to top"
+                          aria-label={`Move ${formatOperationLabel(operation)} to top`}
+                        >
+                          ⇤
+                        </button>
                         <button
                           type="button"
                           onClick={() => onMoveOperation(operation.id, -1)}
@@ -1202,6 +1217,15 @@ export default function OperationsPanel({
                           title="Move down"
                         >
                           ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onMoveOperationToEdge(operation.id, 'bottom')}
+                          disabled={index === operations.length - 1}
+                          title="Move to bottom"
+                          aria-label={`Move ${formatOperationLabel(operation)} to bottom`}
+                        >
+                          ⇥
                         </button>
                       </div>
                     </div>

@@ -295,6 +295,20 @@ export default function ControlPanel({
           step={1}
           onChange={(value) => onSettingsChange({ workHeight: Math.max(10, value || 10) })}
         />
+        <NumberField
+          label="Margin X"
+          value={settings.marginX}
+          min={0}
+          step={0.1}
+          onChange={(value) => onSettingsChange({ marginX: Math.max(0, value || 0) })}
+        />
+        <NumberField
+          label="Margin Y"
+          value={settings.marginY}
+          min={0}
+          step={0.1}
+          onChange={(value) => onSettingsChange({ marginY: Math.max(0, value || 0) })}
+        />
       </div>
 
       <ToolManagerModal

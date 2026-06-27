@@ -1,6 +1,8 @@
 export interface MachineSettings {
   workWidth: number;
   workHeight: number;
+  marginX: number;
+  marginY: number;
   gridSize: number;
   snapEnabled: boolean;
   activeMaterialId: string;

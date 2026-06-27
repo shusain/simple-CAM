@@ -702,6 +702,8 @@ export function renderCanvasScene(args: {
   canvas: HTMLCanvasElement;
   transform: ViewTransform;
   gridSize: number;
+  marginX?: number;
+  marginY?: number;
   workHeight: number;
   workWidth: number;
   operations: Operation[];
@@ -723,6 +725,8 @@ export function renderCanvasScene(args: {
     canvas,
     transform,
     gridSize,
+    marginX = 0,
+    marginY = 0,
     workHeight,
     workWidth,
     operations,
@@ -754,6 +758,39 @@ export function renderCanvasScene(args: {
   drawGrid(ctx, transform, gridSize);
 
   const borderTopLeft = worldToCanvas({ x: 0, y: workHeight }, transform);
+  const clampedMarginX = Math.max(0, Math.min(Number(marginX) || 0, workWidth / 2));
+  const clampedMarginY = Math.max(0, Math.min(Number(marginY) || 0, workHeight / 2));
+
+  if (clampedMarginX > 0 || clampedMarginY > 0) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(220, 38, 38, 0.16)';
+
+    if (clampedMarginX > 0) {
+      const leftTop = worldToCanvas({ x: 0, y: workHeight }, transform);
+      ctx.fillRect(leftTop.x, leftTop.y, clampedMarginX * transform.scale, workHeight * transform.scale);
+
+      const rightTop = worldToCanvas({ x: workWidth - clampedMarginX, y: workHeight }, transform);
+      ctx.fillRect(rightTop.x, rightTop.y, clampedMarginX * transform.scale, workHeight * transform.scale);
+    }
+
+    if (clampedMarginY > 0) {
+      const topLeft = worldToCanvas({ x: 0, y: workHeight }, transform);
+      ctx.fillRect(topLeft.x, topLeft.y, workWidth * transform.scale, clampedMarginY * transform.scale);
+
+      const bottomLeft = worldToCanvas({ x: 0, y: clampedMarginY }, transform);
+      ctx.fillRect(bottomLeft.x, bottomLeft.y, workWidth * transform.scale, clampedMarginY * transform.scale);
+    }
+
+    const innerTopLeft = worldToCanvas({ x: clampedMarginX, y: workHeight - clampedMarginY }, transform);
+    const innerWidth = Math.max(0, (workWidth - clampedMarginX * 2) * transform.scale);
+    const innerHeight = Math.max(0, (workHeight - clampedMarginY * 2) * transform.scale);
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(innerTopLeft.x, innerTopLeft.y, innerWidth, innerHeight);
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.strokeStyle = '#334155';
   ctx.lineWidth = 2;

@@ -3,6 +3,8 @@ import type { MachineSettings, Material, OctoprintSettings, Tool } from '../type
 export const DEFAULT_SETTINGS: MachineSettings = {
   workWidth: 300,
   workHeight: 200,
+  marginX: 0,
+  marginY: 0,
   gridSize: 5,
   snapEnabled: true,
   activeMaterialId: 'material-generic',

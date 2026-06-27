@@ -19,6 +19,7 @@ export interface InitialState {
 export interface SelectOptions {
   additive?: boolean;
   toggle?: boolean;
+  range?: boolean;
 }
 
 export interface RepeatArgs {

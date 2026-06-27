@@ -71,6 +71,7 @@ export interface MoveSelectedOperationsArgs {
 export interface SelectOptions {
   additive?: boolean;
   toggle?: boolean;
+  range?: boolean;
 }
 
 export interface InteractionState {

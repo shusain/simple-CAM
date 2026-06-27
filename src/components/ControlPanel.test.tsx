@@ -120,6 +120,8 @@ describe('ControlPanel', () => {
     render(<ControlPanel {...buildProps({ onSettingsChange })} />);
 
     fireEvent.change(screen.getByLabelText('Height'), { target: { value: '25' } });
+    fireEvent.change(screen.getByLabelText('Margin X'), { target: { value: '7.5' } });
+    fireEvent.change(screen.getByLabelText('Margin Y'), { target: { value: '-4' } });
     fireEvent.change(screen.getByLabelText('Safe Z'), { target: { value: '6.5' } });
     fireEvent.change(screen.getByLabelText('Start / end Z'), { target: { value: '12' } });
     fireEvent.change(screen.getByLabelText('Drill depth'), { target: { value: '-4.5' } });
@@ -131,6 +133,8 @@ describe('ControlPanel', () => {
     fireEvent.change(screen.getByLabelText('Spindle speed'), { target: { value: '-100' } });
 
     expect(onSettingsChange).toHaveBeenCalledWith({ workHeight: 25 });
+    expect(onSettingsChange).toHaveBeenCalledWith({ marginX: 7.5 });
+    expect(onSettingsChange).toHaveBeenCalledWith({ marginY: 0 });
     expect(onSettingsChange).toHaveBeenCalledWith({ safeZ: 6.5 });
     expect(onSettingsChange).toHaveBeenCalledWith({ startEndZ: 12 });
     expect(onSettingsChange).toHaveBeenCalledWith({ drillDepth: -4.5 });

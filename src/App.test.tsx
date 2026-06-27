@@ -2,8 +2,10 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const camCanvasMock = vi.fn((props: { showToolpathPreview: boolean }) => (
-  <div data-testid="cam-canvas">{props.showToolpathPreview ? 'preview-on' : 'preview-off'}</div>
+const camCanvasMock = vi.fn((props: { showToolpathPreview: boolean; selectedOperationIds?: string[] }) => (
+  <div data-testid="cam-canvas" className="cam-canvas-wrapper" tabIndex={0}>
+    {props.showToolpathPreview ? 'preview-on' : 'preview-off'}|selected:{props.selectedOperationIds?.length ?? 0}
+  </div>
 ));
 
 const buildToolpathPreviewMock = vi.fn(() => ({ segments: [], markers: [] }));
@@ -198,5 +200,37 @@ endsolid sample
     fireEvent.click(screen.getByRole('button', { name: 'Import STL' }));
 
     expect(await screen.findByText(/Imported STL hold-down\.stl \(1 triangle\(s\)\)/i)).toBeInTheDocument();
+  });
+
+  it('uses ctrl+a on a focused canvas surface to select all operations', async () => {
+    (window as Window & { electron?: unknown }).electron = {
+      openSvgImport: vi.fn()
+        .mockResolvedValueOnce({
+          canceled: false,
+          filePath: '/tmp/one.svg',
+          contents: '<svg><rect x="0" y="0" width="10" height="5" /></svg>',
+        })
+        .mockResolvedValueOnce({
+          canceled: false,
+          filePath: '/tmp/two.svg',
+          contents: '<svg><rect x="20" y="0" width="10" height="5" /></svg>',
+        }),
+    };
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import SVG' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cut outside' }));
+    expect(screen.getByTestId('cam-canvas')).toHaveTextContent('selected:1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import SVG' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cut outside' }));
+    expect(screen.getByTestId('cam-canvas')).toHaveTextContent('selected:1');
+
+    const canvasSurface = screen.getByTestId('cam-canvas');
+    canvasSurface.focus();
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+
+    expect(screen.getByTestId('cam-canvas')).toHaveTextContent('selected:2');
   });
 });

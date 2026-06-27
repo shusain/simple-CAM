@@ -40,6 +40,7 @@ function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPa
     onDeleteOperation: vi.fn(),
     onDeleteSelection: vi.fn(),
     onMoveOperation: vi.fn(),
+    onMoveOperationToEdge: vi.fn(),
     onRepeatOperation: vi.fn(),
     isEditingSelectedSketch: false,
     selectedSketchSegmentIndex: null,
@@ -48,6 +49,12 @@ function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPa
     onDeleteSelectedSketchSegment: vi.fn(),
     ...overrides,
   };
+}
+
+function getOperationMainButton(name: RegExp): HTMLElement {
+  return screen
+    .getAllByRole('button', { name })
+    .find((button) => button.classList.contains('operation-main')) as HTMLElement;
 }
 
 describe('OperationsPanel', () => {
@@ -415,6 +422,7 @@ describe('OperationsPanel', () => {
     const circle = makeCircleOperation({ id: 'circle-b' });
     const onSelectOperation = vi.fn();
     const onMoveOperation = vi.fn();
+    const onMoveOperationToEdge = vi.fn();
 
     render(
       <OperationsPanel
@@ -424,19 +432,52 @@ describe('OperationsPanel', () => {
           selectedOperationIds: [rect.id],
           onSelectOperation,
           onMoveOperation,
+          onMoveOperationToEdge,
         })}
       />
     );
 
     fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
-    fireEvent.click(screen.getByRole('button', { name: /CIRCLE/i }));
-    expect(onSelectOperation).toHaveBeenCalledWith('circle-b', { additive: false, toggle: false });
+    fireEvent.click(getOperationMainButton(/CIRCLE/i));
+    expect(onSelectOperation).toHaveBeenCalledWith('circle-b', { additive: false, toggle: false, range: false });
 
     const moveButtons = screen.getAllByTitle(/Move (up|down)/);
     fireEvent.click(moveButtons[1]);
     fireEvent.click(moveButtons[2]);
+    fireEvent.click(screen.getAllByTitle('Move to bottom')[0] as HTMLElement);
+    fireEvent.click(screen.getAllByTitle('Move to top')[1] as HTMLElement);
     expect(onMoveOperation).toHaveBeenNthCalledWith(1, 'rect-a', 1);
     expect(onMoveOperation).toHaveBeenNthCalledWith(2, 'circle-b', -1);
+    expect(onMoveOperationToEdge).toHaveBeenNthCalledWith(1, 'rect-a', 'bottom');
+    expect(onMoveOperationToEdge).toHaveBeenNthCalledWith(2, 'circle-b', 'top');
+  });
+
+  it('supports browser-style range/toggle selection and double-click to details', () => {
+    const rect = makeRectOperation({ id: 'rect-a' });
+    const circle = makeCircleOperation({ id: 'circle-b' });
+    const drill = makeDrillOperation({ id: 'drill-c' });
+    const onSelectOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [rect, circle, drill],
+          selectedOperation: rect,
+          selectedOperationIds: [rect.id],
+          onSelectOperation,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
+    fireEvent.click(getOperationMainButton(/CIRCLE/i), { shiftKey: true });
+    fireEvent.click(getOperationMainButton(/DRILL/i), { ctrlKey: true });
+    fireEvent.doubleClick(getOperationMainButton(/RECT/i));
+
+    expect(onSelectOperation).toHaveBeenNthCalledWith(1, 'circle-b', { additive: false, toggle: false, range: true });
+    expect(onSelectOperation).toHaveBeenNthCalledWith(2, 'drill-c', { additive: false, toggle: true, range: false });
+    expect(onSelectOperation).toHaveBeenLastCalledWith('rect-a');
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('renders empty-state hints when there is no selection and no operations', () => {
@@ -625,7 +666,7 @@ describe('OperationsPanel', () => {
 
     expect(screen.getByLabelText('Closed path')).toBeDisabled();
     fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
-    fireEvent.click(screen.getByRole('button', { name: /RECT/i }), { shiftKey: true });
-    expect(onSelectOperation).toHaveBeenCalledWith('rect-b', { additive: true, toggle: true });
+    fireEvent.click(getOperationMainButton(/RECT/i), { shiftKey: true });
+    expect(onSelectOperation).toHaveBeenCalledWith('rect-b', { additive: false, toggle: false, range: true });
   });
 });

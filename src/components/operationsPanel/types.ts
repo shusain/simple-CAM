@@ -16,7 +16,7 @@ export interface OperationsPanelProps {
   selectedOperationIds: string[];
   materials: Material[];
   tools: Tool[];
-  onSelectOperation: (id: string | null, options?: { additive?: boolean; toggle?: boolean }) => void;
+  onSelectOperation: (id: string | null, options?: { additive?: boolean; toggle?: boolean; range?: boolean }) => void;
   onSelectImportedMesh: (id: string | null) => void;
   onCreateSurfaceRoughOperation: (meshId: string) => void;
   onCreateSurfaceFinishOperation: (meshId: string) => void;
@@ -27,6 +27,7 @@ export interface OperationsPanelProps {
   onDeleteOperation: (id: string) => void;
   onDeleteSelection: () => void;
   onMoveOperation: (id: string, direction: number) => void;
+  onMoveOperationToEdge: (id: string, edge: 'top' | 'bottom') => void;
   onRepeatOperation: (args: RepeatArgs) => void;
   isEditingSelectedSketch: boolean;
   selectedSketchSegmentIndex: number | null;

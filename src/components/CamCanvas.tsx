@@ -208,6 +208,8 @@ export default function CamCanvas({
       canvas,
       transform,
       gridSize: settings.gridSize,
+      marginX: settings.marginX,
+      marginY: settings.marginY,
       workHeight: settings.workHeight,
       workWidth: settings.workWidth,
       operations,
@@ -420,6 +422,7 @@ export default function CamCanvas({
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>): void {
     event.preventDefault();
     defocusActiveEditor();
+    wrapperRef.current?.focus();
 
     if (event.button === 1 || event.button === 2 || (event.button === 0 && event.altKey)) {
       startPan(event);
@@ -961,7 +964,7 @@ export default function CamCanvas({
   }
 
   return (
-    <div className="cam-canvas-wrapper" ref={wrapperRef}>
+    <div className="cam-canvas-wrapper" ref={wrapperRef} tabIndex={0}>
       <canvas
         className="cam-canvas"
         ref={canvasRef}

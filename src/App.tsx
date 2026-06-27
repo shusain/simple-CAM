@@ -113,6 +113,12 @@ interface BrowserImportFile {
   contents: string;
 }
 
+function isCanvasSurfaceFocused(): boolean {
+  if (typeof document === 'undefined') return false;
+  const active = document.activeElement;
+  return active instanceof HTMLElement && Boolean(active.closest('.cam-canvas-wrapper'));
+}
+
 function openBrowserImportFile(accept: string): Promise<BrowserImportFile | null> {
   if (typeof document === 'undefined') {
     return Promise.resolve(null);
@@ -207,6 +213,7 @@ export default function App(): React.JSX.Element {
   const [showToolpathPreview, setShowToolpathPreview] = useState(true);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [viewportMode, setViewportMode] = useState<ViewportMode>('2d');
   const [importedMeshes, setImportedMeshes] = useState<ImportedMesh[]>(initialState.importedMeshes);
   const [selectedImportedMeshId, setSelectedImportedMeshId] = useState<string | null>(null);
@@ -347,16 +354,32 @@ export default function App(): React.JSX.Element {
   const handleSelectOperation = useCallback((id: string | null, options: SelectOptions = {}) => {
     const additive = Boolean(options.additive);
     const toggle = Boolean(options.toggle);
+    const range = Boolean(options.range);
 
     if (!id) {
       if (!additive) {
         setSelectedIds([]);
         setSelectedImportedMeshId(null);
+        setSelectionAnchorId(null);
       }
       return;
     }
 
     setSelectedIds((prev) => {
+      if (range) {
+        const anchorId =
+          selectionAnchorId && operations.some((operation) => operation.id === selectionAnchorId)
+            ? selectionAnchorId
+            : prev[prev.length - 1] || id;
+        const anchorIndex = operations.findIndex((operation) => operation.id === anchorId);
+        const targetIndex = operations.findIndex((operation) => operation.id === id);
+
+        if (anchorIndex >= 0 && targetIndex >= 0) {
+          const [start, end] = anchorIndex <= targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+          return operations.slice(start, end + 1).map((operation) => operation.id);
+        }
+      }
+
       const exists = prev.includes(id);
       if (toggle) {
         return exists ? prev.filter((item) => item !== id) : [...prev, id];
@@ -366,8 +389,9 @@ export default function App(): React.JSX.Element {
       }
       return [id];
     });
+    setSelectionAnchorId(id);
     setSelectedImportedMeshId(null);
-  }, []);
+  }, [operations, selectionAnchorId]);
 
   const handleSetSelection = useCallback((ids: string[], options: { additive?: boolean } = {}) => {
     const additive = Boolean(options.additive);
@@ -379,6 +403,7 @@ export default function App(): React.JSX.Element {
       }
       return Array.from(new Set([...prev, ...unique]));
     });
+    setSelectionAnchorId(unique[unique.length - 1] || null);
     if (unique.length > 0 || !additive) {
       setSelectedImportedMeshId(null);
     }
@@ -386,6 +411,7 @@ export default function App(): React.JSX.Element {
 
   const handleSelectImportedMesh = useCallback((id: string | null) => {
     setSelectedImportedMeshId(id);
+    setSelectionAnchorId(null);
     if (id) {
       setSelectedIds([]);
       setActiveTool('select');
@@ -413,12 +439,13 @@ export default function App(): React.JSX.Element {
 
   const deleteImportedMesh = useCallback((id: string) => {
     setImportedMeshes((previous) => previous.filter((mesh) => mesh.id !== id));
-    commitOperations((previous) =>
-      previous.filter((operation) => !isSurfaceOperation(operation) || operation.meshId !== id)
-    );
-    setSelectedImportedMeshId((previous) => (previous === id ? null : previous));
-    setSelectedIds((previous) =>
-      previous.filter((operationId) => {
+      commitOperations((previous) =>
+        previous.filter((operation) => !isSurfaceOperation(operation) || operation.meshId !== id)
+      );
+      setSelectedImportedMeshId((previous) => (previous === id ? null : previous));
+      setSelectionAnchorId(null);
+      setSelectedIds((previous) =>
+        previous.filter((operationId) => {
         const operation = operations.find((item) => item.id === operationId);
         return !operation || !isSurfaceOperation(operation) || operation.meshId !== id;
       })
@@ -455,6 +482,7 @@ export default function App(): React.JSX.Element {
       } as Operation;
       commitOperations((prev) => [...prev, nextOperation]);
       setSelectedIds([id]);
+      setSelectionAnchorId(id);
       return id;
     },
     [activeMaterialId, activeToolId, commitOperations, materials, tools]
@@ -847,6 +875,7 @@ export default function App(): React.JSX.Element {
     (id: string) => {
       commitOperations((prev) => prev.filter((op) => op.id !== id));
       setSelectedIds((prev) => prev.filter((item) => item !== id));
+      setSelectionAnchorId((previous) => (previous === id ? null : previous));
     },
     [commitOperations]
   );
@@ -856,6 +885,7 @@ export default function App(): React.JSX.Element {
     const selectedSet = new Set(selectedIds);
     commitOperations((prev) => prev.filter((op) => !selectedSet.has(op.id)));
     setSelectedIds([]);
+    setSelectionAnchorId(null);
     setStatus(`Deleted ${selectedIds.length} operation(s)`);
   }, [commitOperations, selectedIds]);
 
@@ -871,6 +901,26 @@ export default function App(): React.JSX.Element {
         const next = [...prev];
         const [item] = next.splice(index, 1);
         next.splice(target, 0, item);
+        return next;
+      });
+    },
+    [commitOperations]
+  );
+
+  const moveOperationToEdge = useCallback(
+    (id: string, edge: 'top' | 'bottom') => {
+      commitOperations((prev) => {
+        const index = prev.findIndex((op) => op.id === id);
+        if (index < 0) return prev;
+
+        const next = [...prev];
+        const [item] = next.splice(index, 1);
+        if (!item) return prev;
+        if (edge === 'top') {
+          next.unshift(item);
+        } else {
+          next.push(item);
+        }
         return next;
       });
     },
@@ -1637,6 +1687,14 @@ export default function App(): React.JSX.Element {
         return;
       }
 
+      if (key === 'a' && isCanvasSurfaceFocused()) {
+        event.preventDefault();
+        setSelectedIds(operations.map((operation) => operation.id));
+        setSelectedImportedMeshId(null);
+        setSelectionAnchorId(operations[0]?.id || null);
+        return;
+      }
+
       if (key === 'v') {
         event.preventDefault();
         beginPastePlacement();
@@ -1673,6 +1731,7 @@ export default function App(): React.JSX.Element {
     deleteSelectedSketchSegment,
     deleteSelection,
     handleToolHotkey,
+    operations,
     transformSession,
     setTransformSession,
     pastePreview,
@@ -1879,6 +1938,7 @@ export default function App(): React.JSX.Element {
             onDeleteOperation={deleteOperation}
             onDeleteSelection={deleteSelection}
             onMoveOperation={moveOperation}
+            onMoveOperationToEdge={moveOperationToEdge}
             onRepeatOperation={repeatSelected}
             isEditingSelectedSketch={isEditingSelectedSketch}
             selectedSketchSegmentIndex={sketchEdit.selectedSegmentIndex}
