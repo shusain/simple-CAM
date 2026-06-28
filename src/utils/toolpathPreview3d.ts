@@ -134,13 +134,29 @@ function computeBounds(
     };
   }
 
+  let minX = 0;
+  let maxX = settings.workWidth;
+  let minY = 0;
+  let maxY = settings.workHeight;
+  let minZ = 0;
+  let maxZ = Math.max(getStartEndZ(settings), settings.safeZ, 1);
+
+  for (const point of allPoints) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+    if (point.z < minZ) minZ = point.z;
+    if (point.z > maxZ) maxZ = point.z;
+  }
+
   return {
-    minX: Math.min(0, ...allPoints.map((point) => point.x)),
-    maxX: Math.max(settings.workWidth, ...allPoints.map((point) => point.x)),
-    minY: Math.min(0, ...allPoints.map((point) => point.y)),
-    maxY: Math.max(settings.workHeight, ...allPoints.map((point) => point.y)),
-    minZ: Math.min(...allPoints.map((point) => point.z), 0),
-    maxZ: Math.max(...allPoints.map((point) => point.z), getStartEndZ(settings), settings.safeZ, 1),
+    minX,
+    maxX,
+    minY,
+    maxY,
+    minZ,
+    maxZ,
   };
 }
 

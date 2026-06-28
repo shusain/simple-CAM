@@ -546,26 +546,38 @@ export default function App(): React.JSX.Element {
         tools[0] ||
         null;
       const defaultRadius = Math.max(0.5, (Number(tool?.diameter) || 1) / 2);
+      const nextId = newId();
 
-      addOperation({
-        type: 'circle',
-        x: drill.x,
-        y: drill.y,
-        radius: defaultRadius,
-        depth: drill.depth,
-        cutSide: 'inside',
-        tabsEnabled: false,
-        tabCount: 2,
-        tabWidth: 1,
-        tabHeight: 1,
-        pocketEnabled: true,
-        pocketStepOver: 0,
-        toolId: drill.toolId,
-        materialId: drill.materialId,
-      });
-      setStatus('Created inside-cut circle from drill location');
+      commitOperations((previous) =>
+        previous.map((operation) =>
+          operation.id === id
+            ? ({
+                id: nextId,
+                type: 'circle',
+                x: drill.x,
+                y: drill.y,
+                radius: defaultRadius,
+                depth: drill.depth,
+                cutSide: 'inside',
+                tabsEnabled: false,
+                tabCount: 2,
+                tabWidth: 1,
+                tabHeight: 1,
+                pocketEnabled: true,
+                pocketStepOver: 0,
+                toolId: drill.toolId,
+                materialId: drill.materialId,
+              } as Operation)
+            : operation
+        )
+      );
+      setSelectedIds([nextId]);
+      setSelectionAnchorId(nextId);
+      setSelectedImportedMeshId(null);
+      setActiveTool('select');
+      setStatus('Converted drill to inside-cut circle in place');
     },
-    [activeToolId, addOperation, operations, tools]
+    [activeToolId, commitOperations, operations, tools]
   );
 
   const startSketchEdit = useCallback(() => {
