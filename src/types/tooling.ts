@@ -11,6 +11,7 @@ export interface MachineSettings {
   drillDepth: number;
   cutDepth: number;
   rapidFeedRate: number;
+  rapidFeedRateZ: number;
   cutFeedRate: number;
   plungeFeedRate: number;
   spindleOn: boolean;

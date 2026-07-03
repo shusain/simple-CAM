@@ -93,6 +93,26 @@ describe('OperationsPanel', () => {
     expect(onUpdateOperation).toHaveBeenCalledWith('rect-1', { tabsEnabled: true });
   });
 
+  it('shows positive depth values in the editor while storing negative depths internally', () => {
+    const rect = makeRectOperation({ id: 'rect-depth', depth: -3 });
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [rect],
+          selectedOperation: rect,
+          selectedOperationIds: [rect.id],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Depth (mm)')).toHaveValue('3');
+    fireEvent.change(screen.getByLabelText('Depth (mm)'), { target: { value: '4.5' } });
+    expect(onUpdateOperation).toHaveBeenCalledWith('rect-depth', { depth: -4.5 });
+  });
+
   it('offers drill conversion into an inside-cut circle operation', () => {
     const drill = makeDrillOperation({ id: 'drill-convert', x: 12, y: 18 });
     const onConvertDrillToCircle = vi.fn();
@@ -415,6 +435,52 @@ describe('OperationsPanel', () => {
 
     expect(onRepeatOperation).toHaveBeenCalledWith({ count: 3, offsetX: 12.5, offsetY: -4 });
     expect(onDeleteSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports bulk editing shared circle values across a multi-selection', () => {
+    const circleA = makeCircleOperation({ id: 'circle-a', radius: 4, pocketStepOver: 1.5 });
+    const circleB = makeCircleOperation({ id: 'circle-b', radius: 4, pocketStepOver: 1.5 });
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [circleA, circleB],
+          selectedOperation: null,
+          selectedOperationIds: [circleA.id, circleB.id],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Radius (mm)')).toHaveValue('4');
+    expect(screen.getByLabelText('Pocket step-over (mm)')).toHaveValue('1.5');
+
+    fireEvent.change(screen.getByLabelText('Radius (mm)'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Pocket step-over (mm)'), { target: { value: '2.25' } });
+
+    expect(onUpdateOperation).toHaveBeenCalledWith('circle-a', { radius: 6 });
+    expect(onUpdateOperation).toHaveBeenCalledWith('circle-b', { radius: 6 });
+    expect(onUpdateOperation).toHaveBeenCalledWith('circle-a', { pocketStepOver: 2.25 });
+    expect(onUpdateOperation).toHaveBeenCalledWith('circle-b', { pocketStepOver: 2.25 });
+  });
+
+  it('shows blank bulk circle fields when selected values are mixed', () => {
+    const circleA = makeCircleOperation({ id: 'circle-a', radius: 4, pocketStepOver: 1.5 });
+    const circleB = makeCircleOperation({ id: 'circle-b', radius: 6, pocketStepOver: 2 });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [circleA, circleB],
+          selectedOperation: null,
+          selectedOperationIds: [circleA.id, circleB.id],
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Radius (mm)')).toHaveValue('');
+    expect(screen.getByLabelText('Pocket step-over (mm)')).toHaveValue('');
   });
 
   it('selects and reorders operations from the list', () => {

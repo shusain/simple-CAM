@@ -20,9 +20,9 @@ export function DepthEditor({ value, onChange }: DepthEditorProps): React.JSX.El
       <span>Depth (mm)</span>
       <NumericInput
         aria-label="Depth (mm)"
-        value={value ?? ''}
+        value={value == null ? '' : Math.abs(value)}
         step={0.1}
-        onChange={onChange}
+        onChange={(nextValue) => onChange(-Math.abs(nextValue))}
       />
     </label>
   );

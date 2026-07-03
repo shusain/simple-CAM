@@ -20,7 +20,7 @@ import type { OperationsPanelProps } from './operationsPanel/types';
 
 interface NumericFieldRowProps {
   label: string;
-  value: number;
+  value: number | string;
   onChange: (value: number) => void;
   step?: number;
   min?: number;
@@ -94,6 +94,9 @@ export default function OperationsPanel({
         )
       : 0;
   const selectedCount = selectedOperationIds?.length || 0;
+  const selectedOperations = operations.filter((operation) => selectedOperationIds?.includes(operation.id));
+  const selectedCircleOperations = selectedOperations.filter((operation) => operation.type === 'circle');
+  const allSelectedAreCircles = selectedCount > 1 && selectedCircleOperations.length === selectedCount;
   const hasImportedMeshSelection = Boolean(selectedImportedMesh);
   const hasDetailsSelection = selectedCount > 0 || hasImportedMeshSelection;
   const importedMeshBounds = selectedImportedMesh ? getImportedMeshWorldBounds(selectedImportedMesh) : null;
@@ -139,6 +142,28 @@ export default function OperationsPanel({
   useEffect(() => {
     setShowSegmentDetails(false);
   }, [selectedOperation?.id]);
+
+  function getSharedNumericValue(values: number[]): number | '' {
+    if (values.length === 0) {
+      return '';
+    }
+
+    const [first] = values;
+    return values.every((value) => Math.abs(value - first) <= 0.0001) ? first : '';
+  }
+
+  const bulkCircleRadiusValue = allSelectedAreCircles
+    ? getSharedNumericValue(selectedCircleOperations.map((operation) => operation.radius))
+    : '';
+  const bulkCircleStepOverValue = allSelectedAreCircles
+    ? getSharedNumericValue(selectedCircleOperations.map((operation) => operation.pocketStepOver))
+    : '';
+
+  function applyToSelectedCircles(updates: { radius?: number; pocketStepOver?: number }): void {
+    selectedCircleOperations.forEach((operation) => {
+      onUpdateOperation(operation.id, updates);
+    });
+  }
 
   return (
     <div className="panel">
@@ -1100,6 +1125,23 @@ export default function OperationsPanel({
                 Multi-selection active. Drag selected geometry in the canvas to move as a group, or use the
                 actions below.
               </p>
+              {allSelectedAreCircles ? (
+                <>
+                  <h3>Bulk edit circles</h3>
+                  <NumericFieldRow
+                    label="Radius (mm)"
+                    value={bulkCircleRadiusValue}
+                    min={0}
+                    onChange={(value) => applyToSelectedCircles({ radius: Math.max(0, value || 0) })}
+                  />
+                  <NumericFieldRow
+                    label="Pocket step-over (mm)"
+                    value={bulkCircleStepOverValue}
+                    min={0.1}
+                    onChange={(value) => applyToSelectedCircles({ pocketStepOver: Math.max(0.1, value || 0.1) })}
+                  />
+                </>
+              ) : null}
               <h3>Linear repeat</h3>
               <NumericFieldRow label="Copies" value={repeatCount} min={1} step={1} onChange={(value) => setRepeatCount(Math.max(1, Math.round(value || 1)))} />
               <NumericFieldRow label="Offset X (mm)" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />

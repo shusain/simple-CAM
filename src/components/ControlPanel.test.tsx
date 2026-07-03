@@ -126,7 +126,8 @@ describe('ControlPanel', () => {
     fireEvent.change(screen.getByLabelText('Start / end Z'), { target: { value: '12' } });
     fireEvent.change(screen.getByLabelText('Drill depth'), { target: { value: '-4.5' } });
     fireEvent.change(screen.getByLabelText('Cut depth'), { target: { value: '-2.5' } });
-    fireEvent.change(screen.getByLabelText('Rapid feed'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Rapid feed XY'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Rapid feed Z'), { target: { value: '0' } });
     fireEvent.change(screen.getByLabelText('Cut feed'), { target: { value: '0' } });
     fireEvent.change(screen.getByLabelText('Plunge feed'), { target: { value: '0' } });
     fireEvent.click(screen.getByLabelText('Emit spindle commands (M3/M5)'));
@@ -140,6 +141,7 @@ describe('ControlPanel', () => {
     expect(onSettingsChange).toHaveBeenCalledWith({ drillDepth: -4.5 });
     expect(onSettingsChange).toHaveBeenCalledWith({ cutDepth: -2.5 });
     expect(onSettingsChange).toHaveBeenCalledWith({ rapidFeedRate: 1 });
+    expect(onSettingsChange).toHaveBeenCalledWith({ rapidFeedRateZ: 1 });
     expect(onSettingsChange).toHaveBeenCalledWith({ cutFeedRate: 1 });
     expect(onSettingsChange).toHaveBeenCalledWith({ plungeFeedRate: 1 });
     expect(onSettingsChange).toHaveBeenCalledWith({ spindleOn: true });

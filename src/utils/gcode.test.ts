@@ -30,6 +30,20 @@ describe('generateMarlinGcode', () => {
     expect(gcode).toContain('G0 Z5.000 F2400');
   });
 
+  it('allows Z rapids to use a different feed than XY rapids', () => {
+    const gcode = normalizeGcode(
+      generateMarlinGcode({
+        operations: [makeDrillOperation({ x: 12, y: 34, depth: -2 })],
+        settings: makeSettings({ startEndZ: 15, safeZ: 5, rapidFeedRate: 2400, rapidFeedRateZ: 500 }),
+        tools: [makeTool()],
+      })
+    );
+
+    expect(gcode).toContain('G0 Z15.000 F500');
+    expect(gcode).toContain('G0 X12.000 Y34.000 F2400');
+    expect(gcode).toContain('G0 Z5.000 F500');
+  });
+
   it('emits tool changes when consecutive operations use different tools', () => {
     const tools = [
       makeTool({ id: 'tool-a', name: 'Tool A', diameter: 3 }),
@@ -167,6 +181,38 @@ describe('generateMarlinGcode', () => {
     expect(circleGcode).toContain('falling back to along path: tool too large for inside offset');
   });
 
+  it('emits G3 arcs for circle contours instead of linearized G1 segments', () => {
+    const gcode = generateMarlinGcode({
+      operations: [makeCircleOperation({ x: 5, y: 5, radius: 4, cutSide: 'along' })],
+      settings: makeSettings(),
+      tools: [makeTool()],
+    });
+
+    expect(gcode).toContain('; Cut circle (along path)');
+    expect(gcode).toContain('G3 X1.000 Y5.000 I-4.000 J0.000 F600');
+    expect(gcode).toMatch(/G3 X9\.000 Y5\.000 I4\.000 J-?0\.000 F600/);
+  });
+
+  it('preserves tabs on circular contours while using arc moves', () => {
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeCircleOperation({
+          cutSide: 'along',
+          tabsEnabled: true,
+          tabCount: 2,
+          tabWidth: 1,
+          tabHeight: 0.5,
+        }),
+      ],
+      settings: makeSettings({ cutDepth: -3 }),
+      tools: [makeTool()],
+    });
+
+    expect(gcode).toContain('; Tab 1 start');
+    expect(gcode).toContain('; Tab 1 end');
+    expect(gcode).toContain('G3 ');
+  });
+
   it('handles sketch subpaths including offset fallback and unassigned tools', () => {
     const firstToolOp = makeDrillOperation({ toolId: 'tool-b' });
     const degenerateClosedSketch = makeSketchOperation({
@@ -223,6 +269,25 @@ describe('generateMarlinGcode', () => {
     expect(gcode).toContain('; Pocket contour 2');
     expect(gcode).not.toContain('; Tab 1 start');
     expect(gcode).not.toContain('; Tab 1 end');
+  });
+
+  it('emits concentric arc pocket contours for circles', () => {
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeCircleOperation({
+          radius: 10,
+          cutSide: 'inside',
+          pocketEnabled: true,
+          pocketStepOver: 1,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [makeTool({ diameter: 4 })],
+    });
+
+    expect(gcode).toContain('; Pocket circle (inside clear area, stepover 1.000mm)');
+    expect(gcode).toContain('; Pocket contour 2');
+    expect(gcode).toContain('G3 ');
   });
 
   it('uses low retracts between depth passes and only returns to safe Z after the operation', () => {

@@ -129,6 +129,23 @@ describe('toolpathPreview', () => {
     expect(plannedPaths.every((planned) => planned.tabRanges.length === 0)).toBe(true);
   });
 
+  it('builds analytic concentric pocket contours for circles', () => {
+    const tool = makeTool({ diameter: 4 });
+    const operation = makeCircleOperation({
+      radius: 10,
+      cutSide: 'inside',
+      pocketEnabled: true,
+      pocketStepOver: 1,
+    });
+
+    const plannedPaths = getOperationPlannedPaths(operation, makeSettings({ circleSegments: 16 }), tool);
+
+    expect(plannedPaths.length).toBeGreaterThan(1);
+    expect(plannedPaths[0]?.path[0]).toEqual({ x: 13, y: 5 });
+    expect(plannedPaths[1]?.path[0]).toEqual({ x: 12, y: 5 });
+    expect(plannedPaths[plannedPaths.length - 1]?.path[0]).toEqual({ x: 7, y: 5 });
+  });
+
   it('builds multiple pocket contours for rounded rectangles', () => {
     const tool = makeTool({ diameter: 4 });
     const operation = makeRectOperation({

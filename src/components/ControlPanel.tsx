@@ -210,15 +210,15 @@ export default function ControlPanel({
         />
         <NumberField
           label="Drill depth"
-          value={settings.drillDepth}
+          value={Math.abs(settings.drillDepth)}
           step={0.1}
-          onChange={(value) => onSettingsChange({ drillDepth: value || 0 })}
+          onChange={(value) => onSettingsChange({ drillDepth: -Math.abs(value || 0) })}
         />
         <NumberField
           label="Cut depth"
-          value={settings.cutDepth}
+          value={Math.abs(settings.cutDepth)}
           step={0.1}
-          onChange={(value) => onSettingsChange({ cutDepth: value || 0 })}
+          onChange={(value) => onSettingsChange({ cutDepth: -Math.abs(value || 0) })}
         />
         <button
           type="button"
@@ -232,11 +232,18 @@ export default function ControlPanel({
 
         <div className="subsection-title">Feeds</div>
         <NumberField
-          label="Rapid feed"
+          label="Rapid feed XY"
           value={settings.rapidFeedRate}
           min={1}
           step={1}
           onChange={(value) => onSettingsChange({ rapidFeedRate: Math.max(1, value || 1) })}
+        />
+        <NumberField
+          label="Rapid feed Z"
+          value={settings.rapidFeedRateZ}
+          min={1}
+          step={1}
+          onChange={(value) => onSettingsChange({ rapidFeedRateZ: Math.max(1, value || 1) })}
         />
         <NumberField
           label="Cut feed"

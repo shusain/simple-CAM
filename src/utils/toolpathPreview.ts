@@ -36,6 +36,13 @@ export interface OperationPlannedPath {
   isPocketPath: boolean;
 }
 
+export interface CirclePlan {
+  cutSide: CutSide;
+  fallbackToAlongPath: boolean;
+  pathRadius: number;
+  radii: number[];
+}
+
 export interface ToolpathPreviewSegment {
   kind: ToolpathPreviewSegmentKind;
   operationId: string | null;
@@ -178,36 +185,73 @@ function getOperationTool(operation: Operation, tools: Tool[]): Tool | null {
   return tools.find((tool) => tool.id === operation.toolId) || null;
 }
 
-function buildCirclePath(operation: CircleOperation, settings: MachineSettings, tool: Tool | null): OperationPlannedPath[] {
+function buildCirclePolyline(cx: number, cy: number, radius: number, segments: number): Point[] {
+  const safeRadius = Math.max(0, Number(radius) || 0);
+  const safeSegments = Math.max(8, Math.floor(segments || 48));
+  const path: Point[] = [];
+
+  for (let i = 0; i <= safeSegments; i += 1) {
+    const theta = (Math.PI * 2 * i) / safeSegments;
+    path.push({
+      x: cx + safeRadius * Math.cos(theta),
+      y: cy + safeRadius * Math.sin(theta),
+    });
+  }
+
+  return path;
+}
+
+export function getCirclePlan(operation: CircleOperation, tool: Tool | null): CirclePlan {
   const toolRadius = getToolRadius(tool);
   const cutSide = getCutSide(operation, 'outside');
   const offsetAmount = cutSide === 'outside' ? toolRadius : cutSide === 'inside' ? -toolRadius : 0;
   const compensatedRadius = operation.radius + offsetAmount;
-  const pathRadius = compensatedRadius <= 0.0001 ? operation.radius : compensatedRadius;
-  const segments = Math.max(8, Math.floor(settings.circleSegments || 48));
-  const path: Point[] = [];
+  const fallbackToAlongPath = compensatedRadius <= 0.0001 && cutSide !== 'along';
+  const pathRadius = fallbackToAlongPath ? operation.radius : compensatedRadius;
+  const radii = [pathRadius];
 
-  for (let i = 0; i <= segments; i += 1) {
-    const theta = (Math.PI * 2 * i) / segments;
-    path.push({
-      x: operation.x + pathRadius * Math.cos(theta),
-      y: operation.y + pathRadius * Math.sin(theta),
-    });
+  if (cutSide === 'inside' && operation.pocketEnabled && !fallbackToAlongPath) {
+    const safeStepOver = Math.abs(Number(operation.pocketStepOver) || 0);
+    const targetInnerRadius = toolRadius > 0.0001 ? toolRadius : 0;
+
+    if (safeStepOver > 0.0001) {
+      let currentRadius = pathRadius;
+      for (let index = 0; index < 500; index += 1) {
+        const nextRadius = currentRadius - safeStepOver;
+        if (nextRadius <= targetInnerRadius + 0.0001) {
+          break;
+        }
+        radii.push(nextRadius);
+        currentRadius = nextRadius;
+      }
+    }
+
+    const lastRadius = radii[radii.length - 1];
+    if (targetInnerRadius > 0.0001 && lastRadius > targetInnerRadius + 0.0001) {
+      radii.push(targetInnerRadius);
+    }
   }
 
-  const fallbackToAlongPath = compensatedRadius <= 0.0001 && cutSide !== 'along';
-  const plannedPaths =
-    cutSide === 'inside' && operation.pocketEnabled && !fallbackToAlongPath
-      ? buildPocketContourPaths(path, operation.pocketStepOver)
-      : [path];
+  return {
+    cutSide,
+    fallbackToAlongPath,
+    pathRadius,
+    radii,
+  };
+}
+
+function buildCirclePath(operation: CircleOperation, settings: MachineSettings, tool: Tool | null): OperationPlannedPath[] {
+  const segments = Math.max(8, Math.floor(settings.circleSegments || 48));
+  const plan = getCirclePlan(operation, tool);
+  const plannedPaths = plan.radii.map((radius) => buildCirclePolyline(operation.x, operation.y, radius, segments));
 
   return plannedPaths.map((plannedPath, index) => ({
     operationId: operation.id,
     operationType: operation.type,
-    cutSide,
+    cutSide: plan.cutSide,
     path: plannedPath,
-    tabRanges: operation.pocketEnabled && cutSide === 'inside' ? [] : getTabRanges(plannedPath, operation, tool),
-    fallbackToAlongPath,
+    tabRanges: operation.pocketEnabled && plan.cutSide === 'inside' ? [] : getTabRanges(plannedPath, operation, tool),
+    fallbackToAlongPath: plan.fallbackToAlongPath,
     isPocketPath: index > 0,
   }));
 }

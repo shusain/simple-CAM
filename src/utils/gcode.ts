@@ -18,12 +18,13 @@ import { isPathOperation } from '../types';
 import { getSketchSubpaths } from './geometry';
 import { resolveToolPreset } from './tooling';
 import { appendPathWithTabs, getTabRanges } from './gcode/tabs';
+import type { TabRange } from './gcode/shared';
 import { buildIncrementDepths, getStartEndZ, num, toNegativeDepth, toPositiveStep } from './gcode/depth';
 import {
   distanceBetween,
   getToolRadius,
 } from './gcode/path';
-import { getOperationPlannedPaths } from './toolpathPreview';
+import { getCirclePlan, getOperationPlannedPaths } from './toolpathPreview';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 
 interface GenerateMarlinGcodeArgs {
@@ -40,7 +41,8 @@ interface CutPathOptions {
 }
 
 interface CutPathFeeds {
-  rapidFeed: string;
+  rapidFeedXY: string;
+  rapidFeedZ: string;
   plungeFeed: string;
   cutFeed: string;
 }
@@ -54,8 +56,16 @@ function getOperationTravelZ(settings: MachineSettings): number {
   return Math.min(safeZ, 1);
 }
 
+function getRapidFeedXY(settings: MachineSettings, fallback = 2400): string {
+  return num(settings.rapidFeedRate || fallback, 0);
+}
+
+function getRapidFeedZ(settings: MachineSettings, fallback = 2400): string {
+  return num(settings.rapidFeedRateZ || fallback, 0);
+}
+
 function addHeader(lines: string[], settings: MachineSettings, operationCount: number): void {
-  const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
+  const rapidFeedZ = getRapidFeedZ(settings);
   const startEndZ = num(getStartEndZ(settings));
 
   lines.push('; Simple CAM output');
@@ -65,7 +75,7 @@ function addHeader(lines: string[], settings: MachineSettings, operationCount: n
   lines.push('G21 ; mm units');
   lines.push('G90 ; absolute positioning');
   lines.push('G94 ; feed rate in units/min');
-  lines.push(`G0 Z${startEndZ} F${rapidFeed}`);
+  lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
 
   if (settings.spindleOn) {
     lines.push(`M3 S${Math.round(settings.spindleSpeed || 0)}`);
@@ -75,13 +85,14 @@ function addHeader(lines: string[], settings: MachineSettings, operationCount: n
 }
 
 function addFooter(lines: string[], settings: MachineSettings): void {
-  const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
+  const rapidFeedXY = getRapidFeedXY(settings);
+  const rapidFeedZ = getRapidFeedZ(settings);
   const startEndZ = num(getStartEndZ(settings));
 
   lines.push('');
   lines.push('; Program end');
-  lines.push(`G0 Z${startEndZ} F${rapidFeed}`);
-  lines.push(`G0 X0 Y0 F${rapidFeed}`);
+  lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
+  lines.push(`G0 X0 Y0 F${rapidFeedXY}`);
 
   if (settings.spindleOn) {
     lines.push('M5');
@@ -114,7 +125,8 @@ function formatToolLabel(tool: Tool | null): string {
 }
 
 function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: Tool | null, settings: MachineSettings): void {
-  const rapidFeed = num(settings.rapidFeedRate || 2400, 0);
+  const rapidFeedXY = getRapidFeedXY(settings);
+  const rapidFeedZ = getRapidFeedZ(settings);
   const startEndZ = num(getStartEndZ(settings));
 
   lines.push('; Tool change required');
@@ -124,8 +136,8 @@ function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: 
     lines.push('M5');
   }
 
-  lines.push(`G0 Z${startEndZ} F${rapidFeed}`);
-  lines.push(`G0 X0 Y0 F${rapidFeed}`);
+  lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
+  lines.push(`G0 X0 Y0 F${rapidFeedXY}`);
   lines.push(`M0 Change tool: ${formatToolLabel(nextTool)}`);
 
   if (settings.spindleOn) {
@@ -138,19 +150,20 @@ function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: 
 function appendEntryMove(
   lines: string[],
   startPoint: Point,
-  rapidFeed: string,
+  rapidFeedXY: string,
+  rapidFeedZ: string,
   settings: MachineSettings,
   useStartEndClearance: boolean,
   clearanceZ = Number(settings.safeZ) || 5
 ): void {
   if (useStartEndClearance) {
-    lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
-    lines.push(`G0 Z${num(clearanceZ)} F${rapidFeed}`);
+    lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeedXY}`);
+    lines.push(`G0 Z${num(clearanceZ)} F${rapidFeedZ}`);
     return;
   }
 
-  lines.push(`G0 Z${num(clearanceZ)} F${rapidFeed}`);
-  lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
+  lines.push(`G0 Z${num(clearanceZ)} F${rapidFeedZ}`);
+  lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeedXY}`);
 }
 
 function appendDrill(
@@ -161,7 +174,8 @@ function appendDrill(
   useStartEndClearance = false
 ): void {
   const preset = resolveToolPreset(tool, operation.materialId, settings);
-  const rapidFeed = num(preset.rapidFeedRate, 0);
+  const rapidFeedXY = num(preset.rapidFeedRate, 0);
+  const rapidFeedZ = getRapidFeedZ(settings, preset.rapidFeedRate);
   const plungeFeed = num(preset.plungeFeedRate, 0);
   const finalDepth = toNegativeDepth(operation.depth, settings.drillDepth);
   const peckDepth = toPositiveStep(preset.drillDepthPerPass, Math.abs(finalDepth));
@@ -174,18 +188,18 @@ function appendDrill(
   lines.push(
     `; Drill @ X${num(operation.x)} Y${num(operation.y)} depth ${num(finalDepth)} peck ${num(peckDepth)}`
   );
-  appendEntryMove(lines, { x: operation.x, y: operation.y }, rapidFeed, settings, useStartEndClearance);
+  appendEntryMove(lines, { x: operation.x, y: operation.y }, rapidFeedXY, rapidFeedZ, settings, useStartEndClearance);
 
   pecks.forEach((depth, index) => {
     lines.push(`G1 Z${num(depth)} F${plungeFeed}`);
 
     if (index < pecks.length - 1) {
-      lines.push(`G0 Z${num(peckRetractZ)} F${rapidFeed}`);
-      lines.push(`G0 X${num(operation.x)} Y${num(operation.y)} F${rapidFeed}`);
+      lines.push(`G0 Z${num(peckRetractZ)} F${rapidFeedZ}`);
+      lines.push(`G0 X${num(operation.x)} Y${num(operation.y)} F${rapidFeedXY}`);
     }
   });
 
-  lines.push(`G0 Z${num(settings.safeZ)} F${rapidFeed}`);
+  lines.push(`G0 Z${num(settings.safeZ)} F${rapidFeedZ}`);
   lines.push('');
 }
 
@@ -207,7 +221,8 @@ function appendCutPath(
     finalRetractZ = Number(settings.safeZ) || 5,
   } = options;
   const preset = resolveToolPreset(tool, operation.materialId, settings);
-  const rapidFeed = num(preset.rapidFeedRate, 0);
+  const rapidFeedXY = num(preset.rapidFeedRate, 0);
+  const rapidFeedZ = getRapidFeedZ(settings, preset.rapidFeedRate);
   const plungeFeed = num(preset.plungeFeedRate, 0);
   const cutFeed = num(preset.cutFeedRate, 0);
   const finalDepth = toNegativeDepth(operation.depth, settings.cutDepth);
@@ -215,7 +230,7 @@ function appendCutPath(
   const passes = buildIncrementDepths(finalDepth, passStep);
   const tabRanges = getTabRanges(pathPoints, operation, tool);
   const tabHeight = 'tabHeight' in operation ? Math.max(0.1, Math.abs(Number(operation.tabHeight) || 1)) : 1;
-  const feeds = { rapidFeed, plungeFeed, cutFeed };
+  const feeds = { rapidFeedXY, rapidFeedZ, plungeFeed, cutFeed };
 
   const start = pathPoints[0];
   passes.forEach((depth, index) => {
@@ -239,6 +254,205 @@ interface CutPathAtDepthOptions {
   tabHeight: number;
 }
 
+function getPointOnCircle(cx: number, cy: number, radius: number, angle: number): Point {
+  return {
+    x: cx + radius * Math.cos(angle),
+    y: cy + radius * Math.sin(angle),
+  };
+}
+
+function appendCircularArcSpan(
+  lines: string[],
+  cx: number,
+  cy: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+  feedRate: string
+): void {
+  const safeRadius = Math.max(0, Number(radius) || 0);
+  const totalSpan = endAngle - startAngle;
+  if (safeRadius <= 0.0001 || totalSpan <= 0.000001) {
+    return;
+  }
+
+  let currentAngle = startAngle;
+  while (endAngle - currentAngle > 0.000001) {
+    const nextAngle = Math.min(endAngle, currentAngle + Math.PI);
+    const startPoint = getPointOnCircle(cx, cy, safeRadius, currentAngle);
+    const endPoint = getPointOnCircle(cx, cy, safeRadius, nextAngle);
+    lines.push(
+      `G3 X${num(endPoint.x)} Y${num(endPoint.y)} I${num(cx - startPoint.x)} J${num(cy - startPoint.y)} F${feedRate}`
+    );
+    currentAngle = nextAngle;
+  }
+}
+
+function buildCircleTabRanges(radius: number, operation: CircleOperation, tool: Tool | null): TabRange[] {
+  if (!operation.tabsEnabled) {
+    return [];
+  }
+
+  const safeRadius = Math.max(0, Number(radius) || 0);
+  const totalLength = Math.PI * 2 * safeRadius;
+  if (totalLength <= 0.0001) {
+    return [];
+  }
+
+  const tabCount = Math.max(1, Math.round(Number(operation.tabCount) || 1));
+  const tabWidth = Math.max(0.1, Math.abs(Number(operation.tabWidth) || 1));
+  const toolDiameter = Math.max(0, Number(tool?.diameter) || 0);
+  const compensatedWidth = Math.max(tabWidth, tabWidth + toolDiameter);
+  const safeWidth = Math.min(compensatedWidth, totalLength / tabCount);
+  const ranges: TabRange[] = [];
+
+  for (let index = 0; index < tabCount; index += 1) {
+    const center = ((index + 0.5) * totalLength) / tabCount;
+    ranges.push({
+      start: center - safeWidth / 2,
+      end: center + safeWidth / 2,
+    });
+  }
+
+  return ranges;
+}
+
+function appendCircleAtDepth(
+  lines: string[],
+  operation: CircleOperation,
+  settings: MachineSettings,
+  radius: number,
+  depth: number,
+  feeds: CutPathFeeds,
+  options: CutPathAtDepthOptions
+): void {
+  const safeRadius = Math.max(0, Number(radius) || 0);
+  const startPoint = getPointOnCircle(operation.x, operation.y, safeRadius, 0);
+  appendEntryMove(
+    lines,
+    startPoint,
+    feeds.rapidFeedXY,
+    feeds.rapidFeedZ,
+    settings,
+    options.useStartEndClearance,
+    options.clearanceZ
+  );
+  lines.push(`G1 Z${num(depth)} F${feeds.plungeFeed}`);
+
+  if (safeRadius > 0.0001) {
+    const circumference = Math.PI * 2 * safeRadius;
+    const liftedDepth = operation.tabsEnabled ? Math.min(-0.001, depth + options.tabHeight) : depth;
+
+    if (operation.tabsEnabled && liftedDepth !== depth && options.tabRanges.length > 0) {
+      let cursor = 0;
+
+      options.tabRanges.forEach((range, index) => {
+        const tabStart = Math.max(cursor, range.start);
+        const tabEnd = Math.min(circumference, range.end);
+
+        if (tabStart > cursor + 0.000001) {
+          appendCircularArcSpan(
+            lines,
+            operation.x,
+            operation.y,
+            safeRadius,
+            cursor / safeRadius,
+            tabStart / safeRadius,
+            feeds.cutFeed
+          );
+        }
+
+        if (tabEnd > tabStart + 0.000001) {
+          lines.push(`; Tab ${index + 1} start`);
+          lines.push(`G1 Z${num(liftedDepth)} F${feeds.plungeFeed}`);
+          appendCircularArcSpan(
+            lines,
+            operation.x,
+            operation.y,
+            safeRadius,
+            tabStart / safeRadius,
+            tabEnd / safeRadius,
+            feeds.cutFeed
+          );
+          lines.push(`; Tab ${index + 1} end`);
+          lines.push(`G1 Z${num(depth)} F${feeds.plungeFeed}`);
+        }
+
+        cursor = Math.max(cursor, tabEnd);
+      });
+
+      if (cursor < circumference - 0.000001) {
+        appendCircularArcSpan(
+          lines,
+          operation.x,
+          operation.y,
+          safeRadius,
+          cursor / safeRadius,
+          circumference / safeRadius,
+          feeds.cutFeed
+        );
+      }
+    } else {
+      appendCircularArcSpan(lines, operation.x, operation.y, safeRadius, 0, Math.PI * 2, feeds.cutFeed);
+    }
+  }
+
+  lines.push(`G0 Z${num(options.retractZ)} F${feeds.rapidFeedZ}`);
+}
+
+function appendCircleCutPaths(
+  lines: string[],
+  operation: CircleOperation,
+  settings: MachineSettings,
+  tool: Tool | null,
+  radii: number[],
+  useStartEndClearance: boolean,
+  pocketMode: boolean
+): void {
+  if (!Array.isArray(radii) || radii.length === 0) {
+    return;
+  }
+
+  const preset = resolveToolPreset(tool, operation.materialId, settings);
+  const feeds: CutPathFeeds = {
+    rapidFeedXY: num(preset.rapidFeedRate, 0),
+    rapidFeedZ: getRapidFeedZ(settings, preset.rapidFeedRate),
+    plungeFeed: num(preset.plungeFeedRate, 0),
+    cutFeed: num(preset.cutFeedRate, 0),
+  };
+  const finalDepth = toNegativeDepth(operation.depth, settings.cutDepth);
+  const passStep = toPositiveStep(preset.cutDepthPerPass, Math.abs(finalDepth));
+  const passes = buildIncrementDepths(finalDepth, passStep);
+  const operationTravelZ = getOperationTravelZ(settings);
+
+  passes.forEach((depth, depthIndex) => {
+    if (pocketMode) {
+      lines.push(`; Depth pass ${depthIndex + 1} (${num(depth)}mm)`);
+    }
+
+    radii.forEach((radius, radiusIndex) => {
+      if (pocketMode) {
+        lines.push(`; Pocket contour ${radiusIndex + 1}`);
+      }
+
+      const tabRanges = pocketMode ? [] : buildCircleTabRanges(radius, operation, tool);
+      appendCircleAtDepth(lines, operation, settings, radius, depth, feeds, {
+        useStartEndClearance: useStartEndClearance && depthIndex === 0 && radiusIndex === 0,
+        clearanceZ:
+          depthIndex === 0 && radiusIndex === 0 ? Number(settings.safeZ) || 5 : operationTravelZ,
+        retractZ:
+          depthIndex === passes.length - 1 && radiusIndex === radii.length - 1
+            ? Number(settings.safeZ) || 5
+            : operationTravelZ,
+        tabRanges,
+        tabHeight: Math.max(0.1, Math.abs(Number(operation.tabHeight) || 1)),
+      });
+    });
+  });
+
+  lines.push('');
+}
+
 function appendCutPathAtDepth(
   lines: string[],
   pathPoints: Point[],
@@ -253,7 +467,8 @@ function appendCutPathAtDepth(
   appendEntryMove(
     lines,
     start,
-    feeds.rapidFeed,
+    feeds.rapidFeedXY,
+    feeds.rapidFeedZ,
     settings,
     options.useStartEndClearance,
     options.clearanceZ
@@ -273,7 +488,7 @@ function appendCutPathAtDepth(
     }
   }
 
-  lines.push(`G0 Z${num(options.retractZ)} F${feeds.rapidFeed}`);
+  lines.push(`G0 Z${num(options.retractZ)} F${feeds.rapidFeedZ}`);
 }
 
 function appendPocketCutPaths(
@@ -286,7 +501,8 @@ function appendPocketCutPaths(
 ): void {
   const preset = resolveToolPreset(tool, operation.materialId, settings);
   const feeds: CutPathFeeds = {
-    rapidFeed: num(preset.rapidFeedRate, 0),
+    rapidFeedXY: num(preset.rapidFeedRate, 0),
+    rapidFeedZ: getRapidFeedZ(settings, preset.rapidFeedRate),
     plungeFeed: num(preset.plungeFeedRate, 0),
     cutFeed: num(preset.cutFeedRate, 0),
   };
@@ -344,7 +560,8 @@ function appendSurfaceRoughCut(
   }
 
   const preset = resolveToolPreset(tool, operation.materialId, settings);
-  const rapidFeed = num(preset.rapidFeedRate, 0);
+  const rapidFeedXY = num(preset.rapidFeedRate, 0);
+  const rapidFeedZ = getRapidFeedZ(settings, preset.rapidFeedRate);
   const plungeFeed = num(preset.plungeFeedRate, 0);
   const cutFeed = num(preset.cutFeedRate, 0);
   const betweenPathZ = getOperationTravelZ(settings);
@@ -367,7 +584,8 @@ function appendSurfaceRoughCut(
     appendEntryMove(
       lines,
       { x: startPoint.x, y: startPoint.y },
-      rapidFeed,
+      rapidFeedXY,
+      rapidFeedZ,
       settings,
       useStartEndClearance && pathIndex === 0,
       pathIndex === 0 ? Number(settings.safeZ) || 5 : betweenPathZ
@@ -380,7 +598,7 @@ function appendSurfaceRoughCut(
     }
 
     const retractZ = pathIndex === plan.paths.length - 1 ? Number(settings.safeZ) || 5 : betweenPathZ;
-    lines.push(`G0 Z${num(retractZ)} F${rapidFeed}`);
+    lines.push(`G0 Z${num(retractZ)} F${rapidFeedZ}`);
   });
 
   lines.push('');
@@ -414,7 +632,8 @@ function appendSurfaceFinishCut(
   }
 
   const preset = resolveToolPreset(tool, operation.materialId, settings);
-  const rapidFeed = num(preset.rapidFeedRate, 0);
+  const rapidFeedXY = num(preset.rapidFeedRate, 0);
+  const rapidFeedZ = getRapidFeedZ(settings, preset.rapidFeedRate);
   const plungeFeed = num(preset.plungeFeedRate, 0);
   const cutFeed = num(preset.cutFeedRate, 0);
   const betweenPathZ = getOperationTravelZ(settings);
@@ -437,7 +656,8 @@ function appendSurfaceFinishCut(
     appendEntryMove(
       lines,
       { x: startPoint.x, y: startPoint.y },
-      rapidFeed,
+      rapidFeedXY,
+      rapidFeedZ,
       settings,
       useStartEndClearance && pathIndex === 0,
       pathIndex === 0 ? Number(settings.safeZ) || 5 : betweenPathZ
@@ -450,7 +670,7 @@ function appendSurfaceFinishCut(
     }
 
     const retractZ = pathIndex === plan.paths.length - 1 ? Number(settings.safeZ) || 5 : betweenPathZ;
-    lines.push(`G0 Z${num(retractZ)} F${rapidFeed}`);
+    lines.push(`G0 Z${num(retractZ)} F${rapidFeedZ}`);
   });
 
   lines.push('');
@@ -540,40 +760,22 @@ function appendCircleCut(
   if (tool) {
     lines.push(`; Tool: ${tool.name}  Diameter: ${num(tool.diameter)}mm`);
   }
-  const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
-  const firstPath = plannedPaths[0];
-  if (!firstPath) {
+  const plan = getCirclePlan(operation, tool);
+
+  if (plan.fallbackToAlongPath && plan.cutSide === 'inside') {
+    lines.push('; Cut circle (inside requested, falling back to along path: tool too large for inside offset)');
+  } else if (operation.pocketEnabled && plan.cutSide === 'inside') {
+    lines.push(`; Pocket circle (inside clear area, stepover ${num(operation.pocketStepOver)}mm)`);
+  } else {
+    lines.push(`; Cut circle (${plan.cutSide} path)`);
+  }
+
+  if (operation.pocketEnabled && plan.cutSide === 'inside' && !plan.fallbackToAlongPath) {
+    appendCircleCutPaths(lines, operation, settings, tool, plan.radii, useStartEndClearance, true);
     return;
   }
 
-  if (firstPath.fallbackToAlongPath && firstPath.cutSide === 'inside') {
-    lines.push('; Cut circle (inside requested, falling back to along path: tool too large for inside offset)');
-  } else if (operation.pocketEnabled && firstPath.cutSide === 'inside') {
-    lines.push(`; Pocket circle (inside clear area, stepover ${num(operation.pocketStepOver)}mm)`);
-  } else {
-    lines.push(`; Cut circle (${firstPath.cutSide} path)`);
-  }
-
-  plannedPaths.forEach((plannedPath, index) => {
-    if (!(operation.pocketEnabled && firstPath.cutSide === 'inside')) {
-      appendCutPath(
-        lines,
-        plannedPath.path,
-        operation,
-        settings,
-        tool,
-        {
-          useStartEndClearance: useStartEndClearance && index === 0,
-          betweenPassClearanceZ: getOperationTravelZ(settings),
-          finalRetractZ:
-            index === plannedPaths.length - 1 ? Number(settings.safeZ) || 5 : getOperationTravelZ(settings),
-        }
-      );
-    }
-  });
-  if (operation.pocketEnabled && firstPath.cutSide === 'inside') {
-    appendPocketCutPaths(lines, plannedPaths, { ...operation, tabsEnabled: false }, settings, tool, useStartEndClearance);
-  }
+  appendCircleCutPaths(lines, operation, settings, tool, [plan.pathRadius], useStartEndClearance, false);
 }
 
 function appendSketchCut(

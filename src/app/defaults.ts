@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: MachineSettings = {
   drillDepth: -3,
   cutDepth: -2,
   rapidFeedRate: 2400,
+  rapidFeedRateZ: 2400,
   cutFeedRate: 600,
   plungeFeedRate: 220,
   spindleOn: false,
