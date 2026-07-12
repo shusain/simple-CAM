@@ -51,13 +51,7 @@ steps:
   - name: kubeconfig
     path: /.kube/config
   commands:
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl get ns "$NS" || kubectl create ns "$NS"
-  - NODE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"; kubectl wait --for=condition=Ready "node/$NODE" --timeout=30s
-  - kubectl apply -f k8s/
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl delete pod -n "$NS" -l app=simple-cam --wait=true --ignore-not-found=true
-  - NS="${K8S_NAMESPACE:-automation}"; until kubectl get pod -n "$NS" -l app=simple-cam --no-headers 2>/dev/null | grep -q .; do sleep 2; done
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl wait --for=condition=Ready pod -n "$NS" -l app=simple-cam --timeout=60s || (kubectl get node -o wide && echo --- && kubectl describe deploy/simple-cam -n "$NS" && echo --- && kubectl get rs,pod -n "$NS" -l app=simple-cam -o wide && echo --- && kubectl describe pod -n "$NS" -l app=simple-cam && echo --- && kubectl get events -n "$NS" --sort-by=.metadata.creationTimestamp | tail -n 120 && exit 1)
-  - NS="${K8S_NAMESPACE:-automation}"; kubectl get deploy,rs,svc,ingress,pods -n "$NS" -o wide
+  - sh scripts/deploy-k8s.sh
   when:
     branch:
     - main
