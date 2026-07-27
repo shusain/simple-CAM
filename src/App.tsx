@@ -875,6 +875,7 @@ export default function App(): React.JSX.Element {
         settings,
         tool,
         materialId: activeMaterialId,
+        materialName: activeMaterial?.name,
         createId: newId,
       });
 
@@ -884,21 +885,34 @@ export default function App(): React.JSX.Element {
       setSelectedImportedMeshId(null);
       setActiveTool('select');
 
-      const gridWidth =
-        options.columns * options.rectangleWidth +
-        Math.max(0, options.columns - 1) * options.gap +
-        (options.process === 'etch' ? options.overscan * 2 : 0);
-      const gridHeight =
-        options.rows * options.rectangleHeight + Math.max(0, options.rows - 1) * options.gap;
+      const generatedBounds = generated
+        .map((operation) => getOperationBounds(operation))
+        .filter((bounds): bounds is NonNullable<typeof bounds> => Boolean(bounds));
       const exceedsWorkArea =
-        settings.marginX + gridWidth > settings.workWidth ||
-        settings.marginY + gridHeight > settings.workHeight;
+        generatedBounds.some(
+          (bounds) =>
+            bounds.minX < 0 ||
+            bounds.minY < 0 ||
+            bounds.maxX > settings.workWidth ||
+            bounds.maxY > settings.workHeight
+        ) ||
+        generated.some(
+          (operation) =>
+            operation.type === 'rect' &&
+            operation.laserProcess === 'etch' &&
+            (operation.x - (operation.laserOverscan || 0) < 0 ||
+              operation.x + operation.width + (operation.laserOverscan || 0) >
+                settings.workWidth)
+        );
       setStatus(
-        `Created ${generated.length} laser test rectangle(s)${exceedsWorkArea ? ' (grid exceeds work area)' : ''}`
+        `Created ${options.columns * options.rows}-cell laser test pattern with labels${
+          exceedsWorkArea ? ' (pattern exceeds work area)' : ''
+        }`
       );
     },
     [
       activeMaterialId,
+      activeMaterial?.name,
       activeToolId,
       commitOperations,
       settings.cutDepth,

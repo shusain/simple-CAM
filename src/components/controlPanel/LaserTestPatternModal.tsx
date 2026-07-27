@@ -77,7 +77,8 @@ export default function LaserTestPatternModal({
         </div>
         <p className="section-note">
           Speed increases left-to-right. Power increases bottom-to-top. The grid uses {tool.name}
-          {material ? ` with ${material.name}` : ''}.
+          {material ? ` with ${material.name}` : ''}. Axis values and a parameter summary are
+          etched around the test cells.
         </p>
 
         <label className="field-row laser-test-process">
