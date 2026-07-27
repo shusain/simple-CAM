@@ -10,9 +10,19 @@ describe('canvas viewport helpers', () => {
     expect(viewport.fitScale).toBeGreaterThan(0);
   });
 
-  it('clamps center inside the work area or recenters when view is larger than work area', () => {
-    expect(clampCenter({ x: -50, y: 400 }, 100, 50, 300, 200)).toEqual({ x: 50, y: 175 });
-    expect(clampCenter({ x: 0, y: 0 }, 400, 300, 300, 200)).toEqual({ x: 150, y: 100 });
+  it('allows any work-area point to be centered regardless of visible area size', () => {
+    expect(clampCenter({ x: -50, y: 400 }, 300, 200)).toEqual({ x: 0, y: 200 });
+    expect(clampCenter({ x: 0, y: 0 }, 300, 200)).toEqual({ x: 0, y: 0 });
+
+    const edgeFocused = buildTransform(
+      { width: 600, height: 400 },
+      makeSettings({ workWidth: 300, workHeight: 200 }),
+      1,
+      { x: 0, y: 0 }
+    );
+    expect(edgeFocused.center).toEqual({ x: 0, y: 0 });
+    expect(edgeFocused.left).toBeLessThan(0);
+    expect(edgeFocused.bottom).toBeLessThan(0);
   });
 
   it('builds transforms and converts world/canvas coordinates consistently', () => {
@@ -41,5 +51,11 @@ describe('canvas viewport helpers', () => {
 
     expect(canvasToWorld(-100, 9999, transform)).toEqual({ x: 0, y: 0 });
     expect(canvasToWorld(9999, -100, transform)).toEqual({ x: 100, y: 80 });
+    expect(canvasToWorld(-100, 9999, transform, false)).toMatchObject({
+      x: expect.any(Number),
+      y: expect.any(Number),
+    });
+    expect(canvasToWorld(-100, 9999, transform, false).x).toBeLessThan(0);
+    expect(canvasToWorld(-100, 9999, transform, false).y).toBeLessThan(0);
   });
 });

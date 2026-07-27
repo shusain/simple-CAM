@@ -11,6 +11,7 @@ import {
 } from './sketchEditing';
 import type { CanvasTool, SketchArcInsertDraft, SketchPreviewOperation, ViewTransform } from './types';
 import { worldToCanvas } from './viewport';
+import { getMiniMapGeometry, miniMapWorldToCanvas } from './minimap';
 
 function strokeRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -563,19 +564,17 @@ export function drawMiniMap(
   operations: Operation[],
   importedMeshes: ImportedMesh[]
 ): void {
-  const maxWidth = 190;
-  const maxHeight = 130;
-  const scale = Math.min(maxWidth / transform.workWidth, maxHeight / transform.workHeight);
-  const mapWidth = transform.workWidth * scale;
-  const mapHeight = transform.workHeight * scale;
-  const x = transform.width - mapWidth - 14;
-  const y = 14;
+  const geometry = getMiniMapGeometry(transform);
+  const {
+    x,
+    y,
+    width: mapWidth,
+    height: mapHeight,
+    scale,
+  } = geometry;
 
   function toMap(point: Point): Point {
-    return {
-      x: x + point.x * scale,
-      y: y + mapHeight - point.y * scale,
-    };
+    return miniMapWorldToCanvas(point, transform, geometry);
   }
 
   ctx.save();
@@ -686,14 +685,13 @@ export function drawMiniMap(
   const viewTop = clamp(transform.top, 0, transform.workHeight);
 
   const viewTopLeft = toMap({ x: viewLeft, y: viewTop });
+  const viewMapWidth = Math.max(2, (viewRight - viewLeft) * scale);
+  const viewMapHeight = Math.max(2, (viewTop - viewBottom) * scale);
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.12)';
   ctx.strokeStyle = '#f59e0b';
   ctx.lineWidth = 1.5;
-  ctx.strokeRect(
-    viewTopLeft.x,
-    viewTopLeft.y,
-    Math.max(2, (viewRight - viewLeft) * scale),
-    Math.max(2, (viewTop - viewBottom) * scale)
-  );
+  ctx.fillRect(viewTopLeft.x, viewTopLeft.y, viewMapWidth, viewMapHeight);
+  ctx.strokeRect(viewTopLeft.x, viewTopLeft.y, viewMapWidth, viewMapHeight);
 
   ctx.restore();
 }

@@ -30,19 +30,12 @@ export function buildBaseViewport(
 
 export function clampCenter(
   center: Point,
-  viewWidth: number,
-  viewHeight: number,
   workWidth: number,
   workHeight: number
 ): Point {
-  const minX = viewWidth / 2;
-  const maxX = workWidth - viewWidth / 2;
-  const minY = viewHeight / 2;
-  const maxY = workHeight - viewHeight / 2;
-
   return {
-    x: minX > maxX ? workWidth / 2 : clamp(center.x, minX, maxX),
-    y: minY > maxY ? workHeight / 2 : clamp(center.y, minY, maxY),
+    x: clamp(center.x, 0, workWidth),
+    y: clamp(center.y, 0, workHeight),
   };
 }
 
@@ -56,7 +49,7 @@ export function buildTransform(
   const scale = base.fitScale * zoom;
   const viewWidth = base.width / scale;
   const viewHeight = base.height / scale;
-  const clampedCenter = clampCenter(center, viewWidth, viewHeight, base.workWidth, base.workHeight);
+  const clampedCenter = clampCenter(center, base.workWidth, base.workHeight);
 
   return {
     ...base,
@@ -79,9 +72,21 @@ export function worldToCanvas(point: Point, transform: ViewTransform): Point {
   };
 }
 
-export function canvasToWorld(xPx: number, yPx: number, transform: ViewTransform): Point {
-  return {
-    x: clamp(transform.left + xPx / transform.scale, 0, transform.workWidth),
-    y: clamp(transform.bottom + (transform.height - yPx) / transform.scale, 0, transform.workHeight),
+export function canvasToWorld(
+  xPx: number,
+  yPx: number,
+  transform: ViewTransform,
+  clampToWorkArea = true
+): Point {
+  const point = {
+    x: transform.left + xPx / transform.scale,
+    y: transform.bottom + (transform.height - yPx) / transform.scale,
   };
+
+  return clampToWorkArea
+    ? {
+        x: clamp(point.x, 0, transform.workWidth),
+        y: clamp(point.y, 0, transform.workHeight),
+      }
+    : point;
 }

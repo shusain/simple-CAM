@@ -75,7 +75,7 @@ export interface SelectOptions {
 }
 
 export interface InteractionState {
-  mode: 'pan' | 'marquee' | 'drag-ops' | 'drag-mesh' | 'draw' | 'drag-handle' | null;
+  mode: 'pan' | 'minimap' | 'marquee' | 'drag-ops' | 'drag-mesh' | 'draw' | 'drag-handle' | null;
   pointerId: number | null;
   start: Point | null;
   startCenter: Point | null;

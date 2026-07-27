@@ -26,6 +26,10 @@ import type {
   ViewportSize,
 } from './canvas/types';
 import { buildTransform, canvasToWorld, clampCenter } from './canvas/viewport';
+import {
+  getMiniMapGeometry,
+  miniMapCanvasToWorld,
+} from './canvas/minimap';
 import { renderCanvasScene } from './canvas/drawing';
 import { buildCanvasOverlayHints } from './canvas/overlay';
 import {
@@ -81,6 +85,7 @@ export default function CamCanvas({
   transformHint,
 }: CamCanvasProps): React.JSX.Element {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const interactionRef = useRef<InteractionState>(createEmptyInteractionState());
   const draftRef = useRef<DrawDraft | null>(null);
@@ -89,6 +94,8 @@ export default function CamCanvas({
   const [draft, setDraft] = useState<DrawDraft | null>(null);
   const [selectBox, setSelectBox] = useState<SelectBoxState | null>(null);
   const [pointerMm, setPointerMm] = useState<Point>({ x: 0, y: 0 });
+  const [isMiniMapHovered, setIsMiniMapHovered] = useState(false);
+  const [isViewportNavigating, setIsViewportNavigating] = useState(false);
   const [sketchArcInsertDraft, setSketchArcInsertDraft] = useState<SketchArcInsertDraft | null>(null);
   const [view, setView] = useState<ViewState>({
     zoom: 1,
@@ -170,7 +177,7 @@ export default function CamCanvas({
   );
 
   useEffect(() => {
-    if (!wrapperRef.current) return undefined;
+    if (!stageRef.current) return undefined;
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
@@ -181,7 +188,7 @@ export default function CamCanvas({
       });
     });
 
-    observer.observe(wrapperRef.current);
+    observer.observe(stageRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -252,7 +259,12 @@ export default function CamCanvas({
     setView((previous) => {
       const nextZoom = clamp(previous.zoom * factor, MIN_ZOOM, MAX_ZOOM);
       const currentTransform = buildTransform(size, settings, previous.zoom, previous.center);
-      const worldAtAnchor = canvasToWorld(anchorPx.x, anchorPx.y, currentTransform);
+      const worldAtAnchor = canvasToWorld(
+        anchorPx.x,
+        anchorPx.y,
+        currentTransform,
+        false
+      );
       const nextTransform = buildTransform(size, settings, nextZoom, previous.center);
 
       const newLeft = worldAtAnchor.x - anchorPx.x / nextTransform.scale;
@@ -266,8 +278,6 @@ export default function CamCanvas({
         zoom: nextZoom,
         center: clampCenter(
           targetCenter,
-          nextTransform.viewWidth,
-          nextTransform.viewHeight,
           nextTransform.workWidth,
           nextTransform.workHeight
         ),
@@ -358,21 +368,59 @@ export default function CamCanvas({
     sketchArcInsertDraft,
   ]);
 
-  function getPointerPoint(event: React.PointerEvent<HTMLCanvasElement>, snap = true): Point {
+  function getCanvasPoint(event: React.PointerEvent<HTMLCanvasElement>): Point {
     const rect = event.currentTarget.getBoundingClientRect();
-    const xPx = event.clientX - rect.left;
-    const yPx = event.clientY - rect.top;
-    const raw = canvasToWorld(xPx, yPx, transform);
+    return {
+      x:
+        (event.clientX - rect.left) *
+        (transform.width / Math.max(1, rect.width)),
+      y:
+        (event.clientY - rect.top) *
+        (transform.height / Math.max(1, rect.height)),
+    };
+  }
+
+  function getPointerPoint(event: React.PointerEvent<HTMLCanvasElement>, snap = true): Point {
+    const canvasPoint = getCanvasPoint(event);
+    const raw = canvasToWorld(canvasPoint.x, canvasPoint.y, transform);
     return snap ? (snapPoint(raw, settings.snapEnabled, settings.gridSize) as Point) : raw;
   }
 
+  function setViewCenter(center: Point): void {
+    setView((previous) => ({
+      ...previous,
+      center: clampCenter(center, transform.workWidth, transform.workHeight),
+    }));
+  }
+
   function startPan(event: React.PointerEvent<HTMLCanvasElement>): void {
+    setIsViewportNavigating(true);
     interactionRef.current = {
       mode: 'pan',
       pointerId: event.pointerId,
       start: null,
       startCenter: transform.center,
       startClient: { x: event.clientX, y: event.clientY },
+      selectedIds: null,
+      sourceOperations: null,
+      additive: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function startMiniMapNavigation(
+    event: React.PointerEvent<HTMLCanvasElement>,
+    center: Point
+  ): void {
+    setViewCenter(center);
+    setIsMiniMapHovered(true);
+    setIsViewportNavigating(true);
+    interactionRef.current = {
+      mode: 'minimap',
+      pointerId: event.pointerId,
+      start: null,
+      startCenter: null,
+      startClient: null,
       selectedIds: null,
       sourceOperations: null,
       additive: false,
@@ -423,6 +471,18 @@ export default function CamCanvas({
     event.preventDefault();
     defocusActiveEditor();
     wrapperRef.current?.focus();
+
+    if (event.button === 0 && !event.altKey) {
+      const miniMapPoint = miniMapCanvasToWorld(
+        getCanvasPoint(event),
+        transform,
+        getMiniMapGeometry(transform)
+      );
+      if (miniMapPoint) {
+        startMiniMapNavigation(event, miniMapPoint);
+        return;
+      }
+    }
 
     if (event.button === 1 || event.button === 2 || (event.button === 0 && event.altKey)) {
       startPan(event);
@@ -734,11 +794,39 @@ export default function CamCanvas({
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>): void {
+    const interaction = interactionRef.current;
+    if (interaction.mode === 'minimap') {
+      const canvasPoint = getCanvasPoint(event);
+      const miniMapGeometry = getMiniMapGeometry(transform);
+      setIsMiniMapHovered(
+        Boolean(miniMapCanvasToWorld(canvasPoint, transform, miniMapGeometry))
+      );
+      const miniMapPoint = miniMapCanvasToWorld(
+        canvasPoint,
+        transform,
+        miniMapGeometry,
+        true
+      );
+      if (miniMapPoint) {
+        setViewCenter(miniMapPoint);
+      }
+      return;
+    }
+
+    setIsMiniMapHovered(
+      Boolean(
+        miniMapCanvasToWorld(
+          getCanvasPoint(event),
+          transform,
+          getMiniMapGeometry(transform)
+        )
+      )
+    );
+
     const rawPoint = getPointerPoint(event, false);
     const point = getPointerPoint(event, true);
     setPointerMm(point);
     onPointerUpdate(point);
-    const interaction = interactionRef.current;
 
     if (draft?.type === 'sketch') {
       setDraft((current) => (current?.type === 'sketch' ? { ...current, current: point } : current));
@@ -761,8 +849,6 @@ export default function CamCanvas({
         ...prev,
         center: clampCenter(
           targetCenter,
-          transform.viewWidth,
-          transform.viewHeight,
           transform.workWidth,
           transform.workHeight
         ),
@@ -939,6 +1025,7 @@ export default function CamCanvas({
     }
 
     interactionRef.current = createEmptyInteractionState();
+    setIsViewportNavigating(false);
 
     if (draft?.type !== 'sketch') {
       setDraft(null);
@@ -950,14 +1037,29 @@ export default function CamCanvas({
     }
   }
 
+  function handlePointerCancel(event: React.PointerEvent<HTMLCanvasElement>): void {
+    interactionRef.current = createEmptyInteractionState();
+    setIsViewportNavigating(false);
+    setIsMiniMapHovered(false);
+    setDraft((current) => (current?.type === 'sketch' ? current : null));
+    setSelectBox(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   function handleWheel(event: React.WheelEvent<HTMLCanvasElement>): void {
     if (!event.ctrlKey && !event.metaKey) return;
 
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const anchor = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x:
+        (event.clientX - rect.left) *
+        (transform.width / Math.max(1, rect.width)),
+      y:
+        (event.clientY - rect.top) *
+        (transform.height / Math.max(1, rect.height)),
     };
     const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
     applyZoomAt(factor, anchor);
@@ -965,22 +1067,33 @@ export default function CamCanvas({
 
   return (
     <div className="cam-canvas-wrapper" ref={wrapperRef} tabIndex={0}>
-      <canvas
-        className="cam-canvas"
-        ref={canvasRef}
-        onContextMenu={(event) => event.preventDefault()}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onWheel={handleWheel}
-      />
+      <div className="cam-canvas-stage" ref={stageRef}>
+        <canvas
+          className={`cam-canvas ${isMiniMapHovered ? 'minimap-hover' : ''} ${
+            isViewportNavigating ? 'viewport-navigating' : ''
+          }`}
+          ref={canvasRef}
+          onContextMenu={(event) => event.preventDefault()}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onPointerLeave={() => {
+            if (!interactionRef.current.mode) {
+              setIsMiniMapHovered(false);
+            }
+          }}
+          onWheel={handleWheel}
+        />
+      </div>
       <div className="canvas-overlay">
         <span>
           Cursor: X {pointerMm.x.toFixed(2)} mm / Y {pointerMm.y.toFixed(2)} mm
         </span>
         <span>
-          Zoom: {(transform.zoom * 100).toFixed(0)}% (Ctrl/Cmd + wheel or View menu)
+          Zoom: {(transform.zoom * 100).toFixed(0)}% (Ctrl/Cmd + wheel or zoom controls)
         </span>
+        <span>Pan: Alt/Option + drag, middle drag, or minimap</span>
         {overlayHints.map((hint) => (
           <span key={hint}>{hint}</span>
         ))}
