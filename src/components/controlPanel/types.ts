@@ -1,4 +1,10 @@
-import type { MachineSettings, Material, Tool, ToolMaterialProfile } from '../../types';
+import type {
+  LaserTestPatternOptions,
+  MachineSettings,
+  Material,
+  Tool,
+  ToolMaterialProfile,
+} from '../../types';
 
 export interface NumberFieldProps {
   label: string;
@@ -59,6 +65,7 @@ export interface ControlPanelProps {
     updates: Partial<ToolMaterialProfile>
   ) => void;
   onDeleteTool: (toolId: string) => void;
+  onCreateLaserTestPattern: (options: LaserTestPatternOptions) => void;
   onNewProject: () => void;
   onOpenProject: () => void;
   onImportSvg: () => void;

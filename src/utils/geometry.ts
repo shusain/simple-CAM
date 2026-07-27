@@ -216,6 +216,12 @@ function buildSketchFromSegments(source: Operation, segments: SketchSegment[], c
     depth: source.depth,
     toolId: source.toolId,
     materialId: source.materialId,
+    laserProcess: source.laserProcess,
+    laserPower: source.laserPower,
+    laserSpeed: source.laserSpeed,
+    laserPasses: source.laserPasses,
+    laserLineInterval: source.laserLineInterval,
+    laserOverscan: source.laserOverscan,
     segments,
     closed,
     cutSide: closed ? preserveClosedCutSide ? cutSide : cutSide === 'along' ? 'outside' : cutSide : 'along',
@@ -1261,6 +1267,23 @@ export function sanitizeOperation(raw: unknown): Operation | null {
   }
 
   const data = raw as RawRecord;
+  const laserFields = {
+    laserProcess:
+      data.laserProcess === 'etch' ? 'etch' as const
+        : data.laserProcess === 'cut' ? 'cut' as const
+          : undefined,
+    laserPower: Number.isFinite(Number(data.laserPower))
+      ? clamp(Number(data.laserPower), 0, 100)
+      : undefined,
+    laserSpeed: toOptionalPositiveNumber(data.laserSpeed),
+    laserPasses: Number.isFinite(Number(data.laserPasses))
+      ? Math.max(1, Math.round(Number(data.laserPasses)))
+      : undefined,
+    laserLineInterval: toOptionalPositiveNumber(data.laserLineInterval),
+    laserOverscan: Number.isFinite(Number(data.laserOverscan))
+      ? Math.max(0, Number(data.laserOverscan))
+      : undefined,
+  };
 
   if (data.type === 'drill') {
     const x = toNumber(data.x, NaN);
@@ -1275,6 +1298,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       depth: toNumber(data.depth, undefined),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
     };
   }
 
@@ -1295,6 +1319,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       depth: toNumber(data.depth, undefined),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
     };
   }
 
@@ -1318,6 +1343,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       depth: toNumber(data.depth, undefined),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
       cutSide: normalizeCutSideValue(data.cutSide, 'outside'),
       tabsEnabled: Boolean(data.tabsEnabled),
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
@@ -1343,6 +1369,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       depth: toNumber(data.depth, undefined),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
       cutSide: normalizeCutSideValue(data.cutSide, 'outside'),
       tabsEnabled: Boolean(data.tabsEnabled),
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
@@ -1368,6 +1395,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       stockToLeave: Math.max(0, toNumber(data.stockToLeave, 0.25)),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
     };
   }
 
@@ -1386,6 +1414,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       pattern: normalizeSurfaceFinishPattern(data.pattern),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
     };
   }
 
@@ -1409,6 +1438,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       depth: toNumber(data.depth, undefined),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
       cutSide: normalizeCutSideValue(data.cutSide, 'along'),
       tabsEnabled: Boolean(data.tabsEnabled),
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
@@ -1434,6 +1464,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       depth: toNumber(data.depth, undefined),
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
       cutSide: normalizeCutSideValue(data.cutSide, 'along'),
       tabsEnabled: Boolean(data.tabsEnabled),
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),

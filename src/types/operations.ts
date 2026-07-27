@@ -5,6 +5,12 @@ export interface BaseOperation {
   depth: number;
   toolId?: string;
   materialId?: string;
+  laserProcess?: 'cut' | 'etch';
+  laserPower?: number;
+  laserSpeed?: number;
+  laserPasses?: number;
+  laserLineInterval?: number;
+  laserOverscan?: number;
 }
 
 export interface DrillOperation extends BaseOperation {

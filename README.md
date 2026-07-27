@@ -21,8 +21,12 @@ This app lets you:
 - Preview planned 2D toolpaths with rapids, cut direction, retaining tabs, and pocket/clear-area motion
 - Import `SVG`, `DXF`, and first-pass `STL` geometry into the normal authoring workflow
 - Assign tools and materials with per-tool/per-material feeds and pass-depth presets
+- Configure laser tools with material-specific kerf, speed/power ranges, percent-to-`S0–S255` power mapping, and Marlin `M3 I` / `M4 I` inline power
+- Generate cut outlines, raster fill/etch paths with power-off overscan, and configurable speed/power test grids
+- Customize the G-code emitted at the start and end of each job
 - Create first-pass STL-derived `surface-rough` and `surface-finish` operations
 - Inspect jobs in a 3D preview with orbit/zoom, bounds, orientation gizmo, and playback controls
+- Collapse either sidebar for a distraction-free drawing and preview workspace
 - Export Marlin-compatible G-code, save/open project files (`.cam.json`), and send jobs to OctoPrint
 
 The project docs and active planning notes live under [docs/](./docs/README.md).

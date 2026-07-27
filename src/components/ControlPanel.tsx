@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Box, FileInput, FileOutput, FilePlus2, FolderOpen, Save, Target } from 'lucide-react';
-import { resolveToolPreset } from '../utils/tooling';
 import NumberField from './controlPanel/NumberField';
 import MaterialManagerModal from './controlPanel/MaterialManagerModal';
 import ToolManagerModal from './controlPanel/ToolManagerModal';
+import LaserTestPatternModal from './controlPanel/LaserTestPatternModal';
+import InfoDisclosure from './common/InfoDisclosure';
 import type { ControlPanelProps } from './controlPanel/types';
 
 export default function ControlPanel({
@@ -22,6 +23,7 @@ export default function ControlPanel({
   onUpdateTool,
   onUpdateToolMaterialProfile,
   onDeleteTool,
+  onCreateLaserTestPattern,
   onNewProject,
   onOpenProject,
   onImportSvg,
@@ -39,24 +41,28 @@ export default function ControlPanel({
 }: ControlPanelProps): React.JSX.Element {
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [isLaserTestModalOpen, setIsLaserTestModalOpen] = useState(false);
   const activeTool = tools.find((tool) => tool.id === activeToolId) || tools[0];
   const activeMaterial = materials.find((material) => material.id === activeMaterialId) || materials[0];
-  const activePreset = useMemo(
-    () => resolveToolPreset(activeTool, activeMaterial?.id, settings),
-    [activeMaterial?.id, activeTool, settings]
-  );
 
   return (
     <div className="panel">
       <div className="section-block">
         <div className="section-header">Project</div>
-        <div className="project-action-row" aria-label="Project actions">
+        <div className="subsection-title">Project files</div>
+        <div className="project-action-row project-file-actions" aria-label="Project file actions">
           <button type="button" className="icon-button" aria-label="New project" title="New project" onClick={onNewProject}>
             <FilePlus2 aria-hidden="true" size={18} />
           </button>
           <button type="button" className="icon-button" aria-label="Open project" title="Open project" onClick={onOpenProject}>
             <FolderOpen aria-hidden="true" size={18} />
           </button>
+          <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
+            <Save aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="subsection-title">Import geometry</div>
+        <div className="project-action-row import-actions" aria-label="Import actions">
           <button
             type="button"
             className="icon-button import-svg-button"
@@ -93,10 +99,8 @@ export default function ControlPanel({
           >
             <Target aria-hidden="true" size={18} />
           </button>
-          <button type="button" className="icon-button" aria-label="Save project" title="Save project" onClick={onSaveProject}>
-            <Save aria-hidden="true" size={18} />
-          </button>
         </div>
+        <div className="subsection-title">Output</div>
         <div className="button-column">
           <button
             type="button"
@@ -185,15 +189,14 @@ export default function ControlPanel({
             ))}
           </select>
         </label>
-        {activeTool ? (
-          <p className="section-note">
-            Ø {activeTool.diameter} | {activeMaterial?.name || 'Material'} | Cut {activePreset.cutFeedRate} |
-            {' '}Plunge {activePreset.plungeFeedRate}
-          </p>
-        ) : null}
         <button type="button" onClick={() => setIsToolModalOpen(true)}>
           Open Tool Manager
         </button>
+        {activeTool?.isLaser ? (
+          <button type="button" className="accent" onClick={() => setIsLaserTestModalOpen(true)}>
+            Create laser test pattern
+          </button>
+        ) : null}
 
         <div className="subsection-title">Depth and Z</div>
         <NumberField
@@ -286,6 +289,34 @@ export default function ControlPanel({
       </div>
 
       <div className="section-block">
+        <div className="section-header">G-code start / end</div>
+        <InfoDisclosure label="About start and end G-code">
+          Start code is emitted after the job comments. End code is emitted after safe shutdown and
+          return moves.
+        </InfoDisclosure>
+        <label className="gcode-field">
+          <span>Start G-code</span>
+          <textarea
+            aria-label="Start G-code"
+            rows={5}
+            spellCheck={false}
+            value={settings.startGcode}
+            onChange={(event) => onSettingsChange({ startGcode: event.target.value })}
+          />
+        </label>
+        <label className="gcode-field">
+          <span>End G-code</span>
+          <textarea
+            aria-label="End G-code"
+            rows={4}
+            spellCheck={false}
+            value={settings.endGcode}
+            onChange={(event) => onSettingsChange({ endGcode: event.target.value })}
+          />
+        </label>
+      </div>
+
+      <div className="section-block">
         <div className="section-header">Work area</div>
         <p className="section-note">Distance units are millimeters.</p>
         <NumberField
@@ -343,6 +374,15 @@ export default function ControlPanel({
         onUpdateMaterial={onUpdateMaterial}
         onDeleteMaterial={onDeleteMaterial}
       />
+      {activeTool?.isLaser ? (
+        <LaserTestPatternModal
+          isOpen={isLaserTestModalOpen}
+          tool={activeTool}
+          material={activeMaterial}
+          onClose={() => setIsLaserTestModalOpen(false)}
+          onCreate={onCreateLaserTestPattern}
+        />
+      ) : null}
     </div>
   );
 }

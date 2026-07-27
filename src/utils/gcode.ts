@@ -16,7 +16,11 @@ import type {
 } from '../types';
 import { isPathOperation } from '../types';
 import { getSketchSubpaths } from './geometry';
-import { resolveToolPreset } from './tooling';
+import {
+  laserPowerPercentToS,
+  resolveLaserMaterialPreset,
+  resolveToolPreset,
+} from './tooling';
 import { appendPathWithTabs, getTabRanges } from './gcode/tabs';
 import type { TabRange } from './gcode/shared';
 import { buildIncrementDepths, getStartEndZ, num, toNegativeDepth, toPositiveStep } from './gcode/depth';
@@ -26,6 +30,7 @@ import {
 } from './gcode/path';
 import { getCirclePlan, getOperationPlannedPaths } from './toolpathPreview';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
+import { buildLaserFillSegments } from './laserFill';
 
 interface GenerateMarlinGcodeArgs {
   operations: Operation[];
@@ -64,7 +69,27 @@ function getRapidFeedZ(settings: MachineSettings, fallback = 2400): string {
   return num(settings.rapidFeedRateZ || fallback, 0);
 }
 
-function addHeader(lines: string[], settings: MachineSettings, operationCount: number): void {
+function appendConfiguredGcode(lines: string[], gcode: string | null | undefined): void {
+  const configuredLines = String(gcode || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+
+  while (configuredLines.length > 0 && !configuredLines[0].trim()) {
+    configuredLines.shift();
+  }
+  while (configuredLines.length > 0 && !configuredLines[configuredLines.length - 1].trim()) {
+    configuredLines.pop();
+  }
+
+  lines.push(...configuredLines);
+}
+
+function addHeader(
+  lines: string[],
+  settings: MachineSettings,
+  operationCount: number,
+  firstTool: Tool | null
+): void {
   const rapidFeedZ = getRapidFeedZ(settings);
   const startEndZ = num(getStartEndZ(settings));
 
@@ -72,33 +97,36 @@ function addHeader(lines: string[], settings: MachineSettings, operationCount: n
   lines.push('; Target: Marlin (MPCNC)');
   lines.push(`; Operations: ${operationCount}`);
   lines.push(`; Work area: ${settings.workWidth} x ${settings.workHeight} mm`);
-  lines.push('G21 ; mm units');
-  lines.push('G90 ; absolute positioning');
-  lines.push('G94 ; feed rate in units/min');
-  lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
+  appendConfiguredGcode(lines, settings.startGcode);
+  if (!firstTool?.isLaser) {
+    lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
+  }
 
-  if (settings.spindleOn) {
+  if (settings.spindleOn && !firstTool?.isLaser) {
     lines.push(`M3 S${Math.round(settings.spindleSpeed || 0)}`);
   }
 
   lines.push('');
 }
 
-function addFooter(lines: string[], settings: MachineSettings): void {
+function addFooter(lines: string[], settings: MachineSettings, lastTool: Tool | null): void {
   const rapidFeedXY = getRapidFeedXY(settings);
   const rapidFeedZ = getRapidFeedZ(settings);
   const startEndZ = num(getStartEndZ(settings));
 
   lines.push('');
   lines.push('; Program end');
-  lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
-  lines.push(`G0 X0 Y0 F${rapidFeedXY}`);
 
-  if (settings.spindleOn) {
+  if (lastTool?.isLaser) {
+    lines.push('M5');
+    lines.push('M5 I ; clear Marlin inline laser mode');
+  } else if (settings.spindleOn) {
     lines.push('M5');
   }
 
-  lines.push('M2');
+  lines.push(`G0 Z${startEndZ} F${rapidFeedZ}`);
+  lines.push(`G0 X0 Y0 F${rapidFeedXY}`);
+  appendConfiguredGcode(lines, settings.endGcode);
 }
 
 function getOperationTool(operation: Operation, tools: Tool[] | null | undefined): Tool | null {
@@ -121,7 +149,9 @@ function formatToolLabel(tool: Tool | null): string {
   if (!tool) {
     return 'Unassigned tool';
   }
-  return `${tool.name} (Ø${num(tool.diameter)}mm)`;
+  return tool.isLaser
+    ? `${tool.name} (laser)`
+    : `${tool.name} (Ø${num(tool.diameter)}mm)`;
 }
 
 function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: Tool | null, settings: MachineSettings): void {
@@ -132,7 +162,10 @@ function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: 
   lines.push('; Tool change required');
   lines.push(`; From: ${formatToolLabel(previousTool)} -> To: ${formatToolLabel(nextTool)}`);
 
-  if (settings.spindleOn) {
+  if (previousTool?.isLaser) {
+    lines.push('M5');
+    lines.push('M5 I ; clear Marlin inline laser mode');
+  } else if (settings.spindleOn) {
     lines.push('M5');
   }
 
@@ -140,8 +173,168 @@ function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: 
   lines.push(`G0 X0 Y0 F${rapidFeedXY}`);
   lines.push(`M0 Change tool: ${formatToolLabel(nextTool)}`);
 
-  if (settings.spindleOn) {
+  if (settings.spindleOn && !nextTool?.isLaser) {
     lines.push(`M3 S${Math.round(settings.spindleSpeed || 0)}`);
+  }
+
+  lines.push('');
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getLaserProcess(operation: Operation): 'cut' | 'etch' {
+  if (operation.laserProcess === 'cut' || operation.laserProcess === 'etch') {
+    return operation.laserProcess;
+  }
+  return operation.type === 'text' ? 'etch' : 'cut';
+}
+
+function getLaserPowerPercent(operation: Operation, tool: Tool): number {
+  const configured = Number(operation.laserPower);
+  if (Number.isFinite(configured)) {
+    return clamp(configured, 0, 100);
+  }
+  const preset = resolveLaserMaterialPreset(tool, operation.materialId);
+  return getLaserProcess(operation) === 'etch'
+    ? preset.etchPowerMin
+    : preset.cutPowerMax;
+}
+
+function getLaserOutputPower(operation: Operation, tool: Tool): number {
+  return laserPowerPercentToS(getLaserPowerPercent(operation, tool));
+}
+
+function getLaserSpeed(operation: Operation, tool: Tool): number {
+  const configured = Number(operation.laserSpeed);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.round(Math.max(1, configured));
+  }
+
+  const preset = resolveLaserMaterialPreset(tool, operation.materialId);
+  return Math.round(
+    getLaserProcess(operation) === 'etch'
+      ? preset.etchSpeedMax
+      : preset.cutSpeedMin
+  );
+}
+
+function appendLaserPathOperation(
+  lines: string[],
+  operation: PathOperation,
+  settings: MachineSettings,
+  tool: Tool
+): void {
+  const process = getLaserProcess(operation);
+  const alongOperation = {
+    ...operation,
+    cutSide: 'along',
+    pocketEnabled: false,
+    tabsEnabled: false,
+  } as PathOperation;
+  const plannedPaths = getOperationPlannedPaths(alongOperation, settings, tool);
+  const materialPreset = resolveLaserMaterialPreset(tool, operation.materialId);
+  const lineInterval = Math.max(
+    0.01,
+    Number(operation.laserLineInterval) || materialPreset.kerfDiameter
+  );
+  const fillSegments =
+    process === 'etch'
+      ? buildLaserFillSegments(
+          plannedPaths.map((plannedPath) => plannedPath.path),
+          lineInterval
+        )
+      : [];
+  const powerPercent = getLaserPowerPercent(operation, tool);
+  const outputPower = getLaserOutputPower(operation, tool);
+  const speed = getLaserSpeed(operation, tool);
+  const rapidFeed = num(tool.rapidFeedRate || settings.rapidFeedRate || 2400, 0);
+  const passes = Math.max(1, Math.round(Number(operation.laserPasses) || 1));
+  const startCommand = tool.laserInlineMode === 'dynamic' ? 'M4 I' : 'M3 I';
+  const powerCommand = tool.laserInlineMode === 'dynamic' ? 'M4' : 'M3';
+  const overscan = Math.max(0, Number(operation.laserOverscan) || 0);
+
+  lines.push(`; Tool: ${tool.name}  Laser kerf: ${num(materialPreset.kerfDiameter)}mm`);
+  lines.push('; Laser power scale: 0-100% maps to S0-S255');
+  lines.push(
+    process === 'etch'
+      ? `; Material fill/etch range: ${num(materialPreset.etchPowerMin, 1)}-${num(materialPreset.etchPowerMax, 1)}% power, F${Math.round(materialPreset.etchSpeedMin)}-F${Math.round(materialPreset.etchSpeedMax)}`
+      : `; Material cut range: ${num(materialPreset.cutPowerMin, 1)}-${num(materialPreset.cutPowerMax, 1)}% power, F${Math.round(materialPreset.cutSpeedMin)}-F${Math.round(materialPreset.cutSpeedMax)}`
+  );
+  lines.push(
+    `; Laser ${process}: ${num(powerPercent, 1)}% => S${outputPower}, F${speed}, ${passes} pass(es)`
+  );
+  if (tool.laserInlineMode === 'dynamic') {
+    lines.push('; M4 dynamic mode: Marlin derives effective motion power from feed rate');
+  }
+  if (process === 'etch') {
+    lines.push(`; Raster fill: ${num(lineInterval)}mm interval, ${num(overscan)}mm overscan`);
+  }
+
+  if ((process === 'etch' ? fillSegments.length : plannedPaths.length) === 0) {
+    lines.push('; No laser paths were generated');
+    lines.push('');
+    return;
+  }
+
+  lines.push(`${startCommand} S0 ; enable Marlin inline mode with laser off`);
+
+  for (let passIndex = 0; passIndex < passes; passIndex += 1) {
+    if (passes > 1) {
+      lines.push(`; Laser pass ${passIndex + 1} of ${passes}`);
+    }
+
+    if (process === 'etch') {
+      fillSegments.forEach((segment) => {
+        const direction = segment.end.x >= segment.start.x ? 1 : -1;
+        const approach = {
+          x: clamp(
+            segment.start.x - direction * overscan,
+            0,
+            Math.max(0, Number(settings.workWidth) || 0)
+          ),
+          y: segment.start.y,
+        };
+        const exit = {
+          x: clamp(
+            segment.end.x + direction * overscan,
+            0,
+            Math.max(0, Number(settings.workWidth) || 0)
+          ),
+          y: segment.end.y,
+        };
+
+        lines.push('M5');
+        lines.push(`G0 X${num(approach.x)} Y${num(approach.y)} F${rapidFeed}`);
+        lines.push(`G1 X${num(segment.start.x)} Y${num(segment.start.y)} F${speed}`);
+        lines.push(`${powerCommand} S${outputPower}`);
+        lines.push(`G1 X${num(segment.end.x)} Y${num(segment.end.y)} F${speed}`);
+        lines.push('M5');
+        lines.push(`G1 X${num(exit.x)} Y${num(exit.y)} F${speed}`);
+      });
+    } else {
+      plannedPaths.forEach((plannedPath, pathIndex) => {
+        if (plannedPath.path.length < 2) {
+          return;
+        }
+
+        const startPoint = plannedPath.path[0];
+        lines.push('M5');
+        lines.push(`G0 X${num(startPoint.x)} Y${num(startPoint.y)} F${rapidFeed}`);
+        lines.push(`${powerCommand} S${outputPower}`);
+
+        for (let pointIndex = 1; pointIndex < plannedPath.path.length; pointIndex += 1) {
+          const point = plannedPath.path[pointIndex];
+          lines.push(`G1 X${num(point.x)} Y${num(point.y)} F${speed}`);
+        }
+
+        lines.push('M5');
+        if (plannedPaths.length > 1) {
+          lines.push(`; Laser path ${pathIndex + 1} complete`);
+        }
+      });
+    }
   }
 
   lines.push('');
@@ -872,7 +1065,8 @@ function appendTextCut(
 
 export function generateMarlinGcode({ operations, settings, tools, importedMeshes = [] }: GenerateMarlinGcodeArgs): string {
   const lines: string[] = [];
-  addHeader(lines, settings, operations.length);
+  const firstTool = operations.length > 0 ? getOperationTool(operations[0], tools) : null;
+  addHeader(lines, settings, operations.length, firstTool);
   const importedMeshMap = new Map(importedMeshes.map((mesh) => [mesh.id, mesh]));
 
   let previousTool: Tool | null = null;
@@ -886,6 +1080,20 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
     if (previousToolKey !== null && toolKey !== previousToolKey) {
       appendToolChange(lines, previousTool, tool, settings);
       useStartEndClearance = true;
+    }
+
+    if (tool?.isLaser) {
+      if (isPathOperation(operation)) {
+        appendLaserPathOperation(lines, operation, settings, tool);
+      } else {
+        lines.push(`; Tool: ${tool.name} (laser)`);
+        lines.push(`; Skipped ${operation.type}: laser output currently supports 2D path operations only`);
+        lines.push('');
+      }
+      previousTool = tool;
+      previousToolKey = toolKey;
+      useStartEndClearance = false;
+      return;
     }
 
     if (operation.type === 'drill') {
@@ -964,6 +1172,6 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
     useStartEndClearance = false;
   });
 
-  addFooter(lines, settings);
+  addFooter(lines, settings, previousTool);
   return `${lines.join('\n')}\n`;
 }

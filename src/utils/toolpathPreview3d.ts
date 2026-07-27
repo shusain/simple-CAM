@@ -12,7 +12,8 @@ import { isPathOperation } from '../types';
 import { buildIncrementDepths, getStartEndZ, toNegativeDepth, toPositiveStep } from './gcode/depth';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 import { getOperationPlannedPaths } from './toolpathPreview';
-import { resolveToolPreset } from './tooling';
+import { resolveLaserMaterialPreset, resolveToolPreset } from './tooling';
+import { buildLaserFillSegments } from './laserFill';
 
 export interface Point3D {
   x: number;
@@ -284,6 +285,67 @@ export function buildToolpathPreview3D({
     }
 
     const tool = getOperationTool(operation, tools);
+    if (tool?.isLaser) {
+      const laserOperation = {
+        ...operation,
+        cutSide: 'along',
+        pocketEnabled: false,
+        tabsEnabled: false,
+      } as PathOperation;
+      const plannedPaths = getOperationPlannedPaths(laserOperation, settings, tool);
+      const laserProcess =
+        operation.laserProcess || (operation.type === 'text' ? 'etch' : 'cut');
+      const laserPreset = resolveLaserMaterialPreset(tool, operation.materialId);
+      const laserPaths: Point[][] =
+        laserProcess === 'etch'
+          ? buildLaserFillSegments(
+              plannedPaths.map((plannedPath) => plannedPath.path),
+              operation.laserLineInterval || laserPreset.kerfDiameter
+            ).map((segment) => [segment.start, segment.end])
+          : plannedPaths.map((plannedPath) => plannedPath.path);
+      const passes = Math.max(1, Math.round(Number(operation.laserPasses) || 1));
+      const overscan =
+        laserProcess === 'etch'
+          ? Math.max(0, Number(operation.laserOverscan) || 0)
+          : 0;
+
+      for (let passIndex = 0; passIndex < passes; passIndex += 1) {
+        laserPaths.forEach((path) => {
+          if (path.length < 2) {
+            return;
+          }
+
+          const start = path[0];
+          const end = path[path.length - 1];
+          const direction = end.x >= start.x ? 1 : -1;
+          const approach = {
+            x: Math.min(settings.workWidth, Math.max(0, start.x - direction * overscan)),
+            y: start.y,
+            z: current.z,
+          };
+          const start3d = { ...start, z: current.z };
+          const end3d = { ...end, z: current.z };
+          const exit = {
+            x: Math.min(settings.workWidth, Math.max(0, end.x + direction * overscan)),
+            y: end.y,
+            z: current.z,
+          };
+
+          appendSegment(segments, 'rapid', operation, operation.type, [current, approach, start3d]);
+          appendSegment(
+            segments,
+            'cut',
+            operation,
+            operation.type,
+            path.map((point) => ({ ...point, z: current.z }))
+          );
+          appendSegment(segments, 'rapid', operation, operation.type, [end3d, exit]);
+          current = exit;
+        });
+      }
+      return;
+    }
+
     const preset = resolveToolPreset(tool, operation.materialId, settings);
     const finalDepth = toNegativeDepth(operation.depth, settings.cutDepth);
     const passStep = toPositiveStep(preset.cutDepthPerPass, Math.abs(finalDepth));

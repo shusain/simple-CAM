@@ -78,7 +78,7 @@ describe('OperationsPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Operations' }));
 
     expect(screen.getByText('Operations list')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Depth (mm)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Depth')).not.toBeInTheDocument();
   });
 
   it('renders rect editing controls and updates toolpath/tabs fields', () => {
@@ -108,9 +108,61 @@ describe('OperationsPanel', () => {
       />
     );
 
-    expect(screen.getByLabelText('Depth (mm)')).toHaveValue('3');
-    fireEvent.change(screen.getByLabelText('Depth (mm)'), { target: { value: '4.5' } });
+    expect(screen.getByLabelText('Depth')).toHaveValue('3');
+    fireEvent.change(screen.getByLabelText('Depth'), { target: { value: '4.5' } });
     expect(onUpdateOperation).toHaveBeenCalledWith('rect-depth', { depth: -4.5 });
+  });
+
+  it('shows laser cut and etch parameters instead of depth controls', () => {
+    const operation = makeRectOperation({
+      id: 'laser-rect',
+      toolId: 'laser-1',
+      laserProcess: 'etch',
+      laserPower: 35,
+      laserSpeed: 4200,
+      laserPasses: 2,
+      laserLineInterval: 0.15,
+      laserOverscan: 2,
+    });
+    const laser = makeTool({
+      id: 'laser-1',
+      name: 'Laser',
+      isLaser: true,
+      laserInlineMode: 'dynamic',
+    });
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [operation],
+          selectedOperation: operation,
+          selectedOperationIds: [operation.id],
+          tools: [laser],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.queryByLabelText('Depth')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Laser process')).toHaveValue('etch');
+    expect(screen.getByLabelText('Laser power')).toHaveValue('35');
+    expect(screen.getByLabelText('Laser speed')).toHaveValue('4200');
+    expect(screen.getByLabelText('Laser passes')).toHaveValue('2');
+    expect(screen.getByLabelText('Line interval')).toHaveValue('0.15');
+    expect(screen.getByLabelText('Overscan')).toHaveValue('2');
+    expect(screen.getByText(/M4 I dynamic/)).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Editor units: distance mm · feeds mm/min · angles ° · laser power %'
+    );
+
+    const laserInfo = screen.getByLabelText('About laser output');
+    expect(laserInfo.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(laserInfo);
+    expect(laserInfo.closest('details')).toHaveAttribute('open');
+
+    fireEvent.change(screen.getByLabelText('Laser power'), { target: { value: '45' } });
+    expect(onUpdateOperation).toHaveBeenCalledWith('laser-rect', { laserPower: 45 });
   });
 
   it('offers drill conversion into an inside-cut circle operation', () => {
@@ -428,8 +480,8 @@ describe('OperationsPanel', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Copies'), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText('Offset X (mm)'), { target: { value: '12.5' } });
-    fireEvent.change(screen.getByLabelText('Offset Y (mm)'), { target: { value: '-4' } });
+    fireEvent.change(screen.getByLabelText('Offset X'), { target: { value: '12.5' } });
+    fireEvent.change(screen.getByLabelText('Offset Y'), { target: { value: '-4' } });
     fireEvent.click(screen.getByRole('button', { name: 'Repeat selected' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete selection' }));
 
@@ -453,11 +505,11 @@ describe('OperationsPanel', () => {
       />
     );
 
-    expect(screen.getByLabelText('Radius (mm)')).toHaveValue('4');
-    expect(screen.getByLabelText('Pocket step-over (mm)')).toHaveValue('1.5');
+    expect(screen.getByLabelText('Radius')).toHaveValue('4');
+    expect(screen.getByLabelText('Pocket step-over')).toHaveValue('1.5');
 
-    fireEvent.change(screen.getByLabelText('Radius (mm)'), { target: { value: '6' } });
-    fireEvent.change(screen.getByLabelText('Pocket step-over (mm)'), { target: { value: '2.25' } });
+    fireEvent.change(screen.getByLabelText('Radius'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Pocket step-over'), { target: { value: '2.25' } });
 
     expect(onUpdateOperation).toHaveBeenCalledWith('circle-a', { radius: 6 });
     expect(onUpdateOperation).toHaveBeenCalledWith('circle-b', { radius: 6 });
@@ -479,8 +531,8 @@ describe('OperationsPanel', () => {
       />
     );
 
-    expect(screen.getByLabelText('Radius (mm)')).toHaveValue('');
-    expect(screen.getByLabelText('Pocket step-over (mm)')).toHaveValue('');
+    expect(screen.getByLabelText('Radius')).toHaveValue('');
+    expect(screen.getByLabelText('Pocket step-over')).toHaveValue('');
   });
 
   it('selects and reorders operations from the list', () => {
@@ -619,8 +671,8 @@ describe('OperationsPanel', () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText('X (mm)'), { target: { value: '12.5' } });
-    fireEvent.change(screen.getByLabelText('Y (mm)'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('X'), { target: { value: '12.5' } });
+    fireEvent.change(screen.getByLabelText('Y'), { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Delete operation' }));
 
     expect(onUpdateOperation).toHaveBeenCalledWith('drill-a', { x: 12.5 });

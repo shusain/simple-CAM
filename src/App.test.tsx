@@ -88,6 +88,26 @@ describe('App', () => {
     expect(screen.getByTestId('cam-canvas')).toBeInTheDocument();
   });
 
+  it('collapses and restores each side panel independently', () => {
+    render(<App />);
+
+    const workspace = screen.getByTestId('cam-canvas').closest('.workspace-grid') as HTMLElement;
+    expect(screen.getByTestId('control-panel').closest('aside')).not.toHaveAttribute('hidden');
+    expect(screen.getByTestId('operations-panel').closest('aside')).not.toHaveAttribute('hidden');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide project panel' }));
+    expect(workspace).toHaveClass('left-panel-collapsed');
+    expect(screen.getByTestId('control-panel').closest('aside')).toHaveAttribute('hidden');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide details panel' }));
+    expect(workspace).toHaveClass('right-panel-collapsed');
+    expect(screen.getByTestId('operations-panel').closest('aside')).toHaveAttribute('hidden');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show project panel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show details panel' }));
+    expect(workspace).not.toHaveClass('left-panel-collapsed', 'right-panel-collapsed');
+  });
+
   it('shows sketch-first topbar tools outside of sketch edit mode', () => {
     render(<App />);
 

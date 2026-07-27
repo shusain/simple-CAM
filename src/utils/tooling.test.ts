@@ -5,6 +5,8 @@ import {
   normalizeMaterial,
   normalizeMaterialProfile,
   normalizeTool,
+  laserPowerPercentToS,
+  resolveLaserMaterialPreset,
   resolveMaterialId,
   resolveToolPreset,
 } from './tooling';
@@ -26,12 +28,18 @@ describe('tooling', () => {
         plungeFeedRate: 120,
         drillDepthPerPass: '0',
         cutDepthPerPass: 2,
+        laserKerfDiameter: '0.12',
+        laserCutPowerMin: 0,
+        laserCutPowerMax: 120,
       })
-    ).toEqual({
+    ).toMatchObject({
       cutFeedRate: 450,
       plungeFeedRate: 120,
       drillDepthPerPass: null,
       cutDepthPerPass: 2,
+      laserKerfDiameter: 0.12,
+      laserCutPowerMin: 0,
+      laserCutPowerMax: 100,
     });
   });
 
@@ -61,14 +69,36 @@ describe('tooling', () => {
 
     expect(tool.id).toBe('tool-fallback');
     expect(tool.diameter).toBe(3);
-    expect(tool.materialProfiles).toEqual({
-      'material-a': {
+    expect(tool.materialProfiles).toMatchObject({
+      'material-a': expect.objectContaining({
         cutFeedRate: 500,
         plungeFeedRate: 100,
         drillDepthPerPass: null,
         cutDepthPerPass: null,
-      },
+      }),
     });
+    expect(tool).toMatchObject({
+      isLaser: false,
+      laserInlineMode: 'continuous',
+    });
+  });
+
+  it('normalizes laser inline mode and retains the tool diameter for legacy kerf fallback', () => {
+    const tool = normalizeTool(
+      {
+        isLaser: true,
+        diameter: 0.2,
+        laserInlineMode: 'dynamic',
+      },
+      'laser'
+    );
+
+    expect(tool).toMatchObject({
+      isLaser: true,
+      diameter: 0.2,
+      laserInlineMode: 'dynamic',
+    });
+    expect(resolveLaserMaterialPreset(tool, 'missing').kerfDiameter).toBe(0.2);
   });
 
   it('finds and resolves materials with fallback order', () => {
@@ -95,7 +125,7 @@ describe('tooling', () => {
       },
     });
 
-    expect(getToolMaterialProfile(tool, 'maple')).toEqual({
+    expect(getToolMaterialProfile(tool, 'maple')).toMatchObject({
       cutFeedRate: 450,
       plungeFeedRate: 150,
       drillDepthPerPass: 0.8,
@@ -109,5 +139,43 @@ describe('tooling', () => {
       drillDepthPerPass: 0.8,
       cutDepthPerPass: 1.2,
     });
+  });
+
+  it('resolves material-specific laser ranges and maps percent power to S0-S255', () => {
+    const tool = makeTool({
+      isLaser: true,
+      materialProfiles: {
+        maple: {
+          cutFeedRate: null,
+          plungeFeedRate: null,
+          drillDepthPerPass: null,
+          cutDepthPerPass: null,
+          laserKerfDiameter: 0.12,
+          laserCutSpeedMin: 300,
+          laserCutSpeedMax: 900,
+          laserCutPowerMin: 70,
+          laserCutPowerMax: 100,
+          laserEtchSpeedMin: 1800,
+          laserEtchSpeedMax: 4200,
+          laserEtchPowerMin: 15,
+          laserEtchPowerMax: 45,
+        },
+      },
+    });
+
+    expect(resolveLaserMaterialPreset(tool, 'maple')).toEqual({
+      kerfDiameter: 0.12,
+      cutSpeedMin: 300,
+      cutSpeedMax: 900,
+      cutPowerMin: 70,
+      cutPowerMax: 100,
+      etchSpeedMin: 1800,
+      etchSpeedMax: 4200,
+      etchPowerMin: 15,
+      etchPowerMax: 45,
+    });
+    expect(laserPowerPercentToS(0)).toBe(0);
+    expect(laserPowerPercentToS(50)).toBe(128);
+    expect(laserPowerPercentToS(100)).toBe(255);
   });
 });

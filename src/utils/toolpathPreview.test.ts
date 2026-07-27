@@ -243,6 +243,35 @@ describe('toolpathPreview', () => {
     expect(plannedPaths.every((plannedPath) => plannedPath.path.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)))).toBe(true);
   });
 
+  it('previews laser fill rows and overscan as separate cut and rapid segments', () => {
+    const laser = makeTool({ id: 'laser-1', isLaser: true, diameter: 0.1 });
+    const preview = buildToolpathPreview({
+      operations: [
+        makeRectOperation({
+          toolId: laser.id,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+          laserProcess: 'etch',
+          laserLineInterval: 5,
+          laserOverscan: 2,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [laser],
+    });
+
+    const cutSegments = preview.segments.filter((segment) => segment.kind === 'cut');
+    const rapidSegments = preview.segments.filter((segment) => segment.kind === 'rapid');
+    expect(cutSegments).toHaveLength(2);
+    expect(cutSegments[0].points).toEqual([
+      { x: 0, y: 2.5 },
+      { x: 10, y: 2.5 },
+    ]);
+    expect(rapidSegments.some((segment) => segment.points.some((point) => point.x === 12))).toBe(true);
+  });
+
   it('projects surface rough raster paths into the 2D preview', () => {
     const preview = buildToolpathPreview({
       operations: [

@@ -21,6 +21,8 @@ import { getTabRanges } from './gcode/tabs';
 import { buildPocketContourPaths, buildRectPocketContourPaths } from './pocketing';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 import { getTextOperationContours } from './text';
+import { buildLaserFillSegments } from './laserFill';
+import { resolveLaserMaterialPreset } from './tooling';
 import { EndType, FillRule, inflatePathsD, JoinType, unionD } from 'clipper2-ts';
 
 export type ToolpathPreviewSegmentKind = 'rapid' | 'cut' | 'tab';
@@ -629,7 +631,70 @@ export function buildToolpathPreview({ operations, settings, tools, importedMesh
     }
 
     const tool = getOperationTool(operation, tools);
-    const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
+    const laserOperation = tool?.isLaser
+      ? ({
+          ...operation,
+          cutSide: 'along',
+          pocketEnabled: false,
+          tabsEnabled: false,
+        } as PathOperation)
+      : operation;
+    const plannedPaths = getOperationPlannedPaths(laserOperation, settings, tool);
+
+    const laserProcess =
+      operation.laserProcess || (operation.type === 'text' ? 'etch' : 'cut');
+    if (tool?.isLaser && laserProcess === 'etch') {
+      const laserPreset = resolveLaserMaterialPreset(tool, operation.materialId);
+      const fillSegments = buildLaserFillSegments(
+        plannedPaths.map((plannedPath) => plannedPath.path),
+        operation.laserLineInterval || laserPreset.kerfDiameter
+      );
+      const overscan = Math.max(0, Number(operation.laserOverscan) || 0);
+
+      fillSegments.forEach((fillSegment) => {
+        const direction = fillSegment.end.x >= fillSegment.start.x ? 1 : -1;
+        const approach = {
+          x: Math.min(
+            settings.workWidth,
+            Math.max(0, fillSegment.start.x - direction * overscan)
+          ),
+          y: fillSegment.start.y,
+        };
+        const exit = {
+          x: Math.min(
+            settings.workWidth,
+            Math.max(0, fillSegment.end.x + direction * overscan)
+          ),
+          y: fillSegment.end.y,
+        };
+
+        const rapidStart = previousEndPoint || approach;
+        if (!pointsEqual(rapidStart, fillSegment.start)) {
+          segments.push({
+            kind: 'rapid',
+            operationId: operation.id,
+            operationType: operation.type,
+            points: [rapidStart, approach, fillSegment.start],
+          });
+        }
+        segments.push({
+          kind: 'cut',
+          operationId: operation.id,
+          operationType: operation.type,
+          points: [fillSegment.start, fillSegment.end],
+        });
+        if (!pointsEqual(fillSegment.end, exit)) {
+          segments.push({
+            kind: 'rapid',
+            operationId: operation.id,
+            operationType: operation.type,
+            points: [fillSegment.end, exit],
+          });
+        }
+        previousEndPoint = exit;
+      });
+      return;
+    }
 
     plannedPaths.forEach((plannedPath) => {
       if (plannedPath.path.length < 2) {

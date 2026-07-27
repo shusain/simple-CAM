@@ -31,6 +31,7 @@ function buildProps(overrides: Partial<ControlPanelProps> = {}): ControlPanelPro
     onUpdateTool: vi.fn(),
     onUpdateToolMaterialProfile: vi.fn(),
     onDeleteTool: vi.fn(),
+    onCreateLaserTestPattern: vi.fn(),
     onNewProject: vi.fn(),
     onOpenProject: vi.fn(),
     onImportSvg: vi.fn(),
@@ -77,6 +78,20 @@ describe('ControlPanel', () => {
     expect(props.onApplyDepthSettingsToAll).toHaveBeenCalledTimes(1);
   });
 
+  it('groups project file, import, and output actions into separate subsections', () => {
+    render(<ControlPanel {...buildProps()} />);
+
+    const projectFiles = screen.getByLabelText('Project file actions');
+    const imports = screen.getByLabelText('Import actions');
+
+    expect(within(projectFiles).getByRole('button', { name: 'New project' })).toBeInTheDocument();
+    expect(within(projectFiles).getByRole('button', { name: 'Open project' })).toBeInTheDocument();
+    expect(within(projectFiles).getByRole('button', { name: 'Save project' })).toBeInTheDocument();
+    expect(within(imports).getByRole('button', { name: 'Import SVG' })).toBeInTheDocument();
+    expect(within(imports).getByRole('button', { name: 'Import STL' })).toBeInTheDocument();
+    expect(screen.getByText('Output')).toHaveClass('subsection-title');
+  });
+
   it('updates settings and selections through form inputs', () => {
     const onSettingsChange = vi.fn();
     const onSelectTool = vi.fn();
@@ -111,7 +126,13 @@ describe('ControlPanel', () => {
     const { container } = render(<ControlPanel {...buildProps()} />);
 
     const headers = Array.from(container.querySelectorAll('.section-header')).map((element) => element.textContent?.trim());
-    expect(headers).toEqual(['Project', 'Grid and snap', 'Machine setup', 'Work area']);
+    expect(headers).toEqual([
+      'Project',
+      'Grid and snap',
+      'Machine setup',
+      'G-code start / end',
+      'Work area',
+    ]);
   });
 
   it('updates the remaining machine setup and feed fields', () => {
@@ -146,6 +167,22 @@ describe('ControlPanel', () => {
     expect(onSettingsChange).toHaveBeenCalledWith({ plungeFeedRate: 1 });
     expect(onSettingsChange).toHaveBeenCalledWith({ spindleOn: true });
     expect(onSettingsChange).toHaveBeenCalledWith({ spindleSpeed: 0 });
+  });
+
+  it('updates custom start and end G-code', () => {
+    const onSettingsChange = vi.fn();
+
+    render(<ControlPanel {...buildProps({ onSettingsChange })} />);
+
+    fireEvent.change(screen.getByLabelText('Start G-code'), {
+      target: { value: 'G28\nG92 X0 Y0' },
+    });
+    fireEvent.change(screen.getByLabelText('End G-code'), {
+      target: { value: 'M5\nM2' },
+    });
+
+    expect(onSettingsChange).toHaveBeenCalledWith({ startGcode: 'G28\nG92 X0 Y0' });
+    expect(onSettingsChange).toHaveBeenCalledWith({ endGcode: 'M5\nM2' });
   });
 
   it('shows OctoPrint actions only when enabled', () => {
@@ -256,16 +293,131 @@ describe('ControlPanel', () => {
     expect(onSelectMaterial).toHaveBeenCalledWith('material-2');
   });
 
-  it('falls back to the first tool and material when the active ids are missing', () => {
+  it('shows laser-specific tool settings', () => {
+    const onUpdateTool = vi.fn();
+    const onUpdateToolMaterialProfile = vi.fn();
+    const laser = makeTool({
+      id: 'laser-1',
+      name: 'Diode laser',
+      isLaser: true,
+      laserInlineMode: 'continuous',
+      materialProfiles: {
+        'material-1': {
+          cutFeedRate: null,
+          plungeFeedRate: null,
+          drillDepthPerPass: null,
+          cutDepthPerPass: null,
+          laserKerfDiameter: 0.12,
+          laserCutSpeedMin: 300,
+          laserCutSpeedMax: 900,
+          laserCutPowerMin: 70,
+          laserCutPowerMax: 100,
+          laserEtchSpeedMin: 1800,
+          laserEtchSpeedMax: 4200,
+          laserEtchPowerMin: 15,
+          laserEtchPowerMax: 45,
+        },
+      },
+    });
+
     render(
       <ControlPanel
         {...buildProps({
-          activeToolId: 'missing-tool',
-          activeMaterialId: 'missing-material',
+          tools: [laser, makeTool({ id: 'tool-2' })],
+          activeToolId: laser.id,
+          onUpdateTool,
+          onUpdateToolMaterialProfile,
         })}
       />
     );
 
-    expect(screen.getByText(/Ø 3.175 \| Birch \| Cut/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Tool Manager' }));
+    const modal = (screen.getByText('Tool Manager').closest('.modal-card') ?? document.body) as HTMLElement;
+
+    expect(within(modal).getByLabelText('Kerf diameter')).toHaveValue('0.12');
+    expect(within(modal).queryByLabelText('Max speed')).not.toBeInTheDocument();
+    expect(within(modal).getByLabelText('Speed min')).toHaveValue('300');
+    expect(within(modal).getByLabelText('Power min (%)')).toHaveValue('70');
+    expect(within(modal).getByLabelText('Fill speed max')).toHaveValue('4200');
+    expect(within(modal).getByLabelText('Fill power max (%)')).toHaveValue('45');
+    expect(within(modal).queryByLabelText('Plunge feed')).not.toBeInTheDocument();
+
+    fireEvent.change(within(modal).getByLabelText('Inline mode'), {
+      target: { value: 'dynamic' },
+    });
+    expect(onUpdateTool).toHaveBeenCalledWith('laser-1', {
+      laserInlineMode: 'dynamic',
+    });
+    fireEvent.change(within(modal).getByLabelText('Power min (%)'), {
+      target: { value: '75' },
+    });
+    expect(onUpdateToolMaterialProfile).toHaveBeenCalledWith(
+      'laser-1',
+      'material-1',
+      { laserCutPowerMin: 75 }
+    );
+    fireEvent.change(within(modal).getByLabelText('Kerf diameter'), {
+      target: { value: '0.15' },
+    });
+    expect(onUpdateToolMaterialProfile).toHaveBeenCalledWith(
+      'laser-1',
+      'material-1',
+      { laserKerfDiameter: 0.15 }
+    );
+  });
+
+  it('creates configurable laser test-pattern settings', () => {
+    const onCreateLaserTestPattern = vi.fn();
+    const laser = makeTool({
+      id: 'laser-1',
+      name: 'Laser',
+      isLaser: true,
+    });
+
+    render(
+      <ControlPanel
+        {...buildProps({
+          tools: [laser],
+          activeToolId: laser.id,
+          onCreateLaserTestPattern,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create laser test pattern' }));
+    const modal = screen.getByRole('dialog', { name: 'Laser test pattern' });
+    const powerSection = within(modal).getByText('Power / rows').closest('section') as HTMLElement;
+    const speedSection = within(modal).getByText('Speed / columns').closest('section') as HTMLElement;
+    const sharedSection = within(modal)
+      .getByText('Square and grid settings')
+      .closest('section') as HTMLElement;
+
+    expect(within(powerSection).getByLabelText('Power min (%)')).toBeInTheDocument();
+    expect(within(powerSection).getByLabelText('Power rows')).toBeInTheDocument();
+    expect(within(speedSection).getByLabelText('Speed min')).toBeInTheDocument();
+    expect(within(speedSection).getByLabelText('Speed columns')).toBeInTheDocument();
+    expect(within(sharedSection).getByLabelText('Grid gap')).toBeInTheDocument();
+    expect(within(sharedSection).getByLabelText('Line interval')).toBeInTheDocument();
+    expect(within(sharedSection).getByLabelText('Overscan')).toBeInTheDocument();
+
+    fireEvent.change(within(modal).getByLabelText('Speed columns'), {
+      target: { value: '3' },
+    });
+    fireEvent.change(within(modal).getByLabelText('Power rows'), {
+      target: { value: '4' },
+    });
+    fireEvent.change(within(modal).getByLabelText('Overscan'), {
+      target: { value: '2.5' },
+    });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Create test grid' }));
+
+    expect(onCreateLaserTestPattern).toHaveBeenCalledWith(
+      expect.objectContaining({
+        process: 'etch',
+        columns: 3,
+        rows: 4,
+        overscan: 2.5,
+      })
+    );
   });
 });

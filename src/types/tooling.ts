@@ -17,6 +17,8 @@ export interface MachineSettings {
   spindleOn: boolean;
   spindleSpeed: number;
   circleSegments: number;
+  startGcode: string;
+  endGcode: string;
 }
 
 export interface Material {
@@ -29,6 +31,15 @@ export interface ToolMaterialProfile {
   plungeFeedRate: number | null;
   drillDepthPerPass: number | null;
   cutDepthPerPass: number | null;
+  laserKerfDiameter?: number | null;
+  laserCutSpeedMin?: number | null;
+  laserCutSpeedMax?: number | null;
+  laserCutPowerMin?: number | null;
+  laserCutPowerMax?: number | null;
+  laserEtchSpeedMin?: number | null;
+  laserEtchSpeedMax?: number | null;
+  laserEtchPowerMin?: number | null;
+  laserEtchPowerMax?: number | null;
 }
 
 export interface ToolPreset {
@@ -39,6 +50,33 @@ export interface ToolPreset {
   cutDepthPerPass: number;
 }
 
+export interface LaserMaterialPreset {
+  kerfDiameter: number;
+  cutSpeedMin: number;
+  cutSpeedMax: number;
+  cutPowerMin: number;
+  cutPowerMax: number;
+  etchSpeedMin: number;
+  etchSpeedMax: number;
+  etchPowerMin: number;
+  etchPowerMax: number;
+}
+
+export interface LaserTestPatternOptions {
+  process: 'cut' | 'etch';
+  speedMin: number;
+  speedMax: number;
+  powerMin: number;
+  powerMax: number;
+  columns: number;
+  rows: number;
+  rectangleWidth: number;
+  rectangleHeight: number;
+  gap: number;
+  lineInterval: number;
+  overscan: number;
+}
+
 export interface Tool {
   id: string;
   name: string;
@@ -46,5 +84,7 @@ export interface Tool {
   rapidFeedRate: number;
   cutFeedRate: number;
   plungeFeedRate: number;
+  isLaser: boolean;
+  laserInlineMode: 'continuous' | 'dynamic';
   materialProfiles: Record<string, ToolMaterialProfile>;
 }

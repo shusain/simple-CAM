@@ -76,6 +76,87 @@ describe('generateMarlinGcode', () => {
     expect(gcode).toContain('M5');
   });
 
+  it('emits editable start/end blocks', () => {
+    const gcode = generateMarlinGcode({
+      operations: [makeLineOperation()],
+      settings: makeSettings({
+        startGcode: 'G21\nG90\n; custom start',
+        endGcode: '; custom end\nM2',
+      }),
+      tools: [makeTool()],
+    });
+
+    expect(gcode).toContain('G21\nG90\n; custom start');
+    expect(gcode).toContain('; custom end\nM2');
+  });
+
+  it('emits Marlin continuous inline laser power with travel power disabled', () => {
+    const laser = makeTool({
+      id: 'laser-1',
+      name: 'Diode laser',
+      isLaser: true,
+      laserInlineMode: 'continuous',
+    });
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeLineOperation({
+          toolId: laser.id,
+          laserProcess: 'cut',
+          laserPower: 50,
+          laserSpeed: 7000,
+          laserPasses: 2,
+        }),
+      ],
+      settings: makeSettings({ spindleOn: true }),
+      tools: [laser],
+    });
+
+    expect(gcode).toContain('; Laser power scale: 0-100% maps to S0-S255');
+    expect(gcode).toContain('; Laser cut: 50.0% => S128, F7000, 2 pass(es)');
+    expect(gcode).toContain('M3 I S0 ; enable Marlin inline mode with laser off');
+    expect(gcode.match(/M3 S128/g)).toHaveLength(2);
+    expect(gcode).toContain('G1 X10.000 Y0.000 F7000');
+    expect(gcode).toContain('M5 I ; clear Marlin inline laser mode');
+    expect(gcode).not.toContain('M3 S10000');
+    expect(gcode.indexOf('G0 Z15.000')).toBeGreaterThan(gcode.indexOf('; Program end'));
+  });
+
+  it('supports Marlin dynamic inline laser mode', () => {
+    const laser = makeTool({
+      id: 'laser-dynamic',
+      isLaser: true,
+      laserInlineMode: 'dynamic',
+    });
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeRectOperation({
+          toolId: laser.id,
+          x: 5,
+          laserProcess: 'etch',
+          laserPower: 30,
+          laserSpeed: 6000,
+          laserLineInterval: 5,
+          laserOverscan: 2,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [laser],
+    });
+
+    expect(gcode).toContain('M4 I S0 ; enable Marlin inline mode with laser off');
+    expect(gcode).toContain('M4 S77');
+    expect(gcode).toContain('; Laser etch: 30.0% => S77, F6000, 1 pass(es)');
+    expect(gcode).toContain('; Raster fill: 5.000mm interval, 2.000mm overscan');
+    expect(gcode).toContain('G0 X3.000 Y2.500 F2400');
+    expect(gcode).toContain('G1 X5.000 Y2.500 F6000');
+    expect(gcode).toContain('G1 X25.000 Y2.500 F6000');
+    expect(gcode).toContain('G1 X27.000 Y2.500 F6000');
+    expect(gcode.indexOf('M4 I S0')).toBeLessThan(gcode.indexOf('G0 X3.000 Y2.500'));
+    expect(gcode.indexOf('G1 X5.000 Y2.500')).toBeLessThan(gcode.indexOf('M4 S77'));
+    expect(gcode.indexOf('M4 S77')).toBeLessThan(gcode.indexOf('G1 X25.000 Y2.500'));
+    expect(gcode).toContain('M5\nG1 X27.000 Y2.500 F6000');
+  });
+
   it('generates outline cuts for editable text operations', () => {
     const gcode = generateMarlinGcode({
       operations: [makeTextOperation({ text: 'A', fontSize: 8, cutSide: 'outside' })],

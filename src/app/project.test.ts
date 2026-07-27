@@ -71,4 +71,90 @@ describe('project helpers', () => {
       ...data,
     });
   });
+
+  it('hydrates laser tool and operation settings from project files', () => {
+    const project = {
+      version: 1,
+      settings: {
+        activeMaterialId: 'material-1',
+        startGcode: 'G21\nG90',
+        endGcode: 'M5\nM2',
+      },
+      materials: [makeMaterial()],
+      tools: [
+        makeTool({
+          id: 'laser-1',
+          isLaser: true,
+          laserInlineMode: 'dynamic',
+          materialProfiles: {
+            'material-1': {
+              cutFeedRate: null,
+              plungeFeedRate: null,
+              drillDepthPerPass: null,
+              cutDepthPerPass: null,
+              laserKerfDiameter: 0.12,
+              laserCutSpeedMin: 300,
+              laserCutSpeedMax: 900,
+              laserCutPowerMin: 70,
+              laserCutPowerMax: 100,
+              laserEtchSpeedMin: 1800,
+              laserEtchSpeedMax: 4200,
+              laserEtchPowerMin: 15,
+              laserEtchPowerMax: 45,
+            },
+          },
+        }),
+      ],
+      activeToolId: 'laser-1',
+      operations: [
+        {
+          type: 'line',
+          x1: 0,
+          y1: 0,
+          x2: 10,
+          y2: 5,
+          depth: -1,
+          toolId: 'laser-1',
+          materialId: 'material-1',
+          laserProcess: 'etch',
+          laserPower: 35,
+          laserSpeed: 4200,
+          laserPasses: 2,
+          laserLineInterval: 0.12,
+          laserOverscan: 3,
+        },
+      ],
+    } as never;
+
+    const hydrated = hydrateProjectFile(project, () => 'laser-operation');
+
+    expect(hydrated.settings).toMatchObject({
+      startGcode: 'G21\nG90',
+      endGcode: 'M5\nM2',
+    });
+    expect(hydrated.tools[0]).toMatchObject({
+      isLaser: true,
+      laserInlineMode: 'dynamic',
+    });
+    expect(hydrated.tools[0].materialProfiles['material-1']).toMatchObject({
+      laserKerfDiameter: 0.12,
+      laserCutSpeedMin: 300,
+      laserCutSpeedMax: 900,
+      laserCutPowerMin: 70,
+      laserCutPowerMax: 100,
+      laserEtchSpeedMin: 1800,
+      laserEtchSpeedMax: 4200,
+      laserEtchPowerMin: 15,
+      laserEtchPowerMax: 45,
+    });
+    expect(hydrated.operations[0]).toMatchObject({
+      id: 'laser-operation',
+      laserProcess: 'etch',
+      laserPower: 35,
+      laserSpeed: 4200,
+      laserPasses: 2,
+      laserLineInterval: 0.12,
+      laserOverscan: 3,
+    });
+  });
 });

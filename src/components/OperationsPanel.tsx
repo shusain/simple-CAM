@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
 import { getImportedMeshWorldBounds } from '../utils/importStl';
+import { resolveLaserMaterialPreset } from '../utils/tooling';
 import { TEXT_FONT_OPTIONS } from '../utils/text';
 import NumericInput from './common/NumericInput';
+import InfoDisclosure from './common/InfoDisclosure';
 import type {
   CutSide,
   Operation,
@@ -107,18 +109,66 @@ export default function OperationsPanel({
     selectedOperation?.type === 'surface-rough' || selectedOperation?.type === 'surface-finish'
       ? importedMeshes.find((mesh) => mesh.id === selectedOperation.meshId) || null
       : null;
+  const selectedOperationTool = selectedOperation
+    ? tools.find((tool) => tool.id === selectedOperation.toolId) || null
+    : null;
+  const isLaserOperation = Boolean(selectedOperationTool?.isLaser);
+  const selectedLaserPreset = resolveLaserMaterialPreset(
+    selectedOperationTool,
+    selectedOperation?.materialId
+  );
+  const supportsLaserOutput =
+    selectedOperation?.type === 'line' ||
+    selectedOperation?.type === 'rect' ||
+    selectedOperation?.type === 'circle' ||
+    selectedOperation?.type === 'sketch' ||
+    selectedOperation?.type === 'text';
+  const laserProcess =
+    selectedOperation?.laserProcess || (selectedOperation?.type === 'text' ? 'etch' : 'cut');
+  const laserPower =
+    selectedOperation?.laserPower ??
+    (laserProcess === 'etch'
+      ? selectedLaserPreset.etchPowerMin
+      : selectedLaserPreset.cutPowerMax);
+  const laserSpeed =
+    selectedOperation?.laserSpeed ??
+    (laserProcess === 'etch'
+      ? selectedLaserPreset.etchSpeedMax
+      : selectedLaserPreset.cutSpeedMin);
+  const laserPowerMin =
+    laserProcess === 'etch'
+      ? selectedLaserPreset.etchPowerMin
+      : selectedLaserPreset.cutPowerMin;
+  const laserPowerMax =
+    laserProcess === 'etch'
+      ? selectedLaserPreset.etchPowerMax
+      : selectedLaserPreset.cutPowerMax;
+  const laserSpeedMin =
+    laserProcess === 'etch'
+      ? selectedLaserPreset.etchSpeedMin
+      : selectedLaserPreset.cutSpeedMin;
+  const laserSpeedMax =
+    laserProcess === 'etch'
+      ? selectedLaserPreset.etchSpeedMax
+      : selectedLaserPreset.cutSpeedMax;
   const effectiveSketchClosed =
     selectedOperation?.type === 'sketch'
       ? Boolean(sketchIntegrity?.detectedClosed || selectedOperation.closed)
       : false;
+  const canLaserFill =
+    selectedOperation?.type === 'rect' ||
+    selectedOperation?.type === 'circle' ||
+    selectedOperation?.type === 'text' ||
+    (selectedOperation?.type === 'sketch' && effectiveSketchClosed);
   const sketchCutOptions: CutSide[] =
     selectedOperation?.type === 'sketch' && effectiveSketchClosed
       ? ['outside', 'inside', 'along']
       : ['along'];
   const shouldShowPocketControls =
-    selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle';
+    !isLaserOperation &&
+    (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle');
   const shouldShowSketchPocketControls =
-    selectedOperation?.type === 'sketch' && effectiveSketchClosed;
+    !isLaserOperation && selectedOperation?.type === 'sketch' && effectiveSketchClosed;
   const shouldHideTabsForPocket =
     (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle' || selectedOperation?.type === 'sketch') &&
     selectedOperation.pocketEnabled &&
@@ -190,6 +240,12 @@ export default function OperationsPanel({
         ) : null}
       </div>
 
+      {activeTab === 'details' ? (
+        <div className="details-units" role="note">
+          Editor units: distance mm · feeds mm/min · angles ° · laser power %
+        </div>
+      ) : null}
+
       {activeTab === 'details' ? (selectedImportedMesh ? (
         <div className="operation-editor">
           <h3>Selected: STL MESH</h3>
@@ -234,7 +290,7 @@ export default function OperationsPanel({
 
           <h3>Mesh size</h3>
           <label className="field-row">
-            <span>Width (mm)</span>
+            <span>Width</span>
             <input
               type="number"
               readOnly
@@ -242,7 +298,7 @@ export default function OperationsPanel({
             />
           </label>
           <label className="field-row">
-            <span>Height (mm)</span>
+            <span>Height</span>
             <input
               type="number"
               readOnly
@@ -250,7 +306,7 @@ export default function OperationsPanel({
             />
           </label>
           <label className="field-row">
-            <span>Depth (mm)</span>
+            <span>Depth</span>
             <input
               type="number"
               readOnly
@@ -326,20 +382,22 @@ export default function OperationsPanel({
               Delete imported mesh
             </button>
           </div>
-          <p className="hint-text">
+          <InfoDisclosure label="About mesh placement">
             Drag the STL silhouette in the 2D canvas or edit the center position here before surface roughing or finishing operations are generated.
-          </p>
+          </InfoDisclosure>
         </div>
       ) : selectedOperation ? (
         <div className="operation-editor">
           <h3>Selected: {selectedOperation.type.toUpperCase()}</h3>
 
-          <DepthEditor
-            value={selectedOperation.depth}
-            onChange={(value) => onUpdateOperation(selectedOperation.id, { depth: value })}
-          />
+          {!isLaserOperation ? (
+            <DepthEditor
+              value={selectedOperation.depth}
+              onChange={(value) => onUpdateOperation(selectedOperation.id, { depth: value })}
+            />
+          ) : null}
 
-          {selectedOperation.type === 'rect' || selectedOperation.type === 'circle' ? (
+          {!isLaserOperation && (selectedOperation.type === 'rect' || selectedOperation.type === 'circle') ? (
             <CutSideEditor
               value={selectedOperation.cutSide || 'outside'}
               onChange={(value) =>
@@ -351,7 +409,7 @@ export default function OperationsPanel({
             />
           ) : null}
 
-          {selectedOperation.type === 'sketch' ? (
+          {!isLaserOperation && selectedOperation.type === 'sketch' ? (
             <CutSideEditor
               value={selectedOperation.cutSide || (effectiveSketchClosed ? 'outside' : 'along')}
               onChange={(value) =>
@@ -366,7 +424,7 @@ export default function OperationsPanel({
             />
           ) : null}
 
-          {selectedOperation.type === 'text' ? (
+          {!isLaserOperation && selectedOperation.type === 'text' ? (
             <CutSideEditor
               value={selectedOperation.cutSide || 'along'}
               onChange={(value) =>
@@ -435,21 +493,188 @@ export default function OperationsPanel({
             <span>Tool</span>
             <select
               value={selectedOperation.toolId || ''}
-              onChange={(event) => onUpdateOperation(selectedOperation.id, { toolId: event.target.value })}
+              onChange={(event) => {
+                const toolId = event.target.value;
+                const nextTool = tools.find((tool) => tool.id === toolId);
+                if (!nextTool?.isLaser) {
+                  onUpdateOperation(selectedOperation.id, { toolId });
+                  return;
+                }
+                const nextPreset = resolveLaserMaterialPreset(
+                  nextTool,
+                  selectedOperation.materialId
+                );
+                const nextProcess =
+                  selectedOperation.type === 'text' && canLaserFill ? 'etch' : 'cut';
+                onUpdateOperation(selectedOperation.id, {
+                  toolId,
+                  laserProcess: nextProcess,
+                  laserPower:
+                    nextProcess === 'etch'
+                      ? nextPreset.etchPowerMin
+                      : nextPreset.cutPowerMax,
+                  laserSpeed:
+                    nextProcess === 'etch'
+                      ? nextPreset.etchSpeedMax
+                      : nextPreset.cutSpeedMin,
+                  laserPasses: selectedOperation.laserPasses ?? 1,
+                  laserLineInterval:
+                    selectedOperation.laserLineInterval ??
+                    Math.max(0.05, nextPreset.kerfDiameter),
+                  laserOverscan: selectedOperation.laserOverscan ?? 2,
+                  cutSide: 'along',
+                  pocketEnabled: false,
+                  tabsEnabled: false,
+                });
+              }}
             >
               {tools.map((tool) => (
                 <option key={tool.id} value={tool.id}>
-                  {tool.name} (Ø{tool.diameter}mm)
+                  {tool.isLaser
+                    ? `${tool.name} (laser, ${resolveLaserMaterialPreset(
+                        tool,
+                        selectedOperation.materialId
+                      ).kerfDiameter}mm kerf)`
+                    : `${tool.name} (Ø${tool.diameter}mm)`}
                 </option>
               ))}
             </select>
           </label>
 
+          {isLaserOperation && supportsLaserOutput ? (
+            <>
+              <div className="subsection-title">Laser process</div>
+              <label className="field-row">
+                <span>Process</span>
+                <select
+                  aria-label="Laser process"
+                  value={laserProcess}
+                  onChange={(event) => {
+                    const nextProcess = event.target.value === 'etch' ? 'etch' : 'cut';
+                    onUpdateOperation(selectedOperation.id, {
+                      laserProcess: nextProcess,
+                      laserPower:
+                        nextProcess === 'etch'
+                          ? selectedLaserPreset.etchPowerMin
+                          : selectedLaserPreset.cutPowerMax,
+                      laserSpeed:
+                        nextProcess === 'etch'
+                          ? selectedLaserPreset.etchSpeedMax
+                          : selectedLaserPreset.cutSpeedMin,
+                      cutSide: 'along',
+                      pocketEnabled: false,
+                    });
+                  }}
+                >
+                  <option value="cut">Cut — along path</option>
+                  <option value="etch" disabled={!canLaserFill}>
+                    Fill / etch
+                  </option>
+                </select>
+              </label>
+              <NumericFieldRow
+                label="Laser power"
+                value={laserPower}
+                min={laserPowerMin}
+                max={laserPowerMax}
+                step={1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    laserPower: Math.min(laserPowerMax, Math.max(laserPowerMin, value)),
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Laser speed"
+                value={laserSpeed}
+                min={laserSpeedMin}
+                max={laserSpeedMax}
+                step={1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    laserSpeed: Math.min(laserSpeedMax, Math.max(laserSpeedMin, value)),
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Laser passes"
+                value={selectedOperation.laserPasses ?? 1}
+                min={1}
+                step={1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    laserPasses: Math.max(1, Math.round(value || 1)),
+                  })
+                }
+              />
+              {laserProcess === 'etch' ? (
+                <>
+                  <NumericFieldRow
+                    label="Line interval"
+                    value={
+                      selectedOperation.laserLineInterval ??
+                      Math.max(0.05, selectedLaserPreset.kerfDiameter)
+                    }
+                    min={0.01}
+                    step={0.01}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        laserLineInterval: Math.max(0.01, value || 0.01),
+                      })
+                    }
+                  />
+                  <NumericFieldRow
+                    label="Overscan"
+                    value={selectedOperation.laserOverscan ?? 2}
+                    min={0}
+                    step={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        laserOverscan: Math.max(0, value),
+                      })
+                    }
+                  />
+                </>
+              ) : null}
+              <InfoDisclosure label="About laser output">
+                <p>
+                  {selectedOperationTool?.laserInlineMode === 'dynamic' ? 'M4 I dynamic' : 'M3 I continuous'}
+                  {' '}mode · power {laserPowerMin}–{laserPowerMax}% maps to S0–S255
+                  {' '}· material speed {laserSpeedMin}–{laserSpeedMax} mm/min
+                </p>
+                <p>
+                  Laser paths leave Z at the current focus position. Use start G-code to establish
+                  a focus height when the job begins with a laser tool.
+                </p>
+              </InfoDisclosure>
+            </>
+          ) : null}
+          {isLaserOperation && !supportsLaserOutput ? (
+            <p className="hint-text">
+              First-pass laser output supports line, rectangle, circle, sketch, and text paths.
+              This operation will be skipped during G-code export.
+            </p>
+          ) : null}
+
           <label className="field-row">
             <span>Material</span>
             <select
               value={selectedOperation.materialId || ''}
-              onChange={(event) => onUpdateOperation(selectedOperation.id, { materialId: event.target.value })}
+              onChange={(event) => {
+                const materialId = event.target.value;
+                if (!selectedOperationTool?.isLaser) {
+                  onUpdateOperation(selectedOperation.id, { materialId });
+                  return;
+                }
+                const preset = resolveLaserMaterialPreset(selectedOperationTool, materialId);
+                onUpdateOperation(selectedOperation.id, {
+                  materialId,
+                  laserPower:
+                    laserProcess === 'etch' ? preset.etchPowerMin : preset.cutPowerMax,
+                  laserSpeed:
+                    laserProcess === 'etch' ? preset.etchSpeedMax : preset.cutSpeedMin,
+                });
+              }}
             >
               {materials.map((material) => (
                 <option key={material.id} value={material.id}>
@@ -461,8 +686,8 @@ export default function OperationsPanel({
 
           {selectedOperation.type === 'drill' ? (
             <>
-              <NumericFieldRow label="X (mm)" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
-              <NumericFieldRow label="Y (mm)" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
+              <NumericFieldRow label="X" value={selectedOperation.x} onChange={(value) => onUpdateOperation(selectedOperation.id, { x: value })} />
+              <NumericFieldRow label="Y" value={selectedOperation.y} onChange={(value) => onUpdateOperation(selectedOperation.id, { y: value })} />
               <button
                 type="button"
                 className="accent"
@@ -537,7 +762,7 @@ export default function OperationsPanel({
                 }
               />
               <NumericFieldRow
-                label="Rotation (deg)"
+                label="Rotation"
                 value={(selectedOperation.rotation * 180) / Math.PI}
                 step={1}
                 onChange={(value) =>
@@ -566,7 +791,7 @@ export default function OperationsPanel({
                   })
                 }
               />
-              {selectedOperation.cutSide === 'outside' ? (
+              {!isLaserOperation && selectedOperation.cutSide === 'outside' ? (
                 <>
                   <label className="field-row checkbox-row">
                     <span>Retaining tabs</span>
@@ -679,7 +904,7 @@ export default function OperationsPanel({
                     <input type="number" readOnly value={sketchIntegrity.subpathCount} />
                   </label>
                   <label className="field-row">
-                    <span>Open gap (mm)</span>
+                    <span>Open gap</span>
                     <input
                       type="number"
                       readOnly
@@ -737,7 +962,7 @@ export default function OperationsPanel({
                       ) : null}
                     </>
                   ) : null}
-                  {!shouldHideTabsForPocket ? (
+                  {!isLaserOperation && !shouldHideTabsForPocket ? (
                     <>
                       <label className="field-row checkbox-row">
                         <span>Retaining tabs</span>
@@ -805,11 +1030,11 @@ export default function OperationsPanel({
                         >
                           Delete selected segment
                         </button>
-                        <p className="hint-text">
+                        <InfoDisclosure label="About sketch editing">
                           Drag sketch handles in the canvas. Click a segment in the canvas to select it for
                           deletion, or use the `Poly-Line` / `Poly-Arc` toolbar tool to place new replacement
                           segments by choosing their own start and end points.
-                        </p>
+                        </InfoDisclosure>
                       </>
                     ) : (
                       <button type="button" className="accent" onClick={onStartSketchEdit}>
@@ -943,7 +1168,7 @@ export default function OperationsPanel({
                   ) : null}
                 </>
               ) : null}
-              {!shouldHideTabsForPocket ? (
+              {!isLaserOperation && !shouldHideTabsForPocket ? (
                 <>
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
@@ -1038,7 +1263,7 @@ export default function OperationsPanel({
                   ) : null}
                 </>
               ) : null}
-              {!shouldHideTabsForPocket ? (
+              {!isLaserOperation && !shouldHideTabsForPocket ? (
                 <>
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
@@ -1100,8 +1325,8 @@ export default function OperationsPanel({
 
           <h3>Linear repeat</h3>
           <NumericFieldRow label="Copies" value={repeatCount} min={1} step={1} onChange={(value) => setRepeatCount(Math.max(1, Math.round(value || 1)))} />
-          <NumericFieldRow label="Offset X (mm)" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />
-          <NumericFieldRow label="Offset Y (mm)" value={repeatOffsetY} onChange={(value) => setRepeatOffsetY(value || 0)} />
+          <NumericFieldRow label="Offset X" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />
+          <NumericFieldRow label="Offset Y" value={repeatOffsetY} onChange={(value) => setRepeatOffsetY(value || 0)} />
           <button
             type="button"
             className="accent"
@@ -1121,21 +1346,21 @@ export default function OperationsPanel({
           {selectedCount > 1 ? (
             <>
               <h3>Selected: {selectedCount} operations</h3>
-              <p className="hint-text">
+              <InfoDisclosure label="About multi-selection">
                 Multi-selection active. Drag selected geometry in the canvas to move as a group, or use the
                 actions below.
-              </p>
+              </InfoDisclosure>
               {allSelectedAreCircles ? (
                 <>
                   <h3>Bulk edit circles</h3>
                   <NumericFieldRow
-                    label="Radius (mm)"
+                    label="Radius"
                     value={bulkCircleRadiusValue}
                     min={0}
                     onChange={(value) => applyToSelectedCircles({ radius: Math.max(0, value || 0) })}
                   />
                   <NumericFieldRow
-                    label="Pocket step-over (mm)"
+                    label="Pocket step-over"
                     value={bulkCircleStepOverValue}
                     min={0.1}
                     onChange={(value) => applyToSelectedCircles({ pocketStepOver: Math.max(0.1, value || 0.1) })}
@@ -1144,8 +1369,8 @@ export default function OperationsPanel({
               ) : null}
               <h3>Linear repeat</h3>
               <NumericFieldRow label="Copies" value={repeatCount} min={1} step={1} onChange={(value) => setRepeatCount(Math.max(1, Math.round(value || 1)))} />
-              <NumericFieldRow label="Offset X (mm)" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />
-              <NumericFieldRow label="Offset Y (mm)" value={repeatOffsetY} onChange={(value) => setRepeatOffsetY(value || 0)} />
+              <NumericFieldRow label="Offset X" value={repeatOffsetX} onChange={(value) => setRepeatOffsetX(value || 0)} />
+              <NumericFieldRow label="Offset Y" value={repeatOffsetY} onChange={(value) => setRepeatOffsetY(value || 0)} />
               <div className="button-column">
                 <button
                   type="button"
@@ -1181,9 +1406,9 @@ export default function OperationsPanel({
           ) : (
             <>
               {operations.length === 0 && importedMeshes.length > 0 ? (
-                <p className="hint-text">
+                <InfoDisclosure label="About imported meshes">
                   No cut operations yet. Imported meshes can be positioned here before generating STL-derived toolpaths.
-                </p>
+                </InfoDisclosure>
               ) : null}
               <ul className="operations-list">
               {importedMeshes.map((mesh) => {

@@ -3,6 +3,10 @@ import {
   Circle,
   Eye,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   PenLine,
   Plus,
   Minus,
@@ -23,10 +27,11 @@ import ToolpathPreview3D from './components/ToolpathPreview3D';
 import { generateMarlinGcode } from './utils/gcode';
 import { deriveSketchState, getOperationBounds, getSketchSegments } from './utils/geometry';
 import { getDefaultPocketStepOver } from './utils/pocketing';
-import { resolveMaterialId } from './utils/tooling';
+import { resolveLaserMaterialPreset, resolveMaterialId } from './utils/tooling';
 import { importSvgToSketchOperations } from './utils/importSvg';
 import type {
   ImportedMesh,
+  LaserTestPatternOptions,
   MachineSettings,
   Material,
   OctoprintSettings,
@@ -81,6 +86,7 @@ import { importDxfToSketchOperations } from './utils/importDxf';
 import { importDrlToDrillOperations } from './utils/importDrl';
 import type { ImportCutMode } from './utils/importCommon';
 import { importStlModel, offsetImportedMesh } from './utils/importStl';
+import { buildLaserTestPattern } from './utils/laserTestPattern';
 import type {
   InitialState,
   MoveSelectedOperationsArgs,
@@ -211,6 +217,8 @@ export default function App(): React.JSX.Element {
     isNewSketch: false,
   });
   const [showToolpathPreview, setShowToolpathPreview] = useState(true);
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(true);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
@@ -463,12 +471,29 @@ export default function App(): React.JSX.Element {
         activeMaterialId
       );
       const id = newId();
+      const laserPreset = resolveLaserMaterialPreset(selectedTool, selectedMaterialId);
       const providedPocketStepOver =
         'pocketStepOver' in operation ? Number(operation.pocketStepOver) : Number.NaN;
       const nextOperation = {
         ...operation,
         toolId: selectedToolId || undefined,
         materialId: selectedMaterialId || undefined,
+        ...(selectedTool?.isLaser
+          ? {
+              laserProcess: operation.type === 'text' ? 'etch' as const : 'cut' as const,
+              laserPower:
+                operation.type === 'text'
+                  ? laserPreset.etchPowerMin
+                  : laserPreset.cutPowerMax,
+              laserSpeed:
+                operation.type === 'text'
+                  ? laserPreset.etchSpeedMax
+                  : laserPreset.cutSpeedMin,
+              laserPasses: 1,
+              laserLineInterval: Math.max(0.05, laserPreset.kerfDiameter),
+              laserOverscan: 2,
+            }
+          : {}),
         ...('pocketEnabled' in operation
           ? {
               pocketEnabled: Boolean(operation.pocketEnabled),
@@ -836,6 +861,54 @@ export default function App(): React.JSX.Element {
     );
     setStatus(`Applied ${activeMaterial?.name || 'material'} to ${operations.length} operation(s)`);
   }, [activeMaterial?.name, activeMaterialId, commitOperations, operations.length]);
+
+  const createLaserTestPattern = useCallback(
+    (options: LaserTestPatternOptions) => {
+      const tool = tools.find((item) => item.id === activeToolId);
+      if (!tool?.isLaser) {
+        setStatus('Select a laser tool before creating a test pattern');
+        return;
+      }
+
+      const generated: Operation[] = buildLaserTestPattern({
+        options,
+        settings,
+        tool,
+        materialId: activeMaterialId,
+        createId: newId,
+      });
+
+      commitOperations((previous) => [...previous, ...generated]);
+      setSelectedIds(generated.map((operation) => operation.id));
+      setSelectionAnchorId(generated[0]?.id || null);
+      setSelectedImportedMeshId(null);
+      setActiveTool('select');
+
+      const gridWidth =
+        options.columns * options.rectangleWidth +
+        Math.max(0, options.columns - 1) * options.gap +
+        (options.process === 'etch' ? options.overscan * 2 : 0);
+      const gridHeight =
+        options.rows * options.rectangleHeight + Math.max(0, options.rows - 1) * options.gap;
+      const exceedsWorkArea =
+        settings.marginX + gridWidth > settings.workWidth ||
+        settings.marginY + gridHeight > settings.workHeight;
+      setStatus(
+        `Created ${generated.length} laser test rectangle(s)${exceedsWorkArea ? ' (grid exceeds work area)' : ''}`
+      );
+    },
+    [
+      activeMaterialId,
+      activeToolId,
+      commitOperations,
+      settings.cutDepth,
+      settings.marginX,
+      settings.marginY,
+      settings.workHeight,
+      settings.workWidth,
+      tools,
+    ]
+  );
 
   const previewMoveSelectedOperations = useCallback(
     ({ ids, sourceOperations, dx, dy }: MoveSelectedOperationsArgs) => {
@@ -1805,6 +1878,35 @@ export default function App(): React.JSX.Element {
           ) : null}
         </div>
         <div className="topbar-view-controls">
+          <button
+            type="button"
+            className={`tool-button icon-only-toolbar-button ${showLeftPanel ? 'active' : ''}`}
+            aria-label={showLeftPanel ? 'Hide project panel' : 'Show project panel'}
+            title={showLeftPanel ? 'Hide project panel' : 'Show project panel'}
+            aria-pressed={showLeftPanel}
+            onClick={() => setShowLeftPanel((current) => !current)}
+          >
+            {showLeftPanel ? (
+              <PanelLeftClose aria-hidden="true" size={16} />
+            ) : (
+              <PanelLeftOpen aria-hidden="true" size={16} />
+            )}
+          </button>
+          <button
+            type="button"
+            className={`tool-button icon-only-toolbar-button ${showRightPanel ? 'active' : ''}`}
+            aria-label={showRightPanel ? 'Hide details panel' : 'Show details panel'}
+            title={showRightPanel ? 'Hide details panel' : 'Show details panel'}
+            aria-pressed={showRightPanel}
+            onClick={() => setShowRightPanel((current) => !current)}
+          >
+            {showRightPanel ? (
+              <PanelRightClose aria-hidden="true" size={16} />
+            ) : (
+              <PanelRightOpen aria-hidden="true" size={16} />
+            )}
+          </button>
+          <span className="topbar-tools-divider" aria-hidden="true" />
           <div className="view-mode-toggle" role="group" aria-label="Viewport mode">
             <button
               type="button"
@@ -1852,8 +1954,12 @@ export default function App(): React.JSX.Element {
         </div>
       </header>
 
-      <div className="workspace-grid">
-        <aside className="left-pane">
+      <div
+        className={`workspace-grid ${showLeftPanel ? '' : 'left-panel-collapsed'} ${
+          showRightPanel ? '' : 'right-panel-collapsed'
+        }`}
+      >
+        <aside className="left-pane" hidden={!showLeftPanel}>
           <ControlPanel
             settings={settings}
             onSettingsChange={(updates: Partial<MachineSettings>) => setSettings((prev) => ({ ...prev, ...updates }))}
@@ -1872,6 +1978,7 @@ export default function App(): React.JSX.Element {
             onUpdateTool={updateTool}
             onUpdateToolMaterialProfile={updateToolMaterialProfile}
             onDeleteTool={deleteTool}
+            onCreateLaserTestPattern={createLaserTestPattern}
             onNewProject={handleNew}
             onOpenProject={handleOpen}
             onImportSvg={handleImportSvg}
@@ -1928,7 +2035,7 @@ export default function App(): React.JSX.Element {
           )}
         </main>
 
-        <aside className="right-pane">
+        <aside className="right-pane" hidden={!showRightPanel}>
           <OperationsPanel
             operations={operations}
             importedMeshes={importedMeshes}

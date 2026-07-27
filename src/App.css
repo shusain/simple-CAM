@@ -128,6 +128,18 @@ textarea {
   padding: 10px;
 }
 
+.workspace-grid.left-panel-collapsed {
+  grid-template-columns: 1fr 350px;
+}
+
+.workspace-grid.right-panel-collapsed {
+  grid-template-columns: 300px 1fr;
+}
+
+.workspace-grid.left-panel-collapsed.right-panel-collapsed {
+  grid-template-columns: 1fr;
+}
+
 .left-pane,
 .right-pane,
 .center-pane {
@@ -347,9 +359,62 @@ textarea {
 
 .project-action-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 12px;
+}
+
+.project-file-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.import-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.info-disclosure {
+  position: relative;
+  margin: 4px 0 9px;
+}
+
+.info-disclosure summary {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #334155;
+  border-radius: 50%;
+  background: #0b1220;
+  color: #7dd3fc;
+  cursor: pointer;
+  list-style: none;
+}
+
+.info-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.info-disclosure[open] summary {
+  border-color: #38bdf8;
+  background: #082f49;
+}
+
+.info-disclosure-content {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0b1220;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.info-disclosure-content p {
+  margin: 0;
+}
+
+.info-disclosure-content p + p {
+  margin-top: 6px;
 }
 
 .icon-button {
@@ -497,6 +562,26 @@ textarea {
   grid-template-columns: 1fr auto;
 }
 
+.gcode-field {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 9px;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+
+.gcode-field textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #f8fafc;
+  border-radius: 6px;
+  padding: 7px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
 .operations-list {
   list-style: none;
   margin: 0;
@@ -615,6 +700,47 @@ textarea {
   gap: 12px;
 }
 
+.laser-test-modal {
+  width: min(640px, 96vw);
+}
+
+.laser-test-axis-grid,
+.laser-test-common-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.laser-test-process {
+  margin-bottom: 12px;
+}
+
+.laser-test-section {
+  min-width: 0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0 12px 4px;
+  background: #0b1220;
+}
+
+.laser-test-common {
+  margin: 12px 0;
+}
+
+.laser-test-common-grid {
+  gap: 0 18px;
+}
+
+.laser-test-modal > button {
+  width: 100%;
+  border: 1px solid #0ea5e9;
+  background: #0b1220;
+  color: #bae6fd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
 .tool-list {
   list-style: none;
   margin: 0 0 10px;
@@ -650,6 +776,17 @@ textarea {
   border-top: 1px solid #334155;
   margin-top: 10px;
   padding-top: 10px;
+}
+
+.details-units {
+  margin: 10px 0 0;
+  padding: 7px 9px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0b1220;
+  color: #94a3b8;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .hint-text {

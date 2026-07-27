@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { resolveToolPreset } from '../../utils/tooling';
+import { resolveLaserMaterialPreset, resolveToolPreset } from '../../utils/tooling';
 import NumberField from './NumberField';
 import type { ToolManagerModalProps } from './types';
 
@@ -31,6 +31,10 @@ export default function ToolManagerModal({
   const materialPreset = useMemo(
     () => resolveToolPreset(editingTool, editingMaterial?.id, settings),
     [editingMaterial?.id, editingTool, settings]
+  );
+  const laserMaterialPreset = useMemo(
+    () => resolveLaserMaterialPreset(editingTool, editingMaterial?.id),
+    [editingMaterial?.id, editingTool]
   );
 
   useEffect(() => {
@@ -65,7 +69,9 @@ export default function ToolManagerModal({
                     onClick={() => setEditingToolId(tool.id)}
                   >
                     <span>{tool.name}</span>
-                    <span className="tool-meta">Ø {tool.diameter}</span>
+                    <span className="tool-meta">
+                      {tool.isLaser ? 'Laser' : `Ø ${tool.diameter}`}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -97,13 +103,32 @@ export default function ToolManagerModal({
                   onChange={(event) => onUpdateTool(editingTool.id, { name: event.target.value })}
                 />
               </label>
-              <NumberField
-                label="Diameter"
-                value={editingTool.diameter}
-                min={0.01}
-                step={0.01}
-                onChange={(value) => onUpdateTool(editingTool.id, { diameter: Math.max(0.01, value || 0.01) })}
-              />
+              <label className="field-row">
+                <span>Tool type</span>
+                <select
+                  aria-label="Tool type"
+                  value={editingTool.isLaser ? 'laser' : 'mill'}
+                  onChange={(event) =>
+                    onUpdateTool(editingTool.id, { isLaser: event.target.value === 'laser' })
+                  }
+                >
+                  <option value="mill">Mill / drill</option>
+                  <option value="laser">Laser</option>
+                </select>
+              </label>
+              {!editingTool.isLaser ? (
+                <NumberField
+                  label="Diameter"
+                  value={editingTool.diameter}
+                  min={0.01}
+                  step={0.01}
+                  onChange={(value) =>
+                    onUpdateTool(editingTool.id, {
+                      diameter: Math.max(0.01, value || 0.01),
+                    })
+                  }
+                />
+              ) : null}
               <NumberField
                 label="Rapid feed"
                 value={editingTool.rapidFeedRate}
@@ -113,24 +138,57 @@ export default function ToolManagerModal({
                   onUpdateTool(editingTool.id, { rapidFeedRate: Math.max(1, Math.round(value || 1)) })
                 }
               />
-              <NumberField
-                label="Cut feed"
-                value={editingTool.cutFeedRate}
-                min={1}
-                step={1}
-                onChange={(value) =>
-                  onUpdateTool(editingTool.id, { cutFeedRate: Math.max(1, Math.round(value || 1)) })
-                }
-              />
-              <NumberField
-                label="Plunge feed"
-                value={editingTool.plungeFeedRate}
-                min={1}
-                step={1}
-                onChange={(value) =>
-                  onUpdateTool(editingTool.id, { plungeFeedRate: Math.max(1, Math.round(value || 1)) })
-                }
-              />
+              {editingTool.isLaser ? (
+                <>
+                  <label className="field-row">
+                    <span>Inline mode</span>
+                    <select
+                      aria-label="Inline mode"
+                      value={editingTool.laserInlineMode}
+                      onChange={(event) =>
+                        onUpdateTool(editingTool.id, {
+                          laserInlineMode:
+                            event.target.value === 'dynamic' ? 'dynamic' : 'continuous',
+                        })
+                      }
+                    >
+                      <option value="continuous">M3 I continuous</option>
+                      <option value="dynamic">M4 I dynamic</option>
+                    </select>
+                  </label>
+                  <p className="section-note">
+                    Power is shown as 0–100% and exported as S0–S255. Material presets constrain
+                    recommended cut and fill/etch settings.
+                  </p>
+                  {editingTool.laserInlineMode === 'dynamic' ? (
+                    <p className="section-note">
+                      This Marlin build derives effective M4 dynamic power from feed rate. Use M3
+                      continuous mode when the requested power percentage must map exactly to S.
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <NumberField
+                    label="Cut feed"
+                    value={editingTool.cutFeedRate}
+                    min={1}
+                    step={1}
+                    onChange={(value) =>
+                      onUpdateTool(editingTool.id, { cutFeedRate: Math.max(1, Math.round(value || 1)) })
+                    }
+                  />
+                  <NumberField
+                    label="Plunge feed"
+                    value={editingTool.plungeFeedRate}
+                    min={1}
+                    step={1}
+                    onChange={(value) =>
+                      onUpdateTool(editingTool.id, { plungeFeedRate: Math.max(1, Math.round(value || 1)) })
+                    }
+                  />
+                </>
+              )}
               <button
                 type="button"
                 className="accent"
@@ -158,55 +216,192 @@ export default function ToolManagerModal({
                       ))}
                     </select>
                   </label>
-                  <NumberField
-                    label="Cut feed"
-                    value={materialPreset.cutFeedRate}
-                    min={1}
-                    step={1}
-                    onChange={(value) =>
-                      onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
-                        cutFeedRate: Math.max(1, Math.round(value || 1)),
-                      })
-                    }
-                  />
-                  <NumberField
-                    label="Plunge feed"
-                    value={materialPreset.plungeFeedRate}
-                    min={1}
-                    step={1}
-                    onChange={(value) =>
-                      onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
-                        plungeFeedRate: Math.max(1, Math.round(value || 1)),
-                      })
-                    }
-                  />
-                  <NumberField
-                    label="Drill depth / layer"
-                    value={materialPreset.drillDepthPerPass}
-                    min={0.1}
-                    step={0.1}
-                    onChange={(value) =>
-                      onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
-                        drillDepthPerPass: Math.max(0.1, Math.abs(value) || 0.1),
-                      })
-                    }
-                  />
-                  <NumberField
-                    label="Cut depth / layer"
-                    value={materialPreset.cutDepthPerPass}
-                    min={0.1}
-                    step={0.1}
-                    onChange={(value) =>
-                      onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
-                        cutDepthPerPass: Math.max(0.1, Math.abs(value) || 0.1),
-                      })
-                    }
-                  />
-                  <p className="section-note">
-                    Material presets only control cut feed, plunge feed, drill depth per layer, and cut
-                    depth per layer for this tool. Final operation depth and rapid moves stay under machine
-                    setup/tool defaults.
-                  </p>
+                  {editingTool.isLaser ? (
+                    <>
+                      <NumberField
+                        label="Kerf diameter"
+                        value={laserMaterialPreset.kerfDiameter}
+                        min={0.01}
+                        step={0.01}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserKerfDiameter: Math.max(0.01, value || 0.01),
+                          })
+                        }
+                      />
+                      <div className="subsection-title">Cut range</div>
+                      <NumberField
+                        label="Speed min"
+                        value={laserMaterialPreset.cutSpeedMin}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserCutSpeedMin: Math.min(
+                              laserMaterialPreset.cutSpeedMax,
+                              Math.max(1, Math.round(value || 1))
+                            ),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Speed max"
+                        value={laserMaterialPreset.cutSpeedMax}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserCutSpeedMax: Math.max(
+                              laserMaterialPreset.cutSpeedMin,
+                              Math.round(value || 1)
+                            ),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Power min (%)"
+                        value={laserMaterialPreset.cutPowerMin}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserCutPowerMin: Math.min(
+                              laserMaterialPreset.cutPowerMax,
+                              Math.max(0, value)
+                            ),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Power max (%)"
+                        value={laserMaterialPreset.cutPowerMax}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserCutPowerMax: Math.max(
+                              laserMaterialPreset.cutPowerMin,
+                              Math.min(100, value)
+                            ),
+                          })
+                        }
+                      />
+
+                      <div className="subsection-title">Fill / etch range</div>
+                      <NumberField
+                        label="Fill speed min"
+                        value={laserMaterialPreset.etchSpeedMin}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserEtchSpeedMin: Math.min(
+                              laserMaterialPreset.etchSpeedMax,
+                              Math.max(1, Math.round(value || 1))
+                            ),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Fill speed max"
+                        value={laserMaterialPreset.etchSpeedMax}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserEtchSpeedMax: Math.max(
+                              laserMaterialPreset.etchSpeedMin,
+                              Math.round(value || 1)
+                            ),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Fill power min (%)"
+                        value={laserMaterialPreset.etchPowerMin}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserEtchPowerMin: Math.min(
+                              laserMaterialPreset.etchPowerMax,
+                              Math.max(0, value)
+                            ),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Fill power max (%)"
+                        value={laserMaterialPreset.etchPowerMax}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserEtchPowerMax: Math.max(
+                              laserMaterialPreset.etchPowerMin,
+                              Math.min(100, value)
+                            ),
+                          })
+                        }
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <NumberField
+                        label="Cut feed"
+                        value={materialPreset.cutFeedRate}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            cutFeedRate: Math.max(1, Math.round(value || 1)),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Plunge feed"
+                        value={materialPreset.plungeFeedRate}
+                        min={1}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            plungeFeedRate: Math.max(1, Math.round(value || 1)),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Drill depth / layer"
+                        value={materialPreset.drillDepthPerPass}
+                        min={0.1}
+                        step={0.1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            drillDepthPerPass: Math.max(0.1, Math.abs(value) || 0.1),
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Cut depth / layer"
+                        value={materialPreset.cutDepthPerPass}
+                        min={0.1}
+                        step={0.1}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            cutDepthPerPass: Math.max(0.1, Math.abs(value) || 0.1),
+                          })
+                        }
+                      />
+                      <p className="section-note">
+                        Material presets control cut feed, plunge feed, and pass depths for this
+                        tool. Final operation depth and rapid moves stay under machine setup/tool
+                        defaults.
+                      </p>
+                    </>
+                  )}
                 </>
               ) : null}
             </div>

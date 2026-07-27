@@ -17,9 +17,9 @@ interface CutSideEditorProps {
 export function DepthEditor({ value, onChange }: DepthEditorProps): React.JSX.Element {
   return (
     <label className="field-row">
-      <span>Depth (mm)</span>
+      <span>Depth</span>
       <NumericInput
-        aria-label="Depth (mm)"
+        aria-label="Depth"
         value={value == null ? '' : Math.abs(value)}
         step={0.1}
         onChange={(nextValue) => onChange(-Math.abs(nextValue))}
