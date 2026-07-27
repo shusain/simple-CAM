@@ -20,6 +20,8 @@ describe('buildLaserTestPattern', () => {
         gap: 2,
         lineInterval: 0.1,
         overscan: 2,
+        labelPower: 15,
+        labelSpeed: 1500,
       },
       settings: makeSettings({ marginX: 5, marginY: 7, cutDepth: -1 }),
       tool: makeTool({ id: 'laser-1', isLaser: true, diameter: 0.1 }),
@@ -40,7 +42,7 @@ describe('buildLaserTestPattern', () => {
       20, 20, 20, 80, 80, 80,
     ]);
     expect(rectangles[0]).toMatchObject({
-      id: 'test-1',
+      id: 'test-10',
       width: 10,
       height: 8,
       laserProcess: 'etch',
@@ -54,7 +56,7 @@ describe('buildLaserTestPattern', () => {
 
     expect(labels.map((operation) => operation.text)).toEqual([
       'LASER TEST PATTERN - BIRCH PLYWOOD',
-      'ETCH | SPEED 1000-3000 MM/MIN | POWER 20-80%\nGRID 3X2 | CELL 10X8 MM | GAP 2 MM\nINTERVAL 0.1 MM | OVERSCAN 2 MM',
+      'ETCH | SPEED 1000-3000 MM/MIN | POWER 20-80%\nLABELS ALONG PATH | 15% POWER | 1500 MM/MIN\nGRID 3X2 | CELL 10X8 MM | GAP 2 MM\nINTERVAL 0.1 MM | OVERSCAN 2 MM',
       'SPEED',
       'POWER',
       '1000',
@@ -67,13 +69,15 @@ describe('buildLaserTestPattern', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'text',
-          laserProcess: 'etch',
-          laserPower: 10,
-          laserSpeed: 6000,
+          laserProcess: 'cut',
+          laserPower: 15,
+          laserSpeed: 1500,
           laserOverscan: 0,
         }),
       ])
     );
+    expect(operations.slice(0, labels.length).every((operation) => operation.type === 'text')).toBe(true);
+    expect(operations.slice(labels.length).every((operation) => operation.type === 'rect')).toBe(true);
 
     const rectangleBounds = rectangles.map((operation) => getOperationBounds(operation)!);
     const titleBounds = getOperationBounds(labels[0])!;
@@ -103,7 +107,7 @@ describe('buildLaserTestPattern', () => {
     expect(titleBounds.minY).toBeGreaterThan(summaryBounds.maxY);
   });
 
-  it('keeps labels etched for a cut test and omits raster-only parameters', () => {
+  it('keeps labels along-path for a cut test and omits raster-only parameters', () => {
     let id = 0;
     const operations = buildLaserTestPattern({
       options: {
@@ -119,6 +123,8 @@ describe('buildLaserTestPattern', () => {
         gap: 3,
         lineInterval: 0.1,
         overscan: 2,
+        labelPower: 18,
+        labelSpeed: 750,
       },
       settings: makeSettings(),
       tool: makeTool({ id: 'laser-1', isLaser: true, diameter: 0.1 }),
@@ -133,7 +139,11 @@ describe('buildLaserTestPattern', () => {
     expect(rectangles).toHaveLength(4);
     expect(rectangles.every((operation) => operation.laserProcess === 'cut')).toBe(true);
     expect(labels).toHaveLength(8);
-    expect(labels.every((operation) => operation.laserProcess === 'etch')).toBe(true);
+    expect(labels.every((operation) => operation.laserProcess === 'cut')).toBe(true);
+    expect(labels.every((operation) => operation.cutSide === 'along')).toBe(true);
+    expect(labels.every((operation) => operation.laserPower === 18)).toBe(true);
+    expect(labels.every((operation) => operation.laserSpeed === 750)).toBe(true);
+    expect(operations.slice(0, labels.length).every((operation) => operation.type === 'text')).toBe(true);
     expect(labels.map((operation) => operation.text)).toContain('SPEED');
     expect(labels.map((operation) => operation.text)).toContain('POWER');
     expect(summary?.text).not.toContain('INTERVAL');

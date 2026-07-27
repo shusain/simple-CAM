@@ -75,6 +75,8 @@ export interface LaserTestPatternOptions {
   gap: number;
   lineInterval: number;
   overscan: number;
+  labelPower: number;
+  labelSpeed: number;
 }
 
 export interface Tool {

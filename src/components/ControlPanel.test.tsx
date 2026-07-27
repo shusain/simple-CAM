@@ -397,6 +397,8 @@ describe('ControlPanel', () => {
     expect(within(speedSection).getByLabelText('Speed min')).toBeInTheDocument();
     expect(within(speedSection).getByLabelText('Speed columns')).toBeInTheDocument();
     expect(within(sharedSection).getByLabelText('Grid gap')).toBeInTheDocument();
+    expect(within(sharedSection).getByLabelText('Label power (%)')).toHaveValue('15');
+    expect(within(sharedSection).getByLabelText('Label speed')).toBeInTheDocument();
     expect(within(sharedSection).getByLabelText('Line interval')).toBeInTheDocument();
     expect(within(sharedSection).getByLabelText('Overscan')).toBeInTheDocument();
 
@@ -409,6 +411,12 @@ describe('ControlPanel', () => {
     fireEvent.change(within(modal).getByLabelText('Overscan'), {
       target: { value: '2.5' },
     });
+    fireEvent.change(within(modal).getByLabelText('Label power (%)'), {
+      target: { value: '22' },
+    });
+    fireEvent.change(within(modal).getByLabelText('Label speed'), {
+      target: { value: '1750' },
+    });
     fireEvent.click(within(modal).getByRole('button', { name: 'Create test grid' }));
 
     expect(onCreateLaserTestPattern).toHaveBeenCalledWith(
@@ -417,6 +425,8 @@ describe('ControlPanel', () => {
         columns: 3,
         rows: 4,
         overscan: 2.5,
+        labelPower: 22,
+        labelSpeed: 1750,
       })
     );
   });

@@ -34,6 +34,8 @@ export default function LaserTestPatternModal({
   const [gap, setGap] = useState(3);
   const [lineInterval, setLineInterval] = useState(Math.max(0.05, preset.kerfDiameter));
   const [overscan, setOverscan] = useState(2);
+  const [labelPower, setLabelPower] = useState(15);
+  const [labelSpeed, setLabelSpeed] = useState(preset.etchSpeedMax);
 
   useEffect(() => {
     if (!isOpen) {
@@ -46,6 +48,12 @@ export default function LaserTestPatternModal({
     setPowerMax(isEtch ? preset.etchPowerMax : preset.cutPowerMax);
     setLineInterval(Math.max(0.05, preset.kerfDiameter));
   }, [isOpen, preset, process]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLabelSpeed(preset.etchSpeedMax);
+    }
+  }, [isOpen, preset]);
 
   if (!isOpen) {
     return null;
@@ -78,7 +86,7 @@ export default function LaserTestPatternModal({
         <p className="section-note">
           Speed increases left-to-right. Power increases bottom-to-top. The grid uses {tool.name}
           {material ? ` with ${material.name}` : ''}. Axis values and a parameter summary are
-          etched around the test cells.
+          marked along-path with the label settings before the cells run.
         </p>
 
         <label className="field-row laser-test-process">
@@ -169,6 +177,21 @@ export default function LaserTestPatternModal({
               onChange={setRectangleHeight}
             />
             <NumberField label="Grid gap" value={gap} min={0} step={0.5} onChange={setGap} />
+            <NumberField
+              label="Label power (%)"
+              value={labelPower}
+              min={0}
+              max={100}
+              step={1}
+              onChange={setLabelPower}
+            />
+            <NumberField
+              label="Label speed"
+              value={labelSpeed}
+              min={1}
+              step={1}
+              onChange={setLabelSpeed}
+            />
             {process === 'etch' ? (
               <>
                 <NumberField
@@ -207,6 +230,8 @@ export default function LaserTestPatternModal({
               gap: Math.max(0, gap),
               lineInterval: Math.max(0.01, lineInterval),
               overscan: Math.max(0, overscan),
+              labelPower: Math.min(100, Math.max(0, labelPower)),
+              labelSpeed: Math.max(1, labelSpeed),
             });
             onClose();
           }}

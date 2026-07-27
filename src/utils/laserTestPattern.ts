@@ -117,9 +117,9 @@ export function buildLaserTestPattern({
       tabHeight: 1,
       pocketEnabled: false,
       pocketStepOver: Math.max(0.1, materialPreset.kerfDiameter),
-      laserProcess: 'etch',
-      laserPower: materialPreset.etchPowerMin,
-      laserSpeed: materialPreset.etchSpeedMax,
+      laserProcess: 'cut',
+      laserPower: options.labelPower,
+      laserSpeed: options.labelSpeed,
       laserPasses: 1,
       laserLineInterval: Math.max(0.01, materialPreset.kerfDiameter),
       laserOverscan: 0,
@@ -127,42 +127,11 @@ export function buildLaserTestPattern({
     operations.push(operation);
   }
 
-  for (let row = 0; row < options.rows; row += 1) {
-    const power = interpolate(options.powerMin, options.powerMax, row, options.rows);
-    for (let column = 0; column < options.columns; column += 1) {
-      const speed = interpolate(options.speedMin, options.speedMax, column, options.columns);
-      operations.push({
-        id: createId(),
-        type: 'rect',
-        x: gridX + column * (options.rectangleWidth + options.gap),
-        y: gridY + row * (options.rectangleHeight + options.gap),
-        width: options.rectangleWidth,
-        height: options.rectangleHeight,
-        cornerRadius: 0,
-        depth: settings.cutDepth,
-        toolId: tool.id,
-        materialId,
-        cutSide: 'along',
-        tabsEnabled: false,
-        tabCount: 2,
-        tabWidth: 1,
-        tabHeight: 1,
-        pocketEnabled: false,
-        pocketStepOver: Math.max(0.1, materialPreset.kerfDiameter),
-        laserProcess: options.process,
-        laserPower: power,
-        laserSpeed: speed,
-        laserPasses: 1,
-        laserLineInterval: options.lineInterval,
-        laserOverscan: options.process === 'etch' ? options.overscan : 0,
-      });
-    }
-  }
-
   const processLabel = options.process === 'etch' ? 'ETCH' : 'CUT';
   const title = `LASER TEST PATTERN${materialName ? ` - ${materialName.toUpperCase()}` : ''}`;
   const summaryLines = [
     `${processLabel} | SPEED ${formatValue(options.speedMin)}-${formatValue(options.speedMax)} MM/MIN | POWER ${formatValue(options.powerMin)}-${formatValue(options.powerMax)}%`,
+    `LABELS ALONG PATH | ${formatValue(options.labelPower)}% POWER | ${formatValue(options.labelSpeed)} MM/MIN`,
     `GRID ${options.columns}X${options.rows} | CELL ${formatValue(options.rectangleWidth)}X${formatValue(options.rectangleHeight)} MM | GAP ${formatValue(options.gap)} MM`,
     ...(options.process === 'etch'
       ? [
@@ -245,6 +214,38 @@ export function buildLaserTestPattern({
       text: powerLabels[row],
       fontSize: labelFontSize,
     });
+  }
+
+  for (let row = 0; row < options.rows; row += 1) {
+    const power = interpolate(options.powerMin, options.powerMax, row, options.rows);
+    for (let column = 0; column < options.columns; column += 1) {
+      const speed = interpolate(options.speedMin, options.speedMax, column, options.columns);
+      operations.push({
+        id: createId(),
+        type: 'rect',
+        x: gridX + column * (options.rectangleWidth + options.gap),
+        y: gridY + row * (options.rectangleHeight + options.gap),
+        width: options.rectangleWidth,
+        height: options.rectangleHeight,
+        cornerRadius: 0,
+        depth: settings.cutDepth,
+        toolId: tool.id,
+        materialId,
+        cutSide: 'along',
+        tabsEnabled: false,
+        tabCount: 2,
+        tabWidth: 1,
+        tabHeight: 1,
+        pocketEnabled: false,
+        pocketStepOver: Math.max(0.1, materialPreset.kerfDiameter),
+        laserProcess: options.process,
+        laserPower: power,
+        laserSpeed: speed,
+        laserPasses: 1,
+        laserLineInterval: options.lineInterval,
+        laserOverscan: options.process === 'etch' ? options.overscan : 0,
+      });
+    }
   }
 
   return operations;
