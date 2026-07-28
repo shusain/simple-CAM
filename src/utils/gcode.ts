@@ -29,6 +29,16 @@ import {
   getToolRadius,
 } from './gcode/path';
 import { getCirclePlan, getOperationPlannedPaths } from './toolpathPreview';
+import {
+  formatMillingToolGeometrySummary,
+  getMillingToolMaxUsableDepth,
+  getMillingToolTypeLabel,
+} from './millingToolGeometry';
+import {
+  applyMillingPathPlan,
+  getMillingPathCompensationTool,
+  resolveMillingPathPlan,
+} from './millingPathStrategy';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 import { buildLaserFillSegments } from './laserFill';
 
@@ -151,7 +161,30 @@ function formatToolLabel(tool: Tool | null): string {
   }
   return tool.isLaser
     ? `${tool.name} (laser)`
-    : `${tool.name} (Ø${num(tool.diameter)}mm)`;
+    : `${tool.name} (${getMillingToolTypeLabel(tool.millingGeometry.type)}, Ø${num(
+        tool.diameter
+      )}mm)`;
+}
+
+function appendMillingGeometryDepthWarning(
+  lines: string[],
+  operation: Operation,
+  tool: Tool | null
+): void {
+  if (!tool || tool.isLaser) {
+    return;
+  }
+
+  const targetDepth = Math.abs(Number(operation.depth) || 0);
+  const usableDepth = getMillingToolMaxUsableDepth(tool);
+  if (usableDepth > 0 && targetDepth > usableDepth + 1e-6) {
+    lines.push(
+      `; WARNING: target depth ${num(targetDepth)}mm exceeds ${num(
+        usableDepth
+      )}mm usable tool depth`
+    );
+    lines.push(`; Tool geometry: ${formatMillingToolGeometrySummary(tool)}`);
+  }
 }
 
 function appendToolChange(lines: string[], previousTool: Tool | null, nextTool: Tool | null, settings: MachineSettings): void {
@@ -908,7 +941,7 @@ function appendRectCut(
   if (!firstPath) {
     return;
   }
-  const toolRadius = getToolRadius(tool);
+  const toolRadius = getToolRadius(getMillingPathCompensationTool(operation, tool));
 
   if (firstPath.fallbackToAlongPath && firstPath.cutSide === 'inside') {
     lines.push('; Cut rectangle (inside requested, falling back to along path: tool too large for inside offset)');
@@ -1096,45 +1129,83 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
       return;
     }
 
-    if (operation.type === 'drill') {
-      appendDrill(lines, operation, settings, tool, useStartEndClearance);
+    let millingOperation: Operation = operation;
+    if (isPathOperation(operation)) {
+      const millingPlan = resolveMillingPathPlan(operation, tool, settings.cutDepth);
+      if (millingPlan) {
+        if (!millingPlan.valid) {
+          const strategyLabel =
+            millingPlan.strategy === 'v-groove' ? 'V-groove' : 'chamfer edge';
+          lines.push(`; Skipped ${operation.type} ${strategyLabel}: ${millingPlan.issue}`);
+          lines.push('');
+          previousTool = tool;
+          previousToolKey = toolKey;
+          return;
+        }
+
+        millingOperation = applyMillingPathPlan(operation, millingPlan);
+        if (millingPlan.strategy === 'v-groove') {
+          lines.push(
+            `; V-groove: target width ${num(millingPlan.targetWidth)}mm, result width ${num(
+              millingPlan.actualWidth
+            )}mm, depth ${num(Math.abs(millingPlan.finalDepth))}mm`
+          );
+        } else {
+          lines.push(
+            `; Chamfer edge: target width ${num(
+              millingPlan.targetWidth
+            )}mm, result width ${num(millingPlan.actualWidth)}mm, depth ${num(
+              Math.abs(millingPlan.finalDepth)
+            )}mm, tip compensation ${num(millingPlan.compensationRadius)}mm`
+          );
+        }
+        if (millingPlan.issue) {
+          lines.push(`; WARNING: ${millingPlan.issue}`);
+        }
+      }
+    }
+
+    appendMillingGeometryDepthWarning(lines, millingOperation, tool);
+
+    if (millingOperation.type === 'drill') {
+      appendDrill(lines, millingOperation, settings, tool, useStartEndClearance);
       previousTool = tool;
       previousToolKey = toolKey;
       useStartEndClearance = false;
       return;
     }
 
-    if (operation.type === 'line') {
-      appendLineCut(lines, operation, settings, tool, useStartEndClearance);
+    if (millingOperation.type === 'line') {
+      appendLineCut(lines, millingOperation, settings, tool, useStartEndClearance);
       previousTool = tool;
       previousToolKey = toolKey;
       useStartEndClearance = false;
       return;
     }
 
-    if (operation.type === 'rect') {
-      appendRectCut(lines, operation, settings, tool, useStartEndClearance);
+    if (millingOperation.type === 'rect') {
+      appendRectCut(lines, millingOperation, settings, tool, useStartEndClearance);
       previousTool = tool;
       previousToolKey = toolKey;
       useStartEndClearance = false;
       return;
     }
 
-    if (operation.type === 'circle') {
-      appendCircleCut(lines, operation, settings, tool, useStartEndClearance);
+    if (millingOperation.type === 'circle') {
+      appendCircleCut(lines, millingOperation, settings, tool, useStartEndClearance);
       previousTool = tool;
       previousToolKey = toolKey;
       useStartEndClearance = false;
       return;
     }
 
-    if (operation.type === 'surface-rough') {
+    if (millingOperation.type === 'surface-rough') {
       appendSurfaceRoughCut(
         lines,
-        operation,
+        millingOperation,
         settings,
         tool,
-        importedMeshMap.get(operation.meshId),
+        importedMeshMap.get(millingOperation.meshId),
         useStartEndClearance
       );
       previousTool = tool;
@@ -1143,13 +1214,13 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
       return;
     }
 
-    if (operation.type === 'surface-finish') {
+    if (millingOperation.type === 'surface-finish') {
       appendSurfaceFinishCut(
         lines,
-        operation,
+        millingOperation,
         settings,
         tool,
-        importedMeshMap.get(operation.meshId),
+        importedMeshMap.get(millingOperation.meshId),
         useStartEndClearance
       );
       previousTool = tool;
@@ -1158,14 +1229,14 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
       return;
     }
 
-    if (!isPathOperation(operation)) {
+    if (!isPathOperation(millingOperation)) {
       return;
     }
 
-    if (operation.type === 'text') {
-      appendTextCut(lines, operation, settings, tool, useStartEndClearance);
+    if (millingOperation.type === 'text') {
+      appendTextCut(lines, millingOperation, settings, tool, useStartEndClearance);
     } else {
-      appendSketchCut(lines, operation, settings, tool, useStartEndClearance);
+      appendSketchCut(lines, millingOperation, settings, tool, useStartEndClearance);
     }
     previousTool = tool;
     previousToolKey = toolKey;

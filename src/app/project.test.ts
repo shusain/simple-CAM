@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildProjectFile, hydrateProjectFile } from './project';
-import { makeDrillOperation, makeMaterial, makeSurfaceFinishOperation, makeTool } from '../test/factories';
+import { makeDrillOperation, makeLineOperation, makeMaterial, makeSurfaceFinishOperation, makeTool } from '../test/factories';
 
 describe('project helpers', () => {
   it('hydrates projects with normalized tools, materials, and sanitized operations', () => {
     const project = {
-      version: 1,
+      version: 2,
       settings: { activeMaterialId: 'missing-material', safeZ: 12 },
       materials: [{ id: '', name: '  MDF  ' }, makeMaterial({ id: 'material-baltic', name: 'Baltic Birch' })],
       tools: [{ id: '', name: 'Tool Raw' }, makeTool({ id: 'tool-finisher', diameter: 1.5 })],
@@ -67,14 +67,60 @@ describe('project helpers', () => {
     };
 
     expect(buildProjectFile(data)).toEqual({
-      version: 1,
+      version: 2,
       ...data,
+    });
+  });
+
+  it('hydrates the current milling geometry project schema', () => {
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 8,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+    const hydrated = hydrateProjectFile(
+      {
+        version: 2,
+        settings: { activeMaterialId: 'material-1' } as never,
+        materials: [makeMaterial()],
+        tools: [vBit],
+        activeToolId: vBit.id,
+        operations: [
+          makeLineOperation({
+            toolId: vBit.id,
+            millingStrategy: 'v-groove',
+            millingTargetWidth: 4,
+          }),
+        ],
+      },
+      () => 'unused'
+    );
+
+    expect(hydrated.tools[0]).toMatchObject({
+      id: 'v-bit-1',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 8,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+    expect(hydrated.operations[0]).toMatchObject({
+      type: 'line',
+      millingStrategy: 'v-groove',
+      millingTargetWidth: 4,
     });
   });
 
   it('hydrates laser tool and operation settings from project files', () => {
     const project = {
-      version: 1,
+      version: 2,
       settings: {
         activeMaterialId: 'material-1',
         startGcode: 'G21\nG90',

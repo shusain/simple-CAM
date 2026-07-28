@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeSettings, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTool } from '../test/factories';
+import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTool } from '../test/factories';
 import { buildToolpathPreview3D } from './toolpathPreview3d';
 
 describe('buildToolpathPreview3D', () => {
@@ -190,5 +190,120 @@ describe('buildToolpathPreview3D', () => {
     expect(preview.segments.some((segment) => segment.operationType === 'surface-finish' && segment.kind === 'cut')).toBe(true);
     expect(preview.segments.some((segment) => segment.operationType === 'surface-finish' && segment.kind === 'plunge')).toBe(true);
     expect(preview.bounds.minZ).toBeLessThanOrEqual(-1.5);
+  });
+
+  it('uses geometry-derived V-groove depth in the 3D path preview', () => {
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 20,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+    const preview = buildToolpathPreview3D({
+      operations: [
+        makeLineOperation({
+          toolId: vBit.id,
+          depth: -8,
+          millingStrategy: 'v-groove',
+          millingTargetWidth: 6,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [vBit],
+    });
+    const cutDepths = preview.segments
+      .filter((segment) => segment.kind === 'cut')
+      .flatMap((segment) => segment.points.map((point) => point.z));
+
+    expect(Math.min(...cutDepths)).toBeCloseTo(-5.02295, 4);
+  });
+
+  it('uses chamfer depth and tip-radius compensation in the 3D path preview', () => {
+    const chamferMill = makeTool({
+      id: 'chamfer-1',
+      diameter: 10,
+      millingGeometry: {
+        type: 'chamfer',
+        cuttingLength: 10,
+        tipDiameter: 2,
+        includedAngle: 90,
+      },
+    });
+    const preview = buildToolpathPreview3D({
+      operations: [
+        makeCircleOperation({
+          x: 10,
+          y: 10,
+          radius: 5,
+          toolId: chamferMill.id,
+          depth: -3,
+          cutSide: 'outside',
+          millingStrategy: 'chamfer-edge',
+          millingTargetWidth: 2,
+        }),
+      ],
+      settings: makeSettings({ circleSegments: 16 }),
+      tools: [chamferMill],
+    });
+    const cutSegments = preview.segments.filter((segment) => segment.kind === 'cut');
+    const cutDepths = cutSegments.flatMap((segment) =>
+      segment.points.map((point) => point.z)
+    );
+    const radialDistances = cutSegments.flatMap((segment) =>
+      segment.points.map((point) => Math.hypot(point.x - 10, point.y - 10))
+    );
+
+    expect(Math.min(...cutDepths)).toBeCloseTo(-2);
+    expect(Math.max(...radialDistances)).toBeCloseTo(6);
+  });
+
+  it('includes retaining-tab lift motion in the shared 3D cut stream', () => {
+    const tool = makeTool({
+      id: 'tool-1',
+      diameter: 2,
+      materialProfiles: {
+        'mat-1': {
+          cutFeedRate: 300,
+          plungeFeedRate: 120,
+          cutDepthPerPass: 2,
+          drillDepthPerPass: 2,
+        },
+      },
+    });
+    const preview = buildToolpathPreview3D({
+      operations: [
+        makeRectOperation({
+          depth: -2,
+          toolId: tool.id,
+          materialId: 'mat-1',
+          tabsEnabled: true,
+          tabCount: 2,
+          tabWidth: 1,
+          tabHeight: 1,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [tool],
+    });
+    const [cutSegment] = preview.segments.filter(
+      (segment) => segment.kind === 'cut'
+    );
+    const depths = cutSegment.points.map((point) => point.z);
+
+    expect(depths).toContain(-2);
+    expect(depths).toContain(-1);
+    expect(
+      cutSegment.points.some(
+        (point, index) =>
+          index > 0 &&
+          point.x === cutSegment.points[index - 1].x &&
+          point.y === cutSegment.points[index - 1].y &&
+          point.z !== cutSegment.points[index - 1].z
+      )
+    ).toBe(true);
   });
 });

@@ -351,6 +351,53 @@ describe('geometry', () => {
 
     expect(
       sanitizeOperation({
+        id: 'v-groove-raw',
+        type: 'rect',
+        x: 0,
+        y: 0,
+        width: 10,
+        height: 4,
+        depth: -5,
+        millingStrategy: 'v-groove',
+        millingTargetWidth: 3,
+        cutSide: 'outside',
+        tabsEnabled: true,
+        pocketEnabled: true,
+      })
+    ).toMatchObject({
+      type: 'rect',
+      millingStrategy: 'v-groove',
+      millingTargetWidth: 3,
+      cutSide: 'along',
+      tabsEnabled: false,
+      pocketEnabled: false,
+    });
+
+    expect(
+      sanitizeOperation({
+        id: 'chamfer-raw',
+        type: 'circle',
+        x: 5,
+        y: 5,
+        radius: 4,
+        depth: -2,
+        millingStrategy: 'chamfer-edge',
+        millingTargetWidth: 1.5,
+        cutSide: 'inside',
+        tabsEnabled: true,
+        pocketEnabled: true,
+      })
+    ).toMatchObject({
+      type: 'circle',
+      millingStrategy: 'chamfer-edge',
+      millingTargetWidth: 1.5,
+      cutSide: 'inside',
+      tabsEnabled: false,
+      pocketEnabled: false,
+    });
+
+    expect(
+      sanitizeOperation({
         id: 'surface-rough',
         type: 'surface-rough',
         meshId: 'mesh-1',

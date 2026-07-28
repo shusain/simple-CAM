@@ -1,6 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { analyzeSketchIntegrity, getSketchSegments, getSketchStartPoint } from '../utils/geometry';
 import { getImportedMeshWorldBounds } from '../utils/importStl';
+import {
+  formatMillingToolGeometrySummary,
+  getMillingToolMaxUsableDepth,
+  getMillingToolTypeLabel,
+} from '../utils/millingToolGeometry';
+import {
+  getDefaultChamferWidth,
+  getDefaultVGrooveWidth,
+  resolveChamferEdgePlan,
+  resolveVGroovePlan,
+} from '../utils/millingPathStrategy';
 import { resolveLaserMaterialPreset } from '../utils/tooling';
 import { TEXT_FONT_OPTIONS } from '../utils/text';
 import NumericInput from './common/NumericInput';
@@ -9,6 +20,7 @@ import type {
   CutSide,
   Operation,
 } from '../types';
+import { isPathOperation } from '../types';
 import { CutSideEditor, DepthEditor } from './operationsPanel/controls';
 import {
   formatOperationLabel,
@@ -113,6 +125,40 @@ export default function OperationsPanel({
     ? tools.find((tool) => tool.id === selectedOperation.toolId) || null
     : null;
   const isLaserOperation = Boolean(selectedOperationTool?.isLaser);
+  const selectedPathOperation = isPathOperation(selectedOperation) ? selectedOperation : null;
+  const millingStrategy = selectedPathOperation?.millingStrategy || 'standard';
+  const isVGroove = millingStrategy === 'v-groove';
+  const isChamferEdge = millingStrategy === 'chamfer-edge';
+  const isSpecialMillingStrategy = isVGroove || isChamferEdge;
+  const selectedToolIsVBit =
+    Boolean(selectedOperationTool && !selectedOperationTool.isLaser) &&
+    selectedOperationTool?.millingGeometry.type === 'v-bit';
+  const selectedToolIsChamfer =
+    Boolean(selectedOperationTool && !selectedOperationTool.isLaser) &&
+    selectedOperationTool?.millingGeometry.type === 'chamfer';
+  const selectedPathSupportsChamfer =
+    selectedPathOperation?.type === 'rect' ||
+    selectedPathOperation?.type === 'circle' ||
+    selectedPathOperation?.type === 'text' ||
+    (selectedPathOperation?.type === 'sketch' &&
+      Boolean(sketchIntegrity?.detectedClosed || selectedPathOperation.closed));
+  const vGroovePlan = selectedPathOperation
+    ? resolveVGroovePlan(selectedPathOperation, selectedOperationTool, -1)
+    : null;
+  const chamferEdgePlan = selectedPathOperation
+    ? resolveChamferEdgePlan(selectedPathOperation, selectedOperationTool, -1)
+    : null;
+  const millingPathPlan = vGroovePlan || chamferEdgePlan;
+  const millingToolMaxDepth =
+    selectedOperationTool && !selectedOperationTool.isLaser
+      ? getMillingToolMaxUsableDepth(selectedOperationTool)
+      : 0;
+  const selectedTargetDepth =
+    millingPathPlan?.valid
+      ? Math.abs(millingPathPlan.finalDepth)
+      : Math.abs(Number(selectedOperation?.depth) || 0);
+  const exceedsMillingToolDepth =
+    millingToolMaxDepth > 0 && selectedTargetDepth > millingToolMaxDepth + 1e-6;
   const selectedLaserPreset = resolveLaserMaterialPreset(
     selectedOperationTool,
     selectedOperation?.materialId
@@ -166,9 +212,13 @@ export default function OperationsPanel({
       : ['along'];
   const shouldShowPocketControls =
     !isLaserOperation &&
+    millingStrategy === 'standard' &&
     (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle');
   const shouldShowSketchPocketControls =
-    !isLaserOperation && selectedOperation?.type === 'sketch' && effectiveSketchClosed;
+    !isLaserOperation &&
+    millingStrategy === 'standard' &&
+    selectedOperation?.type === 'sketch' &&
+    effectiveSketchClosed;
   const shouldHideTabsForPocket =
     (selectedOperation?.type === 'rect' || selectedOperation?.type === 'circle' || selectedOperation?.type === 'sketch') &&
     selectedOperation.pocketEnabled &&
@@ -394,10 +444,11 @@ export default function OperationsPanel({
             <DepthEditor
               value={selectedOperation.depth}
               onChange={(value) => onUpdateOperation(selectedOperation.id, { depth: value })}
+              label={isSpecialMillingStrategy ? 'Maximum depth' : 'Depth'}
             />
           ) : null}
 
-          {!isLaserOperation && (selectedOperation.type === 'rect' || selectedOperation.type === 'circle') ? (
+          {!isLaserOperation && !isVGroove && (selectedOperation.type === 'rect' || selectedOperation.type === 'circle') ? (
             <CutSideEditor
               value={selectedOperation.cutSide || 'outside'}
               onChange={(value) =>
@@ -406,10 +457,11 @@ export default function OperationsPanel({
                   pocketEnabled: value === 'inside' ? selectedOperation.pocketEnabled : false,
                 })
               }
+              options={isChamferEdge ? ['outside', 'inside'] : undefined}
             />
           ) : null}
 
-          {!isLaserOperation && selectedOperation.type === 'sketch' ? (
+          {!isLaserOperation && !isVGroove && selectedOperation.type === 'sketch' ? (
             <CutSideEditor
               value={selectedOperation.cutSide || (effectiveSketchClosed ? 'outside' : 'along')}
               onChange={(value) =>
@@ -420,11 +472,11 @@ export default function OperationsPanel({
                 })
               }
               disabled={!effectiveSketchClosed}
-              options={sketchCutOptions}
+              options={isChamferEdge ? ['outside', 'inside'] : sketchCutOptions}
             />
           ) : null}
 
-          {!isLaserOperation && selectedOperation.type === 'text' ? (
+          {!isLaserOperation && !isVGroove && selectedOperation.type === 'text' ? (
             <CutSideEditor
               value={selectedOperation.cutSide || 'along'}
               onChange={(value) =>
@@ -432,6 +484,7 @@ export default function OperationsPanel({
                   cutSide: value,
                 })
               }
+              options={isChamferEdge ? ['outside', 'inside'] : undefined}
             />
           ) : null}
 
@@ -522,6 +575,7 @@ export default function OperationsPanel({
                     selectedOperation.laserLineInterval ??
                     Math.max(0.05, nextPreset.kerfDiameter),
                   laserOverscan: selectedOperation.laserOverscan ?? 2,
+                  millingStrategy: 'standard',
                   cutSide: 'along',
                   pocketEnabled: false,
                   tabsEnabled: false,
@@ -535,11 +589,199 @@ export default function OperationsPanel({
                         tool,
                         selectedOperation.materialId
                       ).kerfDiameter}mm kerf)`
-                    : `${tool.name} (Ø${tool.diameter}mm)`}
+                    : `${tool.name} (${getMillingToolTypeLabel(
+                        tool.millingGeometry.type
+                      )}, Ø${tool.diameter}mm)`}
                 </option>
               ))}
             </select>
           </label>
+
+          {selectedPathOperation &&
+          !isLaserOperation &&
+          (selectedToolIsVBit || selectedToolIsChamfer || isSpecialMillingStrategy) ? (
+            <>
+              <div className="subsection-title">Milling strategy</div>
+              <label className="field-row">
+                <span>Strategy</span>
+                <select
+                  aria-label="Milling strategy"
+                  value={millingStrategy}
+                  onChange={(event) => {
+                    const nextStrategy = event.target.value;
+                    if (nextStrategy === 'standard' || !selectedOperationTool) {
+                      onUpdateOperation(selectedOperation.id, {
+                        millingStrategy: 'standard',
+                      });
+                      return;
+                    }
+
+                    const targetWidth =
+                      nextStrategy === 'chamfer-edge'
+                        ? getDefaultChamferWidth(
+                            selectedPathOperation,
+                            selectedOperationTool,
+                            -1
+                          )
+                        : getDefaultVGrooveWidth(
+                            selectedPathOperation,
+                            selectedOperationTool,
+                            -1
+                          );
+                    const updates: Partial<Operation> = {
+                      millingStrategy:
+                        nextStrategy === 'chamfer-edge' ? 'chamfer-edge' : 'v-groove',
+                      millingTargetWidth: Number(targetWidth.toFixed(3)),
+                    };
+                    if ('cutSide' in selectedPathOperation) {
+                      Object.assign(updates, {
+                        cutSide:
+                          nextStrategy === 'chamfer-edge'
+                            ? selectedPathOperation.cutSide === 'inside'
+                              ? 'inside'
+                              : 'outside'
+                            : 'along',
+                        pocketEnabled: false,
+                        tabsEnabled: false,
+                      });
+                    }
+                    onUpdateOperation(selectedOperation.id, updates);
+                  }}
+                >
+                  <option value="standard">Standard depth</option>
+                  <option value="v-groove" disabled={!selectedToolIsVBit}>
+                    Fixed-width V-groove
+                  </option>
+                  <option
+                    value="chamfer-edge"
+                    disabled={!selectedToolIsChamfer || !selectedPathSupportsChamfer}
+                  >
+                    Chamfer edge
+                  </option>
+                </select>
+              </label>
+              {isVGroove ? (
+                <>
+                  <NumericFieldRow
+                    label="Groove width"
+                    value={selectedPathOperation.millingTargetWidth ?? 0}
+                    min={
+                      selectedOperationTool?.millingGeometry.type === 'v-bit'
+                        ? selectedOperationTool.millingGeometry.tipDiameter + 0.01
+                        : 0.01
+                    }
+                    max={selectedOperationTool?.diameter}
+                    step={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        millingTargetWidth: Math.max(0.01, value || 0.01),
+                      })
+                    }
+                  />
+                  {vGroovePlan?.valid ? (
+                    <>
+                      <label className="field-row">
+                        <span>Planned depth</span>
+                        <input
+                          aria-label="Planned V-groove depth"
+                          type="text"
+                          readOnly
+                          value={Number(Math.abs(vGroovePlan.finalDepth).toFixed(3))}
+                        />
+                      </label>
+                      <label className="field-row">
+                        <span>Result width</span>
+                        <input
+                          aria-label="Planned V-groove width"
+                          type="text"
+                          readOnly
+                          value={Number(vGroovePlan.actualWidth.toFixed(3))}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  {vGroovePlan?.issue ? (
+                    <p className="tool-geometry-warning" role="alert">
+                      {vGroovePlan.issue}
+                    </p>
+                  ) : null}
+                  <InfoDisclosure label="About fixed-width V-grooves">
+                    The requested surface width determines cutting depth from the V-bit tip
+                    diameter and included angle. Maximum depth acts as a safety cap. This first
+                    strategy follows the selected path at one groove width; area-clearing
+                    V-carving will be a separate strategy.
+                  </InfoDisclosure>
+                </>
+              ) : null}
+              {isChamferEdge ? (
+                <>
+                  <NumericFieldRow
+                    label="Chamfer width"
+                    value={selectedPathOperation.millingTargetWidth ?? 0}
+                    min={0.01}
+                    max={selectedOperationTool?.diameter}
+                    step={0.1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        millingTargetWidth: Math.max(0.01, value || 0.01),
+                      })
+                    }
+                  />
+                  {chamferEdgePlan?.valid ? (
+                    <>
+                      <label className="field-row">
+                        <span>Planned depth</span>
+                        <input
+                          aria-label="Planned chamfer depth"
+                          type="text"
+                          readOnly
+                          value={Number(Math.abs(chamferEdgePlan.finalDepth).toFixed(3))}
+                        />
+                      </label>
+                      <label className="field-row">
+                        <span>Result width</span>
+                        <input
+                          aria-label="Planned chamfer width"
+                          type="text"
+                          readOnly
+                          value={Number(chamferEdgePlan.actualWidth.toFixed(3))}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  {chamferEdgePlan?.issue ? (
+                    <p className="tool-geometry-warning" role="alert">
+                      {chamferEdgePlan.issue}
+                    </p>
+                  ) : null}
+                  <InfoDisclosure label="About chamfer edges">
+                    Chamfer width determines vertical depth from the cutter&apos;s included angle.
+                    The tool centerline is offset inside or outside by the tip radius so the lower
+                    tip edge follows the selected boundary. Maximum depth remains a safety cap.
+                  </InfoDisclosure>
+                </>
+              ) : null}
+            </>
+          ) : null}
+
+          {selectedOperationTool && !isLaserOperation ? (
+            <>
+              <InfoDisclosure label="About milling tool geometry">
+                <p>{formatMillingToolGeometrySummary(selectedOperationTool)}</p>
+                <p>
+                  Geometry-aware V-carve, chamfer, and ball-nose strategies are being introduced
+                  incrementally. Current standard profile and pocket operations retain their
+                  existing centerline behavior.
+                </p>
+              </InfoDisclosure>
+              {exceedsMillingToolDepth ? (
+                <p className="tool-geometry-warning" role="alert">
+                  Target depth {selectedTargetDepth} mm exceeds this cutter&apos;s{' '}
+                  {Number(millingToolMaxDepth.toFixed(3))} mm usable depth.
+                </p>
+              ) : null}
+            </>
+          ) : null}
 
           {isLaserOperation && supportsLaserOutput ? (
             <>
@@ -791,7 +1033,9 @@ export default function OperationsPanel({
                   })
                 }
               />
-              {!isLaserOperation && selectedOperation.cutSide === 'outside' ? (
+              {!isLaserOperation &&
+              millingStrategy === 'standard' &&
+              selectedOperation.cutSide === 'outside' ? (
                 <>
                   <label className="field-row checkbox-row">
                     <span>Retaining tabs</span>
@@ -962,7 +1206,9 @@ export default function OperationsPanel({
                       ) : null}
                     </>
                   ) : null}
-                  {!isLaserOperation && !shouldHideTabsForPocket ? (
+                  {!isLaserOperation &&
+                  millingStrategy === 'standard' &&
+                  !shouldHideTabsForPocket ? (
                     <>
                       <label className="field-row checkbox-row">
                         <span>Retaining tabs</span>
@@ -1168,7 +1414,9 @@ export default function OperationsPanel({
                   ) : null}
                 </>
               ) : null}
-              {!isLaserOperation && !shouldHideTabsForPocket ? (
+              {!isLaserOperation &&
+              millingStrategy === 'standard' &&
+              !shouldHideTabsForPocket ? (
                 <>
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>
@@ -1263,7 +1511,9 @@ export default function OperationsPanel({
                   ) : null}
                 </>
               ) : null}
-              {!isLaserOperation && !shouldHideTabsForPocket ? (
+              {!isLaserOperation &&
+              millingStrategy === 'standard' &&
+              !shouldHideTabsForPocket ? (
                 <>
               <label className="field-row checkbox-row">
                 <span>Retaining tabs</span>

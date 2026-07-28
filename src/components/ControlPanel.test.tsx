@@ -141,6 +141,7 @@ describe('ControlPanel', () => {
     render(<ControlPanel {...buildProps({ onSettingsChange })} />);
 
     fireEvent.change(screen.getByLabelText('Height'), { target: { value: '25' } });
+    fireEvent.change(screen.getByLabelText('Stock thickness'), { target: { value: '6.35' } });
     fireEvent.change(screen.getByLabelText('Margin X'), { target: { value: '7.5' } });
     fireEvent.change(screen.getByLabelText('Margin Y'), { target: { value: '-4' } });
     fireEvent.change(screen.getByLabelText('Safe Z'), { target: { value: '6.5' } });
@@ -155,6 +156,7 @@ describe('ControlPanel', () => {
     fireEvent.change(screen.getByLabelText('Spindle speed'), { target: { value: '-100' } });
 
     expect(onSettingsChange).toHaveBeenCalledWith({ workHeight: 25 });
+    expect(onSettingsChange).toHaveBeenCalledWith({ stockThickness: 6.35 });
     expect(onSettingsChange).toHaveBeenCalledWith({ marginX: 7.5 });
     expect(onSettingsChange).toHaveBeenCalledWith({ marginY: 0 });
     expect(onSettingsChange).toHaveBeenCalledWith({ safeZ: 6.5 });
@@ -244,7 +246,7 @@ describe('ControlPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Tool Manager' }));
     const modal = (screen.getByText('Tool Manager').closest('.modal-card') ?? document.body) as HTMLElement;
 
-    fireEvent.click(within(modal).getByRole('button', { name: 'FinisherØ 1.5' }));
+    fireEvent.click(within(modal).getByRole('button', { name: /^Finisher/ }));
     fireEvent.click(within(modal).getByRole('button', { name: 'Add Tool' }));
     fireEvent.change(within(modal).getByLabelText('Name'), { target: { value: 'Finisher XL' } });
     const cutFeedInputs = within(modal).getAllByLabelText('Cut feed');
@@ -364,6 +366,62 @@ describe('ControlPanel', () => {
       'material-1',
       { laserKerfDiameter: 0.15 }
     );
+  });
+
+  it('shows and updates geometry-specific milling tool settings', () => {
+    const onUpdateTool = vi.fn();
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      name: '60 degree V-bit',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 8,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+
+    render(
+      <ControlPanel
+        {...buildProps({
+          tools: [vBit],
+          activeToolId: vBit.id,
+          onUpdateTool,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Tool Manager' }));
+    const modal = (screen.getByText('Tool Manager').closest('.modal-card') ??
+      document.body) as HTMLElement;
+
+    expect(within(modal).getByLabelText('Milling geometry')).toHaveValue('v-bit');
+    expect(within(modal).getByLabelText('Maximum diameter')).toHaveValue('12');
+    expect(within(modal).getByLabelText('Cutting length')).toHaveValue('8');
+    expect(within(modal).getByLabelText('Tip diameter')).toHaveValue('0.2');
+    expect(within(modal).getByLabelText('Included angle')).toHaveValue('60');
+    expect(within(modal).getByText(/allows up to 8 mm usable depth/)).toBeInTheDocument();
+
+    fireEvent.change(within(modal).getByLabelText('Included angle'), {
+      target: { value: '90' },
+    });
+    expect(onUpdateTool).toHaveBeenCalledWith('v-bit-1', {
+      millingGeometry: expect.objectContaining({
+        type: 'v-bit',
+        includedAngle: 90,
+      }),
+    });
+
+    fireEvent.change(within(modal).getByLabelText('Milling geometry'), {
+      target: { value: 'chamfer' },
+    });
+    expect(onUpdateTool).toHaveBeenCalledWith('v-bit-1', {
+      millingGeometry: expect.objectContaining({
+        type: 'chamfer',
+        includedAngle: 90,
+      }),
+    });
   });
 
   it('creates configurable laser test-pattern settings', () => {

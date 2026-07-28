@@ -1,4 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  changeMillingToolType,
+  getMillingToolMaxUsableDepth,
+  getMillingToolTypeLabel,
+  normalizeMillingToolGeometry,
+} from '../../utils/millingToolGeometry';
 import { resolveLaserMaterialPreset, resolveToolPreset } from '../../utils/tooling';
 import NumberField from './NumberField';
 import type { ToolManagerModalProps } from './types';
@@ -70,7 +76,9 @@ export default function ToolManagerModal({
                   >
                     <span>{tool.name}</span>
                     <span className="tool-meta">
-                      {tool.isLaser ? 'Laser' : `Ø ${tool.diameter}`}
+                      {tool.isLaser
+                        ? 'Laser'
+                        : `${getMillingToolTypeLabel(tool.millingGeometry.type)} · Ø ${tool.diameter}`}
                     </span>
                   </button>
                 </li>
@@ -117,17 +125,132 @@ export default function ToolManagerModal({
                 </select>
               </label>
               {!editingTool.isLaser ? (
-                <NumberField
-                  label="Diameter"
-                  value={editingTool.diameter}
-                  min={0.01}
-                  step={0.01}
-                  onChange={(value) =>
-                    onUpdateTool(editingTool.id, {
-                      diameter: Math.max(0.01, value || 0.01),
-                    })
-                  }
-                />
+                <>
+                  <div className="subsection-title">Cutter geometry</div>
+                  <label className="field-row">
+                    <span>Geometry</span>
+                    <select
+                      aria-label="Milling geometry"
+                      value={editingTool.millingGeometry.type}
+                      onChange={(event) => {
+                        const type =
+                          event.target.value === 'ball-nose' ||
+                          event.target.value === 'v-bit' ||
+                          event.target.value === 'chamfer'
+                            ? event.target.value
+                            : 'flat-end';
+                        onUpdateTool(editingTool.id, {
+                          millingGeometry: changeMillingToolType(
+                            editingTool.millingGeometry,
+                            type,
+                            editingTool.diameter
+                          ),
+                        });
+                      }}
+                    >
+                      <option value="flat-end">Flat end mill</option>
+                      <option value="ball-nose">Ball nose</option>
+                      <option value="v-bit">V-bit / V-carve</option>
+                      <option value="chamfer">Chamfer mill</option>
+                    </select>
+                  </label>
+                  <NumberField
+                    label={
+                      editingTool.millingGeometry.type === 'v-bit' ||
+                      editingTool.millingGeometry.type === 'chamfer'
+                        ? 'Maximum diameter'
+                        : 'Cutting diameter'
+                    }
+                    value={editingTool.diameter}
+                    min={0.01}
+                    step={0.01}
+                    onChange={(value) => {
+                      const diameter = Math.max(0.01, value || 0.01);
+                      onUpdateTool(editingTool.id, {
+                        diameter,
+                        millingGeometry: normalizeMillingToolGeometry(
+                          editingTool.millingGeometry,
+                          diameter
+                        ),
+                      });
+                    }}
+                  />
+                  <NumberField
+                    label={
+                      editingTool.millingGeometry.type === 'chamfer'
+                        ? 'Cutting height'
+                        : 'Cutting length'
+                    }
+                    value={editingTool.millingGeometry.cuttingLength}
+                    min={0.01}
+                    step={0.1}
+                    onChange={(value) =>
+                      onUpdateTool(editingTool.id, {
+                        millingGeometry: normalizeMillingToolGeometry(
+                          {
+                            ...editingTool.millingGeometry,
+                            cuttingLength: Math.max(0.01, value || 0.01),
+                          },
+                          editingTool.diameter
+                        ),
+                      })
+                    }
+                  />
+                  {editingTool.millingGeometry.type === 'v-bit' ||
+                  editingTool.millingGeometry.type === 'chamfer' ? (
+                    <>
+                      <NumberField
+                        label="Tip diameter"
+                        value={editingTool.millingGeometry.tipDiameter}
+                        min={0}
+                        max={editingTool.diameter}
+                        step={0.01}
+                        onChange={(value) =>
+                          onUpdateTool(editingTool.id, {
+                            millingGeometry: {
+                              ...editingTool.millingGeometry,
+                              tipDiameter: Math.min(
+                                editingTool.diameter,
+                                Math.max(0, value)
+                              ),
+                            },
+                          })
+                        }
+                      />
+                      <NumberField
+                        label="Included angle"
+                        value={editingTool.millingGeometry.includedAngle}
+                        min={1}
+                        max={179}
+                        step={1}
+                        onChange={(value) =>
+                          onUpdateTool(editingTool.id, {
+                            millingGeometry: {
+                              ...editingTool.millingGeometry,
+                              includedAngle: Math.min(179, Math.max(1, value || 1)),
+                            },
+                          })
+                        }
+                      />
+                      <p className="section-note">
+                        Included angle is measured between the two cutting faces. The configured
+                        profile allows up to{' '}
+                        {Number(getMillingToolMaxUsableDepth(editingTool).toFixed(3))} mm usable
+                        depth before reaching its diameter or cutting-height limit.
+                      </p>
+                    </>
+                  ) : editingTool.millingGeometry.type === 'ball-nose' ? (
+                    <p className="section-note">
+                      Ball radius is half the cutting diameter. Surface contact and result preview
+                      use the rounded tip profile.
+                    </p>
+                  ) : (
+                    <p className="section-note">
+                      Flat end mills use the full cutting radius from the tool tip through the
+                      configured cutting length.
+                    </p>
+                  )}
+                </>
               ) : null}
               <NumberField
                 label="Rapid feed"

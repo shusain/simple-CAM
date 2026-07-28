@@ -1,5 +1,7 @@
 import type { ImportedMesh } from '../../types';
 import { getImportedMeshWorldBounds } from '../../utils/importStl';
+import { buildMaterialRemovalMesh } from '../../utils/materialRemovalMesh';
+import type { MaterialRemovalPreview } from '../../utils/materialRemovalPreview';
 import type { Point3D, ToolpathPreview3D } from '../../utils/toolpathPreview3d';
 import type { AxisGizmo, ProjectedPoint, ProjectedTool, ProjectedTriangle } from './types';
 
@@ -17,13 +19,23 @@ export interface ProjectedScene {
   markers: ProjectedMarker[];
   bounds: ProjectedPoint[][];
   meshes: ProjectedTriangle[];
+  removalSurface: ProjectedRemovalTriangle[];
   gizmo: AxisGizmo[];
   tool: ProjectedTool | null;
+}
+
+export interface ProjectedRemovalTriangle {
+  points: ProjectedPoint[];
+  averageDepth: number;
+  surface: 'top' | 'side' | 'bottom';
+  averageHeight: number;
+  shade: number;
 }
 
 interface ProjectSceneOptions {
   preview: ToolpathPreview3D;
   importedMeshes: ImportedMesh[];
+  materialRemoval?: MaterialRemovalPreview;
   center: Point3D;
   yaw: number;
   pitch: number;
@@ -90,9 +102,10 @@ function buildBoundsBox(bounds: ToolpathPreview3D['bounds']): Point3D[][] {
 
 export function buildSceneBounds(
   preview: ToolpathPreview3D,
-  importedMeshes: ImportedMesh[]
+  importedMeshes: ImportedMesh[],
+  materialRemoval?: MaterialRemovalPreview
 ): ToolpathPreview3D['bounds'] {
-  return importedMeshes.reduce(
+  const meshBounds = importedMeshes.reduce(
     (bounds, mesh) => {
       const meshBounds = getImportedMeshWorldBounds(mesh);
       return {
@@ -106,11 +119,25 @@ export function buildSceneBounds(
     },
     { ...preview.bounds }
   );
+
+  if (!materialRemoval) {
+    return meshBounds;
+  }
+
+  return {
+    minX: Math.min(meshBounds.minX, 0),
+    maxX: Math.max(meshBounds.maxX, materialRemoval.width),
+    minY: Math.min(meshBounds.minY, 0),
+    maxY: Math.max(meshBounds.maxY, materialRemoval.height),
+    minZ: Math.min(meshBounds.minZ, -materialRemoval.stockThickness),
+    maxZ: Math.max(meshBounds.maxZ, 0),
+  };
 }
 
 export function projectScene({
   preview,
   importedMeshes,
+  materialRemoval,
   center,
   yaw,
   pitch,
@@ -248,6 +275,51 @@ export function projectScene({
     )
     .sort((left, right) => left.averageDepth - right.averageDepth);
 
+  const removalSurface: ProjectedRemovalTriangle[] = [];
+  if (materialRemoval) {
+    const removalMesh = buildMaterialRemovalMesh(materialRemoval);
+    const light = { x: -0.35, y: -0.45, z: 0.82 };
+    removalMesh.faces.forEach((face) => {
+      const rotatedNormal = rotatePoint(
+        face.normal,
+        { x: 0, y: 0, z: 0 },
+        yaw,
+        pitch
+      );
+      if (rotatedNormal.z <= 0.0001) {
+        return;
+      }
+
+      const rotated = face.points.map((point) =>
+        rotatePoint(point, center, yaw, pitch)
+      );
+      const lightAmount = Math.max(
+        0,
+        face.normal.x * light.x +
+          face.normal.y * light.y +
+          face.normal.z * light.z
+      );
+      removalSurface.push({
+        points: rotated.map(toScreen),
+        averageDepth:
+          rotated.reduce((sum, point) => sum + point.z, 0) /
+          rotated.length,
+        averageHeight:
+          face.points.reduce((sum, point) => sum + point.z, 0) /
+          face.points.length,
+        surface: face.surface,
+        shade:
+          face.surface === 'bottom'
+            ? 0.28
+            : Math.max(0.32, Math.min(1, 0.35 + lightAmount * 0.65)),
+      });
+    });
+
+    removalSurface.sort(
+      (left, right) => left.averageDepth - right.averageDepth
+    );
+  }
+
   const tool = playbackPoint
     ? (() => {
         const tip = toScreen(rotatePoint(playbackPoint.point, center, yaw, pitch));
@@ -300,6 +372,7 @@ export function projectScene({
     })),
     bounds: rawBounds.map((edge) => edge.map(toScreen)),
     meshes,
+    removalSurface,
     gizmo: axisVectors,
     tool,
   };

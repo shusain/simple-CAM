@@ -1284,6 +1284,16 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       ? Math.max(0, Number(data.laserOverscan))
       : undefined,
   };
+  const millingStrategy =
+    data.millingStrategy === 'v-groove'
+      ? 'v-groove' as const
+      : data.millingStrategy === 'chamfer-edge'
+        ? 'chamfer-edge' as const
+        : 'standard' as const;
+  const millingFields = {
+    millingStrategy,
+    millingTargetWidth: toOptionalPositiveNumber(data.millingTargetWidth),
+  };
 
   if (data.type === 'drill') {
     const x = toNumber(data.x, NaN);
@@ -1320,6 +1330,7 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
       ...laserFields,
+      ...millingFields,
     };
   }
 
@@ -1344,12 +1355,16 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
       ...laserFields,
-      cutSide: normalizeCutSideValue(data.cutSide, 'outside'),
-      tabsEnabled: Boolean(data.tabsEnabled),
+      ...millingFields,
+      cutSide:
+        millingStrategy === 'v-groove'
+          ? 'along'
+          : normalizeCutSideValue(data.cutSide, 'outside'),
+      tabsEnabled: millingStrategy === 'standard' ? Boolean(data.tabsEnabled) : false,
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
-      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketEnabled: millingStrategy === 'standard' ? Boolean(data.pocketEnabled) : false,
       pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
@@ -1370,12 +1385,16 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
       ...laserFields,
-      cutSide: normalizeCutSideValue(data.cutSide, 'outside'),
-      tabsEnabled: Boolean(data.tabsEnabled),
+      ...millingFields,
+      cutSide:
+        millingStrategy === 'v-groove'
+          ? 'along'
+          : normalizeCutSideValue(data.cutSide, 'outside'),
+      tabsEnabled: millingStrategy === 'standard' ? Boolean(data.tabsEnabled) : false,
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
-      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketEnabled: millingStrategy === 'standard' ? Boolean(data.pocketEnabled) : false,
       pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
@@ -1439,12 +1458,16 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
       ...laserFields,
-      cutSide: normalizeCutSideValue(data.cutSide, 'along'),
-      tabsEnabled: Boolean(data.tabsEnabled),
+      ...millingFields,
+      cutSide:
+        millingStrategy === 'v-groove'
+          ? 'along'
+          : normalizeCutSideValue(data.cutSide, 'along'),
+      tabsEnabled: millingStrategy === 'standard' ? Boolean(data.tabsEnabled) : false,
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
-      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketEnabled: millingStrategy === 'standard' ? Boolean(data.pocketEnabled) : false,
       pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }
@@ -1465,12 +1488,16 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       toolId: sanitizeToolId(data.toolId),
       materialId: sanitizeMaterialId(data.materialId),
       ...laserFields,
-      cutSide: normalizeCutSideValue(data.cutSide, 'along'),
-      tabsEnabled: Boolean(data.tabsEnabled),
+      ...millingFields,
+      cutSide:
+        millingStrategy === 'v-groove'
+          ? 'along'
+          : normalizeCutSideValue(data.cutSide, 'along'),
+      tabsEnabled: millingStrategy === 'standard' ? Boolean(data.tabsEnabled) : false,
       tabCount: Math.max(1, Math.round(toNumber(data.tabCount, 2))),
       tabWidth: toOptionalPositiveNumber(data.tabWidth) ?? 1,
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
-      pocketEnabled: Boolean(data.pocketEnabled),
+      pocketEnabled: millingStrategy === 'standard' ? Boolean(data.pocketEnabled) : false,
       pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
     };
   }

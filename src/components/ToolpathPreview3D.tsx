@@ -1,12 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ImportedMesh } from '../types';
+import type { MaterialRemovalPreview } from '../utils/materialRemovalPreview';
 import type { Point3D, ToolpathPreview3D } from '../utils/toolpathPreview3d';
 import { buildPlaybackLegs, getPlaybackPoint } from './toolpathPreview3d/playback';
 import { buildSceneBounds, projectScene } from './toolpathPreview3d/projection';
+import ThreeResultScene from './toolpathPreview3d/ThreeResultScene';
 
 interface ToolpathPreview3DProps {
   preview: ToolpathPreview3D;
   importedMeshes?: ImportedMesh[];
+  materialRemoval?: MaterialRemovalPreview;
+  resultDetail?: 'standard' | 'detailed' | 'ultra';
+  onResultDetailChange?: (
+    detail: 'standard' | 'detailed' | 'ultra'
+  ) => void;
 }
 
 const VIEW_WIDTH = 960;
@@ -24,6 +37,9 @@ const TOOL_CONE_RADIUS = 5.5;
 export default function ToolpathPreview3D({
   preview,
   importedMeshes = [],
+  materialRemoval,
+  resultDetail = 'standard',
+  onResultDetailChange,
 }: ToolpathPreview3DProps): React.JSX.Element {
   const [yaw, setYaw] = useState(-0.85);
   const [pitch, setPitch] = useState(-0.6);
@@ -31,6 +47,10 @@ export default function ToolpathPreview3D({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [playbackDistance, setPlaybackDistance] = useState(0);
+  const [viewMode, setViewMode] = useState<'toolpaths' | 'result' | 'combined'>(
+    'toolpaths'
+  );
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
 
   const playback = useMemo(() => buildPlaybackLegs(preview), [preview]);
@@ -49,6 +69,12 @@ export default function ToolpathPreview3D({
     [playback, playbackDistance]
   );
   const playbackProgress = playback.totalLength > 0 ? playbackDistance / playback.totalLength : 0;
+  const showToolpaths = viewMode !== 'result';
+  const showResult = viewMode !== 'toolpaths' && Boolean(materialRemoval);
+  const useWebglResult = showResult && !webglUnavailable;
+  const handleWebglUnavailable = useCallback(() => {
+    setWebglUnavailable(true);
+  }, []);
 
   useEffect(() => {
     setIsPlaying(false);
@@ -75,7 +101,10 @@ export default function ToolpathPreview3D({
     return () => window.clearInterval(timerId);
   }, [isPlaying, playback.totalLength, playbackDurationMs, playbackRate]);
 
-  const sceneBounds = useMemo(() => buildSceneBounds(preview, importedMeshes), [preview, importedMeshes]);
+  const sceneBounds = useMemo(
+    () => buildSceneBounds(preview, importedMeshes, materialRemoval),
+    [preview, importedMeshes, materialRemoval]
+  );
 
   const center = useMemo<Point3D>(
     () => ({
@@ -98,6 +127,7 @@ export default function ToolpathPreview3D({
       projectScene({
         preview,
         importedMeshes,
+        materialRemoval: useWebglResult ? undefined : materialRemoval,
         center,
         yaw,
         pitch,
@@ -112,13 +142,40 @@ export default function ToolpathPreview3D({
         playbackPoint,
         sceneBounds,
       }),
-    [center, fitRadius, importedMeshes, pitch, playbackPoint, preview, sceneBounds, yaw, zoom]
+    [
+      center,
+      fitRadius,
+      importedMeshes,
+      materialRemoval,
+      pitch,
+      playbackPoint,
+      preview,
+      sceneBounds,
+      yaw,
+      zoom,
+      useWebglResult,
+    ]
   );
 
   function getSegmentColor(kind: string): string {
     if (kind === 'rapid') return '#7dd3fc';
     if (kind === 'plunge') return '#f59e0b';
     return '#22c55e';
+  }
+
+  function getRemovalFaceColor(
+    surface: 'top' | 'side' | 'bottom',
+    shade: number
+  ): string {
+    const base =
+      surface === 'top'
+        ? [210, 158, 95]
+        : surface === 'side'
+          ? [151, 101, 59]
+          : [82, 55, 35];
+    return `rgb(${base
+      .map((channel) => Math.round(channel * shade))
+      .join(', ')})`;
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>): void {
@@ -190,10 +247,65 @@ export default function ToolpathPreview3D({
     <div className="preview3d-shell">
       <div className="preview3d-toolbar">
         <span>3D Preview</span>
-        <span className="preview3d-hint">Drag to orbit, wheel to zoom</span>
+        <div className="preview3d-toolbar-actions">
+          {materialRemoval ? (
+            <div
+              className="preview3d-mode-toggle"
+              role="group"
+              aria-label="3D preview display mode"
+            >
+              {(['toolpaths', 'result', 'combined'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className="tool-button"
+                  aria-pressed={viewMode === mode}
+                  onClick={() => setViewMode(mode)}
+                >
+                  {mode === 'toolpaths'
+                    ? 'Toolpaths'
+                    : mode === 'result'
+                      ? 'Result'
+                      : 'Combined'}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {materialRemoval && onResultDetailChange ? (
+            <label className="preview3d-detail-control">
+              <span>Result detail</span>
+              <select
+                aria-label="Result detail"
+                value={resultDetail}
+                onChange={(event) =>
+                  onResultDetailChange(
+                    event.target.value === 'ultra'
+                      ? 'ultra'
+                      : event.target.value === 'detailed'
+                        ? 'detailed'
+                        : 'standard'
+                  )
+                }
+              >
+                <option value="standard">Standard</option>
+                <option value="detailed">Detailed</option>
+                <option value="ultra">Ultra (desktop)</option>
+              </select>
+            </label>
+          ) : null}
+          <span className="preview3d-hint">Drag to orbit, wheel to zoom</span>
+        </div>
       </div>
       <div className="preview3d-stage">
-        <svg
+        {useWebglResult && materialRemoval ? (
+          <ThreeResultScene
+            materialRemoval={materialRemoval}
+            preview={preview}
+            showToolpaths={viewMode === 'combined'}
+            onUnavailable={handleWebglUnavailable}
+          />
+        ) : (
+          <svg
           className="preview3d-canvas"
           viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
           role="img"
@@ -217,7 +329,35 @@ export default function ToolpathPreview3D({
             />
           ))}
 
-          {projected.meshes.map((triangle, index) => (
+          {showResult ? (
+            <g aria-label="Material removal result">
+              {projected.removalSurface.map((triangle, index) => {
+                const fill = getRemovalFaceColor(
+                  triangle.surface,
+                  triangle.shade
+                );
+                return (
+                  <polygon
+                    key={`removal-triangle-${index}`}
+                    data-surface={triangle.surface}
+                    points={triangle.points
+                      .map((point) => `${point.x},${point.y}`)
+                      .join(' ')}
+                    fill={fill}
+                    stroke={
+                      triangle.surface === 'top'
+                        ? fill
+                        : fill
+                    }
+                    strokeWidth={triangle.surface === 'top' ? 0.55 : 0.2}
+                    strokeLinejoin="round"
+                  />
+                );
+              })}
+            </g>
+          ) : null}
+
+          {showToolpaths && projected.meshes.map((triangle, index) => (
             <polygon
               key={`mesh-triangle-${index}`}
               points={triangle.points.map((point) => `${point.x},${point.y}`).join(' ')}
@@ -227,7 +367,7 @@ export default function ToolpathPreview3D({
             />
           ))}
 
-          {projected.segments.map((segment, index) => (
+          {showToolpaths && projected.segments.map((segment, index) => (
             <polyline
               key={`${segment.operationId || 'job'}-${segment.kind}-${index}`}
               points={segment.projected.map((point) => `${point.x},${point.y}`).join(' ')}
@@ -241,7 +381,7 @@ export default function ToolpathPreview3D({
             />
           ))}
 
-          {projected.markers.map((marker) => (
+          {showToolpaths && projected.markers.map((marker) => (
             <circle
               key={`${marker.kind}-${marker.projected.x}-${marker.projected.y}-${marker.projected.depth}`}
               cx={marker.projected.x}
@@ -253,7 +393,7 @@ export default function ToolpathPreview3D({
             />
           ))}
 
-          {projected.tool ? (
+          {showToolpaths && projected.tool ? (
             <g aria-label="Animated tool">
               <line
                 x1={projected.tool.baseCenter.x}
@@ -304,8 +444,10 @@ export default function ToolpathPreview3D({
               </g>
             ))}
           </g>
-        </svg>
+          </svg>
+        )}
 
+        {viewMode === 'toolpaths' ? (
         <div className="preview3d-overlay" role="group" aria-label="3D preview playback controls">
           <div className="preview3d-playback">
             <button type="button" className="tool-button" onClick={handlePlay} disabled={playback.totalLength <= 0}>
@@ -331,6 +473,16 @@ export default function ToolpathPreview3D({
             <span>{Math.round(playbackProgress * 100)}%</span>
           </div>
         </div>
+        ) : materialRemoval ? (
+          <div className="preview3d-result-note" role="status">
+            <span>
+              Approximate result · {materialRemoval.columns} × {materialRemoval.rows} samples
+            </span>
+            {materialRemoval.warnings.map((warning) => (
+              <span key={warning}>{warning}</span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -12,8 +12,13 @@ import { isPathOperation } from '../types';
 import { buildIncrementDepths, getStartEndZ, toNegativeDepth, toPositiveStep } from './gcode/depth';
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 import { getOperationPlannedPaths } from './toolpathPreview';
+import type { TabRange } from './gcode/shared';
 import { resolveLaserMaterialPreset, resolveToolPreset } from './tooling';
 import { buildLaserFillSegments } from './laserFill';
+import {
+  applyMillingPathPlan,
+  resolveMillingPathPlan,
+} from './millingPathStrategy';
 
 export interface Point3D {
   x: number;
@@ -113,10 +118,81 @@ function appendPathAtDepth(
   target: ToolpathPreview3DSegment[],
   operation: PathOperation,
   path: Point[],
-  depth: number
-): void {
-  const points = path.map((point) => point2dTo3d(point, depth));
+  depth: number,
+  tabRanges: TabRange[]
+): Point3D | null {
+  if (path.length < 2) {
+    return null;
+  }
+
+  const tabHeight =
+    'tabHeight' in operation
+      ? Math.max(0.1, Math.abs(Number(operation.tabHeight) || 1))
+      : 1;
+  const liftedDepth =
+    'tabsEnabled' in operation && operation.tabsEnabled
+      ? Math.min(-0.001, depth + tabHeight)
+      : depth;
+  const points: Point3D[] = [point2dTo3d(path[0], depth)];
+  let traveled = 0;
+
+  function pushPoint(point: Point3D): void {
+    const previous = points[points.length - 1];
+    if (!previous || !pointsEqual3d(previous, point)) {
+      points.push(point);
+    }
+  }
+
+  for (let index = 1; index < path.length; index += 1) {
+    const start = path[index - 1];
+    const end = path[index];
+    const segmentLength = Math.hypot(end.x - start.x, end.y - start.y);
+    if (segmentLength <= 0.000001) {
+      continue;
+    }
+
+    const segmentStart = traveled;
+    const segmentEnd = traveled + segmentLength;
+    const breakpoints = [segmentStart, segmentEnd];
+    tabRanges.forEach((range) => {
+      if (range.start > segmentStart && range.start < segmentEnd) {
+        breakpoints.push(range.start);
+      }
+      if (range.end > segmentStart && range.end < segmentEnd) {
+        breakpoints.push(range.end);
+      }
+    });
+    breakpoints.sort((left, right) => left - right);
+
+    for (let partIndex = 1; partIndex < breakpoints.length; partIndex += 1) {
+      const partStart = breakpoints[partIndex - 1];
+      const partEnd = breakpoints[partIndex];
+      const midpoint = (partStart + partEnd) / 2;
+      const isTab = tabRanges.some(
+        (range) => midpoint >= range.start && midpoint <= range.end
+      );
+      const partDepth = isTab ? liftedDepth : depth;
+      const startAmount = (partStart - segmentStart) / segmentLength;
+      const endAmount = (partEnd - segmentStart) / segmentLength;
+      const partStartPoint = {
+        x: start.x + (end.x - start.x) * startAmount,
+        y: start.y + (end.y - start.y) * startAmount,
+        z: partDepth,
+      };
+      const partEndPoint = {
+        x: start.x + (end.x - start.x) * endAmount,
+        y: start.y + (end.y - start.y) * endAmount,
+        z: partDepth,
+      };
+      pushPoint(partStartPoint);
+      pushPoint(partEndPoint);
+    }
+
+    traveled = segmentEnd;
+  }
+
   appendSegment(target, 'cut', operation, operation.type, points);
+  return points[points.length - 1] || null;
 }
 
 function computeBounds(
@@ -346,11 +422,18 @@ export function buildToolpathPreview3D({
       return;
     }
 
+    const millingPlan = resolveMillingPathPlan(operation, tool, settings.cutDepth);
+    if (millingPlan && !millingPlan.valid) {
+      return;
+    }
+    const millingOperation = millingPlan
+      ? applyMillingPathPlan(operation, millingPlan)
+      : operation;
     const preset = resolveToolPreset(tool, operation.materialId, settings);
-    const finalDepth = toNegativeDepth(operation.depth, settings.cutDepth);
+    const finalDepth = toNegativeDepth(millingOperation.depth, settings.cutDepth);
     const passStep = toPositiveStep(preset.cutDepthPerPass, Math.abs(finalDepth));
     const passes = buildIncrementDepths(finalDepth, passStep);
-    const plannedPaths = getOperationPlannedPaths(operation, settings, tool);
+    const plannedPaths = getOperationPlannedPaths(millingOperation, settings, tool);
 
     plannedPaths.forEach((plannedPath, pathIndex) => {
       if (plannedPath.path.length < 2) {
@@ -373,9 +456,15 @@ export function buildToolpathPreview3D({
         appendSegment(segments, 'plunge', operation, operation.type, [current, { ...startPoint, z: depth }]);
         current = { ...startPoint, z: depth };
 
-        appendPathAtDepth(segments, operation, plannedPath.path, depth);
+        const cutEnd = appendPathAtDepth(
+          segments,
+          operation,
+          plannedPath.path,
+          depth,
+          plannedPath.tabRanges
+        );
         const endPoint = plannedPath.path[plannedPath.path.length - 1];
-        current = { ...endPoint, z: depth };
+        current = cutEnd || { ...endPoint, z: depth };
 
         const isLastPass = depthIndex === passes.length - 1;
         const isLastPath = pathIndex === plannedPaths.length - 1;

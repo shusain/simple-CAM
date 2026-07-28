@@ -113,6 +113,141 @@ describe('OperationsPanel', () => {
     expect(onUpdateOperation).toHaveBeenCalledWith('rect-depth', { depth: -4.5 });
   });
 
+  it('shows milling geometry details and warns when target depth exceeds the cutter profile', () => {
+    const operation = makeRectOperation({
+      id: 'deep-v-cut',
+      depth: -3,
+      toolId: 'v-bit-1',
+    });
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      diameter: 10,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 2,
+        tipDiameter: 0,
+        includedAngle: 90,
+      },
+    });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [operation],
+          selectedOperation: operation,
+          selectedOperationIds: [operation.id],
+          tools: [vBit],
+        })}
+      />
+    );
+
+    const geometryInfo = screen.getByLabelText('About milling tool geometry');
+    fireEvent.click(geometryInfo);
+    expect(screen.getByText(/V-bit \/ V-carve · max Ø10 mm/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Target depth 3 mm exceeds this cutter's 2 mm usable depth."
+    );
+  });
+
+  it('edits a fixed-width V-groove and shows its geometry-derived result', () => {
+    const onUpdateOperation = vi.fn();
+    const operation = makeLineOperation({
+      id: 'v-groove-line',
+      toolId: 'v-bit-1',
+      depth: -8,
+      millingStrategy: 'v-groove',
+      millingTargetWidth: 6,
+    });
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 20,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [operation],
+          selectedOperation: operation,
+          selectedOperationIds: [operation.id],
+          tools: [vBit],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Maximum depth')).toHaveValue('8');
+    expect(screen.getByLabelText('Milling strategy')).toHaveValue('v-groove');
+    expect(screen.getByLabelText('Groove width')).toHaveValue('6');
+    expect(screen.getByLabelText('Planned V-groove depth')).toHaveValue('5.023');
+    expect(screen.getByLabelText('Planned V-groove width')).toHaveValue('6');
+    expect(screen.queryByLabelText('Toolpath')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Groove width'), {
+      target: { value: '7' },
+    });
+    expect(onUpdateOperation).toHaveBeenCalledWith('v-groove-line', {
+      millingTargetWidth: 7,
+    });
+  });
+
+  it('edits a chamfer edge and shows depth plus tip-compensated result', () => {
+    const onUpdateOperation = vi.fn();
+    const operation = makeRectOperation({
+      id: 'chamfer-rect',
+      toolId: 'chamfer-1',
+      depth: -3,
+      cutSide: 'outside',
+      millingStrategy: 'chamfer-edge',
+      millingTargetWidth: 2,
+      tabsEnabled: false,
+      pocketEnabled: false,
+    });
+    const chamferMill = makeTool({
+      id: 'chamfer-1',
+      diameter: 10,
+      millingGeometry: {
+        type: 'chamfer',
+        cuttingLength: 10,
+        tipDiameter: 2,
+        includedAngle: 90,
+      },
+    });
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [operation],
+          selectedOperation: operation,
+          selectedOperationIds: [operation.id],
+          tools: [chamferMill],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('Maximum depth')).toHaveValue('3');
+    expect(screen.getByLabelText('Milling strategy')).toHaveValue('chamfer-edge');
+    expect(screen.getByLabelText('Chamfer width')).toHaveValue('2');
+    expect(screen.getByLabelText('Planned chamfer depth')).toHaveValue('2');
+    expect(screen.getByLabelText('Planned chamfer width')).toHaveValue('2');
+    expect(screen.getByLabelText('Toolpath')).toHaveValue('outside');
+    expect(screen.queryByText('Retaining tabs')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Clear area')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Chamfer width'), {
+      target: { value: '2.5' },
+    });
+    expect(onUpdateOperation).toHaveBeenCalledWith('chamfer-rect', {
+      millingTargetWidth: 2.5,
+    });
+  });
+
   it('shows laser cut and etch parameters instead of depth controls', () => {
     const operation = makeRectOperation({
       id: 'laser-rect',

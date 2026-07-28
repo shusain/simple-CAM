@@ -22,6 +22,11 @@ import { buildPocketContourPaths, buildRectPocketContourPaths } from './pocketin
 import { buildSurfaceFinishPlan, buildSurfaceRoughPlan } from './surfaceRoughing';
 import { getTextOperationContours } from './text';
 import { buildLaserFillSegments } from './laserFill';
+import {
+  applyMillingPathPlan,
+  getMillingPathCompensationTool,
+  resolveMillingPathPlan,
+} from './millingPathStrategy';
 import { resolveLaserMaterialPreset } from './tooling';
 import { EndType, FillRule, inflatePathsD, JoinType, unionD } from 'clipper2-ts';
 
@@ -204,7 +209,7 @@ function buildCirclePolyline(cx: number, cy: number, radius: number, segments: n
 }
 
 export function getCirclePlan(operation: CircleOperation, tool: Tool | null): CirclePlan {
-  const toolRadius = getToolRadius(tool);
+  const toolRadius = getToolRadius(getMillingPathCompensationTool(operation, tool));
   const cutSide = getCutSide(operation, 'outside');
   const offsetAmount = cutSide === 'outside' ? toolRadius : cutSide === 'inside' ? -toolRadius : 0;
   const compensatedRadius = operation.radius + offsetAmount;
@@ -418,6 +423,8 @@ export function getOperationPlannedPaths(
   settings: MachineSettings,
   tool: Tool | null
 ): OperationPlannedPath[] {
+  const compensationTool = getMillingPathCompensationTool(operation, tool);
+
   if (operation.type === 'line') {
     return [
       {
@@ -436,7 +443,7 @@ export function getOperationPlannedPaths(
   }
 
   if (operation.type === 'rect') {
-    return buildRectPath(operation, settings, tool);
+    return buildRectPath(operation, settings, compensationTool);
   }
 
   if (operation.type === 'circle') {
@@ -444,10 +451,10 @@ export function getOperationPlannedPaths(
   }
 
   if (operation.type === 'text') {
-    return buildTextPaths(operation, settings, tool);
+    return buildTextPaths(operation, settings, compensationTool);
   }
 
-  return buildSketchPaths(operation, settings, tool);
+  return buildSketchPaths(operation, settings, compensationTool);
 }
 
 export function slicePathByRange(pathPoints: Point[], range: TabRange): Point[] {
@@ -631,6 +638,15 @@ export function buildToolpathPreview({ operations, settings, tools, importedMesh
     }
 
     const tool = getOperationTool(operation, tools);
+    const millingPlan = !tool?.isLaser
+      ? resolveMillingPathPlan(operation, tool, settings.cutDepth)
+      : null;
+    if (millingPlan && !millingPlan.valid) {
+      return;
+    }
+    const millingOperation = millingPlan
+      ? applyMillingPathPlan(operation, millingPlan)
+      : operation;
     const laserOperation = tool?.isLaser
       ? ({
           ...operation,
@@ -638,7 +654,7 @@ export function buildToolpathPreview({ operations, settings, tools, importedMesh
           pocketEnabled: false,
           tabsEnabled: false,
         } as PathOperation)
-      : operation;
+      : millingOperation;
     const plannedPaths = getOperationPlannedPaths(laserOperation, settings, tool);
 
     const laserProcess =

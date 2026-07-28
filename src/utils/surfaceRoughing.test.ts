@@ -158,4 +158,88 @@ describe('buildSurfaceRoughPlan', () => {
     expect(plan.paths.some((path) => path.points.some((point) => point.z === 0))).toBe(true);
     expect(plan.paths.some((path) => path.points.some((point) => point.z < -1))).toBe(true);
   });
+
+  it('raises ball-nose finishing centerlines to account for side contact on slopes', () => {
+    const mesh = makeImportedMesh({
+      placement: { x: 10, y: 10 },
+      localBounds: {
+        minX: -5,
+        maxX: 5,
+        minY: -3,
+        maxY: 3,
+        minZ: -5,
+        maxZ: 0,
+      },
+      triangles: [
+        {
+          a: { x: -5, y: -3, z: -5 },
+          b: { x: 5, y: -3, z: 0 },
+          c: { x: 5, y: 3, z: 0 },
+        },
+        {
+          a: { x: -5, y: -3, z: -5 },
+          b: { x: 5, y: 3, z: 0 },
+          c: { x: -5, y: 3, z: -5 },
+        },
+      ],
+    });
+    const operation = makeSurfaceFinishOperation({
+      meshId: mesh.id,
+      depth: -5,
+      stepOver: 2,
+      toolId: 'tool-1',
+      materialId: 'mat-1',
+    });
+    const commonTool = {
+      id: 'tool-1',
+      diameter: 4,
+      materialProfiles: {
+        'mat-1': {
+          cutFeedRate: 300,
+          plungeFeedRate: 120,
+          cutDepthPerPass: 5,
+          drillDepthPerPass: 5,
+        },
+      },
+    };
+    const flatPlan = buildSurfaceFinishPlan(
+      operation,
+      mesh,
+      makeSettings(),
+      makeTool({
+        ...commonTool,
+        millingGeometry: {
+          type: 'flat-end',
+          cuttingLength: 10,
+          tipDiameter: 0,
+          includedAngle: 60,
+        },
+      })
+    );
+    const ballPlan = buildSurfaceFinishPlan(
+      operation,
+      mesh,
+      makeSettings(),
+      makeTool({
+        ...commonTool,
+        millingGeometry: {
+          type: 'ball-nose',
+          cuttingLength: 10,
+          tipDiameter: 0,
+          includedAngle: 60,
+        },
+      })
+    );
+
+    const findCenterPoint = (plan: typeof flatPlan) =>
+      plan.paths
+        .flatMap((path) => path.points)
+        .find((point) => Math.abs(point.x - 10) < 0.0001 && Math.abs(point.y - 9) < 0.0001);
+    const flatCenter = findCenterPoint(flatPlan);
+    const ballCenter = findCenterPoint(ballPlan);
+
+    expect(flatCenter?.z).toBeCloseTo(-2.5);
+    expect(ballCenter?.z).toBeGreaterThan(-2.3);
+    expect(ballCenter?.z).toBeLessThan(-2.2);
+  });
 });

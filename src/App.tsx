@@ -82,6 +82,7 @@ import {
 } from './app/transforms';
 import { buildToolpathPreview } from './utils/toolpathPreview';
 import { buildToolpathPreview3D } from './utils/toolpathPreview3d';
+import { buildMaterialRemovalPreview } from './utils/materialRemovalPreview';
 import { importDxfToSketchOperations } from './utils/importDxf';
 import { importDrlToDrillOperations } from './utils/importDrl';
 import type { ImportCutMode } from './utils/importCommon';
@@ -223,6 +224,9 @@ export default function App(): React.JSX.Element {
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [viewportMode, setViewportMode] = useState<ViewportMode>('2d');
+  const [resultPreviewDetail, setResultPreviewDetail] = useState<
+    'standard' | 'detailed' | 'ultra'
+  >('standard');
   const [importedMeshes, setImportedMeshes] = useState<ImportedMesh[]>(initialState.importedMeshes);
   const [selectedImportedMeshId, setSelectedImportedMeshId] = useState<string | null>(null);
   const canvasPointerRef = useRef<Point | null>(null);
@@ -272,6 +276,36 @@ export default function App(): React.JSX.Element {
   const toolpathPreview3D = useMemo(
     () => buildToolpathPreview3D({ operations, settings, tools, importedMeshes }),
     [importedMeshes, operations, settings, tools]
+  );
+  const materialRemovalPreview = useMemo(
+    () =>
+      buildMaterialRemovalPreview({
+        operations,
+        settings,
+        tools,
+        importedMeshes,
+        toolpathPreview: toolpathPreview3D,
+        targetCellSize:
+          resultPreviewDetail === 'ultra'
+            ? 0.1
+            : resultPreviewDetail === 'detailed'
+              ? 0.175
+              : 0.25,
+        maxCells:
+          resultPreviewDetail === 'ultra'
+            ? 500_000
+            : resultPreviewDetail === 'detailed'
+              ? 200_000
+              : 60_000,
+      }),
+    [
+      importedMeshes,
+      operations,
+      resultPreviewDetail,
+      settings,
+      toolpathPreview3D,
+      tools,
+    ]
   );
   const transformPreviewOperations = useMemo(
     () => (transformSession ? buildTransformPreview(transformSession, settings.circleSegments) : []),
@@ -2045,7 +2079,13 @@ export default function App(): React.JSX.Element {
               transformHint={transformHint}
             />
           ) : (
-            <ToolpathPreview3D preview={toolpathPreview3D} importedMeshes={importedMeshes} />
+            <ToolpathPreview3D
+              preview={toolpathPreview3D}
+              importedMeshes={importedMeshes}
+              materialRemoval={materialRemovalPreview}
+              resultDetail={resultPreviewDetail}
+              onResultDetailChange={setResultPreviewDetail}
+            />
           )}
         </main>
 

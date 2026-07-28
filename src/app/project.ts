@@ -3,6 +3,8 @@ import { sanitizeOperation } from '../utils/geometry';
 import { normalizeMaterial, normalizeTool, resolveMaterialId } from '../utils/tooling';
 import { DEFAULT_MATERIALS, DEFAULT_SETTINGS, DEFAULT_TOOLS } from './defaults';
 
+export const CURRENT_PROJECT_VERSION = 2;
+
 export interface HydratedProjectData {
   settings: MachineSettings;
   materials: Material[];
@@ -146,7 +148,7 @@ export function hydrateProjectFile(project: CamProjectFile, createId: () => stri
 
 export function buildProjectFile(data: HydratedProjectData): CamProjectFile {
   return {
-    version: 1,
+    version: CURRENT_PROJECT_VERSION,
     settings: data.settings,
     materials: data.materials,
     tools: data.tools,

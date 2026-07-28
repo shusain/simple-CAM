@@ -5,6 +5,7 @@ import type { CutSide } from '../../types';
 interface DepthEditorProps {
   value: number | undefined;
   onChange: (value: number) => void;
+  label?: string;
 }
 
 interface CutSideEditorProps {
@@ -14,12 +15,12 @@ interface CutSideEditorProps {
   options?: CutSide[];
 }
 
-export function DepthEditor({ value, onChange }: DepthEditorProps): React.JSX.Element {
+export function DepthEditor({ value, onChange, label = 'Depth' }: DepthEditorProps): React.JSX.Element {
   return (
     <label className="field-row">
-      <span>Depth</span>
+      <span>{label}</span>
       <NumericInput
-        aria-label="Depth"
+        aria-label={label}
         value={value == null ? '' : Math.abs(value)}
         step={0.1}
         onChange={(nextValue) => onChange(-Math.abs(nextValue))}

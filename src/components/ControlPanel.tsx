@@ -334,6 +334,15 @@ export default function ControlPanel({
           onChange={(value) => onSettingsChange({ workHeight: Math.max(10, value || 10) })}
         />
         <NumberField
+          label="Stock thickness"
+          value={settings.stockThickness}
+          min={0.1}
+          step={0.1}
+          onChange={(value) =>
+            onSettingsChange({ stockThickness: Math.max(0.1, value || 0.1) })
+          }
+        />
+        <NumberField
           label="Margin X"
           value={settings.marginX}
           min={0}

@@ -1,5 +1,7 @@
 import type { CutSide } from './common';
 
+export type MillingPathStrategy = 'standard' | 'v-groove' | 'chamfer-edge';
+
 export interface BaseOperation {
   id: string;
   depth: number;
@@ -11,6 +13,8 @@ export interface BaseOperation {
   laserPasses?: number;
   laserLineInterval?: number;
   laserOverscan?: number;
+  millingStrategy?: MillingPathStrategy;
+  millingTargetWidth?: number;
 }
 
 export interface DrillOperation extends BaseOperation {

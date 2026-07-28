@@ -80,6 +80,37 @@ describe('tooling', () => {
     expect(tool).toMatchObject({
       isLaser: false,
       laserInlineMode: 'continuous',
+      millingGeometry: {
+        type: 'flat-end',
+        cuttingLength: 12,
+        tipDiameter: 0,
+        includedAngle: 60,
+      },
+    });
+  });
+
+  it('normalizes the current milling geometry schema', () => {
+    const tool = normalizeTool(
+      {
+        diameter: 12,
+        millingGeometry: {
+          type: 'v-bit',
+          cuttingLength: 8,
+          tipDiameter: 0.5,
+          includedAngle: 60,
+        },
+      },
+      'v-bit'
+    );
+
+    expect(tool).toMatchObject({
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 8,
+        tipDiameter: 0.5,
+        includedAngle: 60,
+      },
     });
   });
 

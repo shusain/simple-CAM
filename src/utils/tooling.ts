@@ -6,6 +6,7 @@ import type {
   ToolMaterialProfile,
   ToolPreset,
 } from '../types';
+import { normalizeMillingToolGeometry } from './millingToolGeometry';
 
 type RawRecord = Record<string, unknown>;
 
@@ -110,10 +111,13 @@ export function normalizeTool(tool: Partial<Tool> | null | undefined, fallbackId
         )
       : {};
 
+  const diameter = toPositiveNumber(tool?.diameter, 3) ?? 3;
+
   return {
     id: sanitizeToolId(tool?.id) || fallbackId,
     name: tool?.name || 'Tool',
-    diameter: toPositiveNumber(tool?.diameter, 3) ?? 3,
+    diameter,
+    millingGeometry: normalizeMillingToolGeometry(tool?.millingGeometry, diameter),
     rapidFeedRate: toPositiveNumber(tool?.rapidFeedRate, 2400) ?? 2400,
     cutFeedRate: toPositiveNumber(tool?.cutFeedRate, 600) ?? 600,
     plungeFeedRate: toPositiveNumber(tool?.plungeFeedRate, 220) ?? 220,

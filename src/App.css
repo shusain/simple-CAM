@@ -180,6 +180,33 @@ textarea {
   font-weight: 400;
 }
 
+.preview3d-toolbar-actions,
+.preview3d-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview3d-detail-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.preview3d-detail-control select {
+  min-width: 92px;
+  padding: 5px 7px;
+}
+
+.preview3d-mode-toggle .tool-button[aria-pressed='true'] {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.2);
+  color: #e0f2fe;
+}
+
 .preview3d-stage {
   position: relative;
   min-height: 0;
@@ -196,6 +223,16 @@ textarea {
 
 .preview3d-canvas:active {
   cursor: grabbing;
+}
+
+.preview3d-webgl-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.preview3d-webgl-canvas {
+  outline: none;
 }
 
 .preview3d-overlay {
@@ -228,6 +265,24 @@ textarea {
   align-items: center;
   color: #cbd5e1;
   font-size: 0.85rem;
+}
+
+.preview3d-result-note {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 9px 12px;
+  border: 1px solid rgba(180, 131, 76, 0.8);
+  border-radius: 10px;
+  background: rgba(43, 29, 18, 0.9);
+  color: #f5d0a2;
+  font-size: 0.78rem;
+  backdrop-filter: blur(8px);
 }
 
 .panel {
@@ -793,6 +848,17 @@ textarea {
   color: #94a3b8;
   font-size: 0.9rem;
   margin: 8px 0;
+}
+
+.tool-geometry-warning {
+  margin: 8px 0;
+  padding: 7px 9px;
+  border: 1px solid #b45309;
+  border-radius: 7px;
+  background: rgba(120, 53, 15, 0.24);
+  color: #fdba74;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .cam-canvas-wrapper {

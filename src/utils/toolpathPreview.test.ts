@@ -388,4 +388,70 @@ describe('toolpathPreview', () => {
     expect(preview.segments.some((segment) => segment.operationType === 'surface-finish' && segment.kind === 'cut')).toBe(true);
     expect(preview.markers.some((marker) => marker.operationType === 'surface-finish' && marker.kind === 'plunge')).toBe(true);
   });
+
+  it('previews fixed-width V-grooves along the nominal path without radius offset', () => {
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 20,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+    const operation = makeRectOperation({
+      x: 2,
+      y: 3,
+      width: 10,
+      height: 4,
+      cutSide: 'outside',
+      toolId: vBit.id,
+      millingStrategy: 'v-groove',
+      millingTargetWidth: 6,
+      depth: -8,
+    });
+    const preview = buildToolpathPreview({
+      operations: [operation],
+      settings: makeSettings(),
+      tools: [vBit],
+    });
+    const cut = preview.segments.find((segment) => segment.kind === 'cut');
+
+    expect(cut?.points).toContainEqual({ x: 2, y: 3 });
+    expect(cut?.points).not.toContainEqual({ x: 2, y: -3 });
+  });
+
+  it('previews chamfer edges using tip-radius compensation', () => {
+    const chamferMill = makeTool({
+      id: 'chamfer-1',
+      diameter: 10,
+      millingGeometry: {
+        type: 'chamfer',
+        cuttingLength: 10,
+        tipDiameter: 2,
+        includedAngle: 90,
+      },
+    });
+    const operation = makeRectOperation({
+      x: 2,
+      y: 3,
+      width: 10,
+      height: 4,
+      cutSide: 'outside',
+      toolId: chamferMill.id,
+      millingStrategy: 'chamfer-edge',
+      millingTargetWidth: 2,
+      depth: -3,
+    });
+    const preview = buildToolpathPreview({
+      operations: [operation],
+      settings: makeSettings(),
+      tools: [chamferMill],
+    });
+    const cut = preview.segments.find((segment) => segment.kind === 'cut');
+
+    expect(cut?.points).toContainEqual({ x: 2, y: 2 });
+    expect(cut?.points).not.toContainEqual({ x: 2, y: -2 });
+  });
 });

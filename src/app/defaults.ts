@@ -3,6 +3,7 @@ import type { MachineSettings, Material, OctoprintSettings, Tool } from '../type
 export const DEFAULT_SETTINGS: MachineSettings = {
   workWidth: 300,
   workHeight: 200,
+  stockThickness: 12.7,
   marginX: 0,
   marginY: 0,
   gridSize: 5,
@@ -28,6 +29,12 @@ export const DEFAULT_TOOLS: Tool[] = [
     id: 'tool-3.175mm-endmill',
     name: 'Endmill 3.175mm',
     diameter: 3.175,
+    millingGeometry: {
+      type: 'flat-end',
+      cuttingLength: 12.7,
+      tipDiameter: 0,
+      includedAngle: 60,
+    },
     rapidFeedRate: 2400,
     cutFeedRate: 600,
     plungeFeedRate: 220,
@@ -55,6 +62,12 @@ export const DEFAULT_TOOLS: Tool[] = [
     id: 'tool-1-8-drill',
     name: 'Drill 3.175mm',
     diameter: 3.175,
+    millingGeometry: {
+      type: 'flat-end',
+      cuttingLength: 12.7,
+      tipDiameter: 0,
+      includedAngle: 60,
+    },
     rapidFeedRate: 1800,
     cutFeedRate: 350,
     plungeFeedRate: 180,
@@ -94,7 +107,7 @@ export const TOOLS = [
 ] as const;
 
 export const HISTORY_LIMIT = 200;
-export const PREFERENCES_STORAGE_KEY = 'simple-cam.preferences.v1';
+export const PREFERENCES_STORAGE_KEY = 'simple-cam.preferences.v2';
 export const OCTOPRINT_WEB_STORAGE_KEY = 'simple-cam.octoprint.v1';
 export const DEFAULT_OCTOPRINT_SETTINGS: OctoprintSettings = {
   baseUrl: '',

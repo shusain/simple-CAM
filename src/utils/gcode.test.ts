@@ -60,7 +60,143 @@ describe('generateMarlinGcode', () => {
     });
 
     expect(gcode).toContain('; Tool change required');
-    expect(gcode).toContain('M0 Change tool: Tool B (Ø1.000mm)');
+    expect(gcode).toContain('M0 Change tool: Tool B (Flat end mill, Ø1.000mm)');
+  });
+
+  it('warns when an operation exceeds the configured milling profile depth', () => {
+    const vBit = makeTool({
+      diameter: 10,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 2,
+        tipDiameter: 0,
+        includedAngle: 90,
+      },
+    });
+    const gcode = generateMarlinGcode({
+      operations: [makeLineOperation({ depth: -3, toolId: vBit.id })],
+      settings: makeSettings(),
+      tools: [vBit],
+    });
+
+    expect(gcode).toContain(
+      '; WARNING: target depth 3.000mm exceeds 2.000mm usable tool depth'
+    );
+    expect(gcode).toContain('; Tool geometry: V-bit / V-carve');
+  });
+
+  it('uses V-bit geometry to derive fixed-width V-groove depth', () => {
+    const vBit = makeTool({
+      id: 'v-bit-1',
+      diameter: 12,
+      millingGeometry: {
+        type: 'v-bit',
+        cuttingLength: 20,
+        tipDiameter: 0.2,
+        includedAngle: 60,
+      },
+    });
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeLineOperation({
+          toolId: vBit.id,
+          depth: -8,
+          millingStrategy: 'v-groove',
+          millingTargetWidth: 6,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [vBit],
+    });
+
+    expect(gcode).toContain(
+      '; V-groove: target width 6.000mm, result width 6.000mm, depth 5.023mm'
+    );
+    expect(gcode).toContain('G1 Z-5.023 F220');
+    expect(gcode).toContain('; Cut line');
+  });
+
+  it('skips V-groove output when the selected tool is incompatible', () => {
+    const flatTool = makeTool();
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeLineOperation({
+          toolId: flatTool.id,
+          millingStrategy: 'v-groove',
+          millingTargetWidth: 3,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [flatTool],
+    });
+
+    expect(gcode).toContain(
+      '; Skipped line V-groove: V-groove strategy requires a V-bit milling tool.'
+    );
+    expect(gcode).not.toContain('; Cut line');
+  });
+
+  it('uses chamfer geometry for depth and tip-radius edge compensation', () => {
+    const chamferMill = makeTool({
+      id: 'chamfer-1',
+      diameter: 10,
+      millingGeometry: {
+        type: 'chamfer',
+        cuttingLength: 10,
+        tipDiameter: 2,
+        includedAngle: 90,
+      },
+    });
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeRectOperation({
+          x: 10,
+          y: 10,
+          width: 20,
+          height: 10,
+          toolId: chamferMill.id,
+          depth: -3,
+          cutSide: 'outside',
+          millingStrategy: 'chamfer-edge',
+          millingTargetWidth: 2,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [chamferMill],
+    });
+
+    expect(gcode).toContain(
+      '; Chamfer edge: target width 2.000mm, result width 2.000mm, depth 2.000mm, tip compensation 1.000mm'
+    );
+    expect(gcode).toContain('; Tool radius compensation 1.000mm');
+    expect(gcode).toContain('G0 X10.000 Y9.000 F2400');
+    expect(gcode).toContain('G1 Z-2.000 F220');
+  });
+
+  it('skips chamfer output for an open path', () => {
+    const chamferMill = makeTool({
+      millingGeometry: {
+        type: 'chamfer',
+        cuttingLength: 10,
+        tipDiameter: 1,
+        includedAngle: 90,
+      },
+    });
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeLineOperation({
+          millingStrategy: 'chamfer-edge',
+          millingTargetWidth: 1,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [chamferMill],
+    });
+
+    expect(gcode).toContain(
+      '; Skipped line chamfer edge: Chamfer-edge strategy requires a closed inside or outside path.'
+    );
+    expect(gcode).not.toContain('; Cut line');
   });
 
   it('handles line cuts and spindle commands when enabled', () => {

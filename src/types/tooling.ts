@@ -1,6 +1,7 @@
 export interface MachineSettings {
   workWidth: number;
   workHeight: number;
+  stockThickness: number;
   marginX: number;
   marginY: number;
   gridSize: number;
@@ -79,10 +80,21 @@ export interface LaserTestPatternOptions {
   labelSpeed: number;
 }
 
+export type MillingToolType = 'flat-end' | 'ball-nose' | 'v-bit' | 'chamfer';
+
+export interface MillingToolGeometry {
+  type: MillingToolType;
+  cuttingLength: number;
+  tipDiameter: number;
+  includedAngle: number;
+}
+
 export interface Tool {
   id: string;
   name: string;
+  /** Cutting diameter for straight tools; maximum cutting diameter for tapered tools. */
   diameter: number;
+  millingGeometry: MillingToolGeometry;
   rapidFeedRate: number;
   cutFeedRate: number;
   plungeFeedRate: number;

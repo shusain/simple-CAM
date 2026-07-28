@@ -8,6 +8,7 @@ import type {
 } from '../types';
 import { buildIncrementDepths, toNegativeDepth, toPositiveStep } from './gcode/depth';
 import { getImportedMeshWorldBounds } from './importStl';
+import { getMillingToolHeightAtRadius } from './millingToolGeometry';
 import { resolveToolPreset } from './tooling';
 
 export interface SurfacePoint3D {
@@ -156,6 +157,56 @@ function sampleMeshTopZ(triangles: PreparedTriangle[], x: number, y: number): nu
   });
 
   return topZ;
+}
+
+function sampleFinishToolTipZ(
+  triangles: PreparedTriangle[],
+  x: number,
+  y: number,
+  tool: Tool | null,
+  sampleStep: number
+): number | null {
+  const centerTop = sampleMeshTopZ(triangles, x, y);
+  if (
+    centerTop === null ||
+    !tool ||
+    tool.isLaser ||
+    tool.millingGeometry.type !== 'ball-nose'
+  ) {
+    return centerTop;
+  }
+
+  const radius = Math.max(0, Number(tool.diameter) || 0) / 2;
+  if (radius <= 0.0001) {
+    return centerTop;
+  }
+
+  const contactStep = Math.max(
+    0.1,
+    Math.min(sampleStep, radius / 4)
+  );
+  let toolTipZ = centerTop;
+
+  for (let offsetX = -radius; offsetX <= radius + 0.0001; offsetX += contactStep) {
+    for (let offsetY = -radius; offsetY <= radius + 0.0001; offsetY += contactStep) {
+      const radialDistance = Math.hypot(offsetX, offsetY);
+      if (radialDistance > radius + 0.0001) {
+        continue;
+      }
+
+      const sampledTop = sampleMeshTopZ(triangles, x + offsetX, y + offsetY);
+      if (sampledTop === null) {
+        continue;
+      }
+
+      toolTipZ = Math.max(
+        toolTipZ,
+        sampledTop - getMillingToolHeightAtRadius(tool, radialDistance)
+      );
+    }
+  }
+
+  return toolTipZ;
 }
 
 function getRasterSetup(
@@ -343,10 +394,12 @@ export function buildSurfaceRoughPlan(
 function buildFinishRowPaths(
   triangles: PreparedTriangle[],
   operation: SurfaceFinishOperation,
+  tool: Tool | null,
   rowCoordinate: number,
   passDepth: number,
   rowIndex: number,
   sampleValues: number[],
+  sampleStep: number,
   scanAxis: 'x' | 'y',
   reverse: boolean
 ): SurfaceFinishPath[] {
@@ -356,7 +409,13 @@ function buildFinishRowPaths(
   sampleValues.forEach((sampleValue) => {
     const x = scanAxis === 'x' ? sampleValue : rowCoordinate;
     const y = scanAxis === 'x' ? rowCoordinate : sampleValue;
-    const sampledTop = sampleMeshTopZ(triangles, x, y);
+    const sampledTop = sampleFinishToolTipZ(
+      triangles,
+      x,
+      y,
+      tool,
+      sampleStep
+    );
 
     if (sampledTop === null) {
       if (currentSpan.length >= 2) {
@@ -426,10 +485,12 @@ export function buildSurfaceFinishPlan(
         const rowPaths = buildFinishRowPaths(
           rasterSetup.triangles,
           operation,
+          tool,
           rowCoordinate,
           passDepth,
           combinedRowIndex,
           rasterSetup.sampleValues,
+          rasterSetup.sampleStep,
           rasterSetup.scanAxis,
           reverse
         ).map((path) => ({
