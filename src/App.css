@@ -121,19 +121,21 @@ textarea {
 }
 
 .workspace-grid {
+  --left-panel-width: 320px;
+  --right-panel-width: 390px;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px 1fr 350px;
+  grid-template-columns: var(--left-panel-width) 1fr var(--right-panel-width);
   gap: 10px;
   padding: 10px;
 }
 
 .workspace-grid.left-panel-collapsed {
-  grid-template-columns: 1fr 350px;
+  grid-template-columns: 1fr var(--right-panel-width);
 }
 
 .workspace-grid.right-panel-collapsed {
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: var(--left-panel-width) 1fr;
 }
 
 .workspace-grid.left-panel-collapsed.right-panel-collapsed {
@@ -926,7 +928,8 @@ textarea {
 
 @media (max-width: 1350px) {
   .workspace-grid {
-    grid-template-columns: 260px 1fr 300px;
+    --left-panel-width: 280px;
+    --right-panel-width: 340px;
   }
 
   .field-row {
