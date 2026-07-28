@@ -2,7 +2,6 @@ import type { MaterialRemovalMesh } from '../../utils/materialRemovalMesh';
 
 export interface ThreeResultGeometryData {
   positions: Float32Array;
-  normals: Float32Array;
   colors: Float32Array;
   triangleCount: number;
 }
@@ -15,15 +14,17 @@ const SURFACE_COLORS = {
 
 /**
  * Expands the material-removal mesh into non-indexed triangles. Keeping each
- * face's vertices separate preserves hard cutter walls while allowing WebGL's
- * depth buffer to resolve overlap without SVG painter sorting.
+ * face's vertices separate lets the renderer calculate crease-aware normals
+ * while allowing WebGL's depth buffer to resolve overlap without SVG painter
+ * sorting.
  */
 export function buildThreeResultGeometryData(
   mesh: MaterialRemovalMesh
 ): ThreeResultGeometryData {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const colors: number[] = [];
+  const componentCount = mesh.triangleCount * 9;
+  const positions = new Float32Array(componentCount);
+  const colors = new Float32Array(componentCount);
+  let componentOffset = 0;
   let triangleCount = 0;
 
   mesh.faces.forEach((face) => {
@@ -35,18 +36,21 @@ export function buildThreeResultGeometryData(
         face.points[index + 1],
       ];
       triangle.forEach((point) => {
-        positions.push(point.x, point.y, point.z);
-        normals.push(face.normal.x, face.normal.y, face.normal.z);
-        colors.push(color[0], color[1], color[2]);
+        positions[componentOffset] = point.x;
+        positions[componentOffset + 1] = point.y;
+        positions[componentOffset + 2] = point.z;
+        colors[componentOffset] = color[0];
+        colors[componentOffset + 1] = color[1];
+        colors[componentOffset + 2] = color[2];
+        componentOffset += 3;
       });
       triangleCount += 1;
     }
   });
 
   return {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    colors: new Float32Array(colors),
+    positions,
+    colors,
     triangleCount,
   };
 }

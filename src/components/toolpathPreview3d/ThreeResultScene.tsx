@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { MaterialRemovalPreview } from '../../utils/materialRemovalPreview';
 import { buildMaterialRemovalMesh } from '../../utils/materialRemovalMesh';
 import type {
@@ -169,20 +170,19 @@ export default function ThreeResultScene({
       new THREE.BufferAttribute(meshData.positions, 3)
     );
     geometry.setAttribute(
-      'normal',
-      new THREE.BufferAttribute(meshData.normals, 3)
-    );
-    geometry.setAttribute(
       'color',
       new THREE.BufferAttribute(meshData.colors, 3)
     );
+    // Smooth neighboring cutter-surface triangles while retaining deliberate
+    // hard edges such as the stock perimeter and 90-degree laser/mill walls.
+    toCreasedNormals(geometry, THREE.MathUtils.degToRad(35));
     geometry.computeBoundingSphere();
 
     const stockMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.86,
       metalness: 0,
-      flatShading: true,
+      flatShading: false,
       side: THREE.DoubleSide,
       polygonOffset: showToolpaths,
       polygonOffsetFactor: 1,

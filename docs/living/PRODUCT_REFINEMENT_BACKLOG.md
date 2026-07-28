@@ -180,12 +180,13 @@ Let users define common milling cutter shapes and produce paths that account for
 - [x] Replace visible voxel/cell faces with clipped top, bottom, and stock-side mesh faces plus angle-based shading
 - [x] Cull back-facing result faces and seal SVG polygon seams so underside faces and antialiasing gaps do not appear as view-dependent stripes
 - [x] Move `Result` and combined rendering to a Three.js/WebGL depth-buffered mesh, retaining SVG toolpath playback and an automatic SVG fallback
+- [x] Use crease-aware smooth surface normals for shaped cuts while preserving sharp stock edges and 90° laser/end-mill walls
 - [x] Render the resulting workpiece in the 3D preview with stock boundaries, zero-plane-relative heights, and orbit/zoom controls
 - [ ] Refine result-preview lighting, depth cues, and cut-surface coloring after visual and hands-on comparison
 - [ ] Allow inspection of the final result and, where practical, the result after each operation or during playback
 - [ ] Cache intermediate removal state per operation and invalidate only affected downstream results after edits
 - [x] Set initial adaptive resolution/performance limits and disclose when the result is approximate or an operation is not represented
-- [x] Offer raised standard (~60k), detailed (~200k), and opt-in desktop ultra (~500k) result sampling budgets for balancing mesh fidelity and orbit responsiveness
+- [x] Offer high-resolution standard (~240k), detailed (~800k), and opt-in desktop ultra (~2M) result sampling budgets, with target spacing scaled for roughly 4× the prior surface detail
 - [x] Greedily merge adjacent coplanar stock/result regions so untouched areas do not emit a face per sample cell
 - [x] Preserve explicit 90° cut walls in flat/laser-only results while continuously interpolating ball-nose and tapered cutter envelopes
 - [x] Preserve local 90° flat/laser boundaries when those operations share a result with ball-nose or tapered-tool cuts

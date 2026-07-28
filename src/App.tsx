@@ -287,16 +287,16 @@ export default function App(): React.JSX.Element {
         toolpathPreview: toolpathPreview3D,
         targetCellSize:
           resultPreviewDetail === 'ultra'
-            ? 0.1
+            ? 0.05
             : resultPreviewDetail === 'detailed'
-              ? 0.175
-              : 0.25,
+              ? 0.0875
+              : 0.125,
         maxCells:
           resultPreviewDetail === 'ultra'
-            ? 500_000
+            ? 2_000_000
             : resultPreviewDetail === 'detailed'
-              ? 200_000
-              : 60_000,
+              ? 800_000
+              : 240_000,
       }),
     [
       importedMeshes,
