@@ -1,6 +1,6 @@
 # Codebase Review
 
-This note captures the clearest refactor opportunities after the recent TypeScript, import, and STL feature work.
+This note captures the clearest refactor opportunities after the recent import, cutter-geometry, raster-laser, and result-preview feature work.
 
 ## Why Now
 
@@ -13,10 +13,10 @@ The goal is not cleanup for its own sake. The goal is to make preview performanc
 ### 1. App-level state and action extraction
 
 Current pressure point:
-- [src/App.tsx](/home/shaun/Development/simple-CAM/src/App.tsx)
+- [src/App.tsx](../../src/App.tsx)
 
 Why it matters:
-- `App.tsx` now coordinates project I/O, import flows, operation history, sketch edit state, transforms, viewport mode, STL meshes, and preview wiring.
+- `App.tsx` now coordinates project I/O, vector/mesh/raster import flows, operation history, job-wide material state, sketch edit state, transforms, viewport mode, STL meshes, and preview wiring.
 - This makes feature changes harder to isolate and increases retest cost.
 
 Recommended direction:
@@ -27,38 +27,42 @@ Recommended direction:
 ### 2. Preview planning vs preview rendering separation
 
 Current pressure points:
-- [src/components/CamCanvas.tsx](/home/shaun/Development/simple-CAM/src/components/CamCanvas.tsx)
-- [src/components/canvas/drawing.ts](/home/shaun/Development/simple-CAM/src/components/canvas/drawing.ts)
-- [src/utils/toolpathPreview.ts](/home/shaun/Development/simple-CAM/src/utils/toolpathPreview.ts)
-- [src/utils/toolpathPreview3d.ts](/home/shaun/Development/simple-CAM/src/utils/toolpathPreview3d.ts)
+- [src/components/CamCanvas.tsx](../../src/components/CamCanvas.tsx)
+- [src/components/canvas/drawing.ts](../../src/components/canvas/drawing.ts)
+- [src/utils/toolpathPreview.ts](../../src/utils/toolpathPreview.ts)
+- [src/utils/toolpathPreview3d.ts](../../src/utils/toolpathPreview3d.ts)
+- [src/utils/materialRemovalPreview.ts](../../src/utils/materialRemovalPreview.ts)
+- [src/utils/materialRemovalMesh.ts](../../src/utils/materialRemovalMesh.ts)
 
 Why it matters:
 - Dense `surface-finish` previews can overwhelm the 2D view.
-- Rendering concerns and path-generation concerns are still close enough together that it is awkward to add level-of-detail behavior cleanly.
+- The adaptive removal sampler, stock-mesh generation, WebGL result geometry, and path rendering now form a second preview pipeline that needs equally clear boundaries.
 
 Recommended direction:
 - Keep full-resolution planner output for G-code and validation
 - Introduce a preview-oriented simplification stage for dense surface operations
 - Make 2D and 3D preview layers consume the same structured preview model, but allow each renderer to request a cheaper representation
+- Keep material-removal sampling/meshing independent from both the Three.js renderer and the G-code planners
 
 ### 3. ToolpathPreview3D decomposition
 
 Current pressure point:
-- [src/components/ToolpathPreview3D.tsx](/home/shaun/Development/simple-CAM/src/components/ToolpathPreview3D.tsx)
+- [src/components/ToolpathPreview3D.tsx](../../src/components/ToolpathPreview3D.tsx)
+- [src/components/toolpathPreview3d/threeResultGeometry.ts](../../src/components/toolpathPreview3d/threeResultGeometry.ts)
 
 Why it matters:
-- Scene projection math, bounds fitting, gizmo generation, playback logic, drag handling, and rendering all live in one component.
+- Three.js result geometry has been extracted, but scene projection, bounds fitting, gizmo generation, playback logic, drag handling, SVG fallback, and WebGL scene lifecycle still meet in one component.
 - That makes performance work and UI changes riskier than necessary.
 
 Recommended direction:
 - Split projection/math helpers into a `preview3d` utility module
 - Split playback state/timing into a small hook
-- Split rendering subtrees into scene layers: stock bounds, toolpath lines, imported meshes, playback marker, gizmo
+- Split rendering subtrees into scene layers: result stock, stock bounds, toolpath lines, imported meshes, playback marker, and gizmo
 
 ### 4. Surface planning primitives
 
 Current pressure point:
-- [src/utils/surfaceRoughing.ts](/home/shaun/Development/simple-CAM/src/utils/surfaceRoughing.ts)
+- [src/utils/surfaceRoughing.ts](../../src/utils/surfaceRoughing.ts)
 
 Why it matters:
 - Roughing and finishing share raster sampling concepts, but the shared primitives are still embedded in one growing module.
@@ -72,7 +76,7 @@ Recommended direction:
 ### 5. Geometry module decomposition
 
 Current pressure point:
-- [src/utils/geometry.ts](/home/shaun/Development/simple-CAM/src/utils/geometry.ts)
+- [src/utils/geometry.ts](../../src/utils/geometry.ts)
 
 Why it matters:
 - The file now spans selection helpers, sketch integrity, path extraction, transforms, and operation mutation helpers.

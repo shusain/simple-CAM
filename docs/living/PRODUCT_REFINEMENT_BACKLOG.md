@@ -27,6 +27,8 @@ The app now has the following core capabilities in place:
 - [x] Collapsible side panels and unrestricted canvas panning with clickable minimap navigation
 - [x] 3D toolpath preview with orbit/zoom, orientation gizmo, and playback controls
 - [x] Advisory 2.5D material-removal preview with explicit stock thickness and toolpath/result/combined display modes
+- [x] Three.js/WebGL result rendering with adaptive standard, detailed, and desktop-ultra sampling
+- [x] Grayscale raster-image laser engraving with editable placement and brightness-driven power
 - [x] Project save/load, G-code export, and OctoPrint upload/run integration
 - [x] CI, tests, and release automation in place
 
@@ -34,7 +36,7 @@ The app now has the following core capabilities in place:
 
 - Prioritize work that expands real project usefulness without weakening toolpath trust
 - Prefer features that reuse the existing sketch and operation model instead of adding parallel workflows
-- Keep G-code, path previews, and future material-removal previews driven by the same planned motion and tool-geometry model
+- Keep G-code, path previews, and material-removal previews driven by the same planned motion and tool-geometry model
 - Capture machine-testing findings in [ALPHA_FEEDBACK_TEMPLATE.md](./ALPHA_FEEDBACK_TEMPLATE.md)
 
 ## Priority Rubric
@@ -328,7 +330,8 @@ Why it matters:
 The operations list should help confirm setup and catch invalid state without constant reselection.
 
 Scope:
-- [ ] Show compact summaries for tool, material, cut side, target depth, and tabs
+- [ ] Show compact summaries for tool, cut side/strategy, target depth, and tabs
+- [x] Keep the job-wide material visible in machine setup instead of repeating it on every operation
 - [ ] Show open/closed sketch state directly in the list
 - [ ] Flag invalid or incomplete operations inline
 
@@ -381,7 +384,7 @@ Reference:
 ### Batch operation editing
 
 Reason for deferral:
-`Apply to all` currently covers the highest-value bulk update flow for this alpha stage, and true heterogeneous multi-editing adds complexity in both UI state and undo behavior.
+Job-wide material selection and `Apply depths to all operations` cover the highest-value bulk update flows for this alpha stage, and true heterogeneous multi-editing adds complexity in both UI state and undo behavior.
 
 Revisit when:
 - [ ] There is stronger demand for editing subsets of operations with mixed values
@@ -443,17 +446,22 @@ Ideas:
 
 1. [ ] Run laser test patterns and representative cut/etch jobs on the target machine
 2. [ ] Capture findings, promote any unsafe motion/output behavior to `P0`, and refine laser defaults and guidance
-3. [x] Define the milling tool-geometry data model, validation rules, UI fields, and current project schema
-4. [x] Add shared tool-profile/contact math, current-schema tests, and usable-depth validation
-5. [x] Implement fixed-width V-groove planning through operation editing, preview, and G-code
-6. [x] Add chamfer-edge placement with explicit target width/depth and tapered-tool validation
-7. [x] Apply ball-nose contact geometry to surface finishing and add representative path tests
-8. [ ] Design variable-depth area/shape V-carving separately from fixed-width path grooves
-9. [x] Build the first height-field material-removal preview from the same ordered paths used by G-code
-10. [x] Add result/path display modes
-11. [ ] Refine result-preview accuracy, per-operation caching/playback, and performance on representative jobs
-12. [ ] Improve clear-area generation with contour-plus-raster behavior for complete shape and glyph cleanup
-13. [ ] Return to STL physical validation and preview-performance work with machine-test findings
+3. [ ] Calibrate advisory 100%-power depth values for representative laser/material pairs
+4. [ ] Test raster photographs, logos, gradients, transparency, and fine line intervals on the target machine
+5. [x] Make stock material a job-wide choice while retaining tool/material-specific presets
+6. [x] Add grayscale raster-image import with brightness-driven inline laser power
+7. [x] Add laser result depth based on material calibration, power, passes, and raster luminance
+8. [x] Define the milling tool-geometry data model, validation rules, UI fields, and current project schema
+9. [x] Add shared tool-profile/contact math, current-schema tests, and usable-depth validation
+10. [x] Implement fixed-width V-groove planning through operation editing, preview, and G-code
+11. [x] Add chamfer-edge placement with explicit target width/depth and tapered-tool validation
+12. [x] Apply ball-nose contact geometry to surface finishing and add representative path tests
+13. [ ] Design variable-depth area/shape V-carving separately from fixed-width path grooves
+14. [x] Build the first height-field material-removal preview from the same ordered paths used by G-code
+15. [x] Add toolpath/result/combined modes and WebGL result rendering
+16. [ ] Refine result-preview accuracy, per-operation caching/playback, and performance on representative jobs
+17. [ ] Improve clear-area generation with contour-plus-raster behavior for complete shape and glyph cleanup
+18. [ ] Return to STL physical validation and preview-performance work with machine-test findings
 
 ## User-Driven Direction
 
@@ -469,7 +477,7 @@ Ideas:
 
 - [x] Import should land inside the existing sketch and operation workflow, not become a separate mode
 - [x] 3D toolpath preview is now in place as groundwork for future STL work
-- [x] `Apply to all` is sufficient for current bulk-edit needs during alpha
+- [x] Job-wide material selection plus depth apply-all are sufficient for current bulk-edit needs during alpha
 - [x] `SVG` and `DXF` import are both in place for the current alpha workflow
 - [x] STL import now uses the completed 3D path-planning and visualization groundwork
 - [x] First STL assumptions: Onshape/mm source, rectangular stock, stock-top `Z0`, centered placement, and dedicated `surface-rough` / `surface-finish` operations

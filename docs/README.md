@@ -7,8 +7,8 @@ This directory keeps project documents that are useful during active development
 Current working documents that should stay updated as the product evolves:
 
 - [Product Refinement Backlog](./living/PRODUCT_REFINEMENT_BACKLOG.md)
-- [Alpha Feedback Template](./living/ALPHA_FEEDBACK_TEMPLATE.md)
-- [Codebase Review](./living/CODEBASE_REVIEW.md)
+- [Alpha Feedback Template](./living/ALPHA_FEEDBACK_TEMPLATE.md) — machine, laser/raster, and preview validation checklist
+- [Codebase Review](./living/CODEBASE_REVIEW.md) — current refactor pressure points after recent feature growth
 
 ## Archived
 
