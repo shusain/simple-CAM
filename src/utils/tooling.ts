@@ -56,6 +56,10 @@ export function normalizeMaterialProfile(profile: unknown): ToolMaterialProfile 
   const drillDepthPerPass = toPositiveNumber(data.drillDepthPerPass, null);
   const cutDepthPerPass = toPositiveNumber(data.cutDepthPerPass, null);
   const laserKerfDiameter = toPositiveNumber(data.laserKerfDiameter, null);
+  const laserDepthPerPassAtFullPower = toPositiveNumber(
+    data.laserDepthPerPassAtFullPower,
+    null
+  );
   const laserCutSpeedMin = toPositiveNumber(data.laserCutSpeedMin, null);
   const laserCutSpeedMax = toPositiveNumber(data.laserCutSpeedMax, null);
   const laserCutPowerMin = toPercentage(data.laserCutPowerMin, null);
@@ -71,6 +75,7 @@ export function normalizeMaterialProfile(profile: unknown): ToolMaterialProfile 
     drillDepthPerPass === null &&
     cutDepthPerPass === null &&
     laserKerfDiameter === null &&
+    laserDepthPerPassAtFullPower === null &&
     laserCutSpeedMin === null &&
     laserCutSpeedMax === null &&
     laserCutPowerMin === null &&
@@ -89,6 +94,7 @@ export function normalizeMaterialProfile(profile: unknown): ToolMaterialProfile 
     drillDepthPerPass,
     cutDepthPerPass,
     laserKerfDiameter,
+    laserDepthPerPassAtFullPower,
     laserCutSpeedMin,
     laserCutSpeedMax,
     laserCutPowerMin,
@@ -149,6 +155,10 @@ export function resolveLaserMaterialPreset(
     0.01,
     Number(profile?.laserKerfDiameter) || legacyKerfDiameter
   );
+  const depthPerPassAtFullPower = Math.max(
+    0.01,
+    Number(profile?.laserDepthPerPassAtFullPower) || 1
+  );
   const baseSpeed = Math.max(1, Number(tool?.cutFeedRate) || 600);
   const fallbackMaxSpeed = Math.max(baseSpeed, 6000);
   const [cutSpeedMin, cutSpeedMax] = orderedRange(
@@ -180,6 +190,7 @@ export function resolveLaserMaterialPreset(
 
   return {
     kerfDiameter,
+    depthPerPassAtFullPower,
     cutSpeedMin,
     cutSpeedMax,
     cutPowerMin,

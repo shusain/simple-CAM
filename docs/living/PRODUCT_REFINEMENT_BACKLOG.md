@@ -16,7 +16,7 @@ The app now has the following core capabilities in place:
 - [x] Excellon / DRL drill import into native drill operations
 - [x] STL import with centered placement, 2D silhouette editing, and dedicated surface operations
 - [x] Material-aware tool presets with per-tool/per-material feeds and pass depth
-- [x] Mill and laser tool types with shared materials and tool/material-specific laser presets
+- [x] Mill and laser tool types with a job-wide material choice and tool/material-specific presets
 - [x] Milling tool definitions for flat-end, ball-nose, V-bit, and chamfer cutter profiles
 - [x] Laser cut and fill/etch operations with power, speed, passes, line interval, and overscan controls
 - [x] Marlin inline laser output using `M3 I` continuous or `M4 I` dynamic mode, with `M5` shutdown
@@ -84,6 +84,7 @@ Completed:
 Completed:
 - [x] Add laser as a first-class tool type alongside mill tooling
 - [x] Share material choices across tool types while keeping laser speed, power, and kerf settings per tool/material pair
+- [x] Make material selection job-wide so every operation resolves against the same stock material
 - [x] Present laser power as `0–100%` and map it to Marlin `S0–S255` output
 - [x] Support along-path cutting and filled etching with configurable passes, line interval, and motion overscan
 - [x] Emit Marlin continuous (`M3 I`) or dynamic (`M4 I`) inline laser commands and stop laser output with `M5`
@@ -115,6 +116,7 @@ Completed:
 - [x] Generate alternating raster rows with configurable speed, passes, line interval, and motion overscan
 - [x] Queue Marlin `M3` / `M4` power changes in inline mode and use `M5` for every row link and overscan transition
 - [x] Show the grayscale source and raster-row toolpaths in 2D/3D previews without expanding every pixel for ordinary preview rendering
+- [x] Approximate raster engraving depth per pixel from mapped power, pass count, and the laser/material calibration
 - [ ] Hands-on test representative photographs, logos, gradients, and transparent images on the target machine
 - [ ] Add image-processing controls such as inversion, brightness/contrast, gamma, threshold, and dithering
 - [ ] Add estimated G-code size/runtime warnings for very fine intervals or large images
@@ -145,6 +147,7 @@ Reference:
 - [ ] Machine-test along-path cuts, fill/etch operations, multiple passes, line interval, and overscan on representative materials
 - [ ] Verify test-pattern labels run before cells and that independent label speed/power settings produce readable markings
 - [ ] Record usable power/speed/kerf ranges and any machine-specific start/end G-code in the alpha feedback template
+- [ ] Calibrate approximate depth at 100% power per pass for representative laser/material pairs
 - [ ] Review focus-height, positioning, and operator guidance after hands-on use
 - [ ] Treat any finding that can leave the laser energized during unintended travel as a `P0` issue
 
@@ -207,7 +210,8 @@ Let users define common milling cutter shapes and produce paths that account for
 - [x] Greedily merge adjacent coplanar stock/result regions so untouched areas do not emit a face per sample cell
 - [x] Preserve explicit 90° cut walls in flat/laser-only results while continuously interpolating ball-nose and tapered cutter envelopes
 - [x] Preserve local 90° flat/laser boundaries when those operations share a result with ball-nose or tapered-tool cuts
-- [x] Render full-depth milling cuts and laser-cut kerfs as open gaps with internal stock walls instead of a stock-bottom floor
+- [x] Render full-depth milling cuts and laser kerfs that reach stock thickness as open gaps with internal stock walls instead of a stock-bottom floor
+- [x] Approximate laser result depth from a per-tool/material 100%-power depth calibration, operation power, passes, and raster pixel luminance
 - [x] Compare initial flat and ball-nose simulated cross-sections against analytic tool-profile expectations
 - [ ] Extend analytic result-preview tests to V-bit/chamfer cross-sections and representative generated jobs
 - [x] Keep material-removal visualization advisory: it does not alter G-code and explicitly discloses its adaptive sample resolution
@@ -219,7 +223,7 @@ Goal:
 Provide a credible visual approximation of the finished workpiece by subtracting each milling tool's swept profile from the starting stock.
 
 Status:
-The first advisory result preview is implemented. It shares ordered 3D cut/plunge motion with G-code-oriented planning, includes retaining-tab lifts, and subtracts analytic axisymmetric cutter profiles from the stock envelope. That envelope is clipped and triangulated into a continuous shaded mesh rather than rendered as square cells. Flat/laser regions use greedy planar meshing with explicit vertical walls, including local boundaries inside jobs that also contain ball-nose or tapered-tool cuts. Continuous interpolation remains within the shaped-cutter regions. Through-cuts produce separated stock regions using milling width or laser kerf, and users can select standard, detailed, or desktop ultra sampling. Result and combined views now render the mesh through Three.js/WebGL so face visibility is resolved by a real depth buffer instead of SVG painter sorting; SVG remains the toolpath/playback renderer and fallback. Per-operation snapshots, downstream cache invalidation, further adaptive refinement, and broader cross-section validation remain. A general-purpose CSG kernel should only be reconsidered if future operations require undercuts or non-axisymmetric cutters.
+The first advisory result preview is implemented. It shares ordered 3D cut/plunge motion with G-code-oriented planning, includes retaining-tab lifts, and subtracts analytic axisymmetric cutter profiles from the stock envelope. That envelope is clipped and triangulated into a continuous shaded mesh rather than rendered as square cells. Flat/laser regions use greedy planar meshing with explicit vertical walls, including local boundaries inside jobs that also contain ball-nose or tapered-tool cuts. Continuous interpolation remains within the shaped-cutter regions. Laser depth is approximated from the selected laser/material calibration, requested power, passes, and raster pixel luminance; it remains a visualization aid rather than a physical process model. Cuts that reach stock thickness produce separated stock regions using milling width or laser kerf, and users can select standard, detailed, or desktop ultra sampling. Result and combined views now render the mesh through Three.js/WebGL so face visibility is resolved by a real depth buffer instead of SVG painter sorting; SVG remains the toolpath/playback renderer and fallback. Per-operation snapshots, downstream cache invalidation, further adaptive refinement, and broader cross-section validation remain. A general-purpose CSG kernel should only be reconsidered if future operations require undercuts or non-axisymmetric cutters.
 
 ### 4. Text tool and glyph-based path workflow
 

@@ -80,5 +80,4 @@ export interface ControlPanelProps {
   onSendAndRunOctoprint: () => void;
   operationCount: number;
   onApplyDepthSettingsToAll: () => void;
-  onApplyMaterialToAll: () => void;
 }

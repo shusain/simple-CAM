@@ -9,14 +9,12 @@ import {
   makeImportedMesh,
   makeImageFillOperation,
   makeLineOperation,
-  makeMaterial,
   makeRectOperation,
   makeSketchOperation,
   makeTool,
 } from '../test/factories';
 
 function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPanelProps {
-  const materials = [makeMaterial({ id: 'material-1', name: 'Birch' })];
   const tools = [makeTool({ id: 'tool-1', name: 'Endmill', diameter: 3.175 })];
   const operations = overrides.operations ?? [makeRectOperation({ id: 'rect-1', toolId: 'tool-1', materialId: 'material-1' })];
 
@@ -28,7 +26,6 @@ function buildProps(overrides: Partial<OperationsPanelProps> = {}): OperationsPa
     selectedOperation: overrides.selectedOperation ?? operations[0] ?? null,
     selectedImportedMesh: null,
     selectedOperationIds: overrides.selectedOperationIds ?? (operations[0] ? [operations[0].id] : []),
-    materials,
     tools,
     onSelectOperation: vi.fn(),
     onSelectImportedMesh: vi.fn(),

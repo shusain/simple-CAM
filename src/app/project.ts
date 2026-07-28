@@ -123,7 +123,7 @@ export function hydrateProjectFile(project: CamProjectFile, createId: () => stri
               item.toolId && tools.some((tool) => tool.id === item.toolId)
                 ? item.toolId
                 : activeToolId,
-            materialId: resolveMaterialId(materials, item.materialId, settings.activeMaterialId) || undefined,
+            materialId: settings.activeMaterialId,
           }))
       : [];
   const importedMeshes = Array.isArray(project.importedMeshes)

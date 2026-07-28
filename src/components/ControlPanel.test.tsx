@@ -46,13 +46,12 @@ function buildProps(overrides: Partial<ControlPanelProps> = {}): ControlPanelPro
     onSendAndRunOctoprint: vi.fn(),
     operationCount: 2,
     onApplyDepthSettingsToAll: vi.fn(),
-    onApplyMaterialToAll: vi.fn(),
     ...overrides,
   };
 }
 
 describe('ControlPanel', () => {
-  it('invokes project and apply-to-all actions', () => {
+  it('invokes project and apply-depth actions', () => {
     const props = buildProps();
     render(<ControlPanel {...props} />);
 
@@ -65,7 +64,6 @@ describe('ControlPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import raster image' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export G-code' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply material to all operations' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply depths to all operations' }));
 
     expect(props.onNewProject).toHaveBeenCalledTimes(1);
@@ -77,7 +75,6 @@ describe('ControlPanel', () => {
     expect(props.onImportRasterImage).toHaveBeenCalledTimes(1);
     expect(props.onSaveProject).toHaveBeenCalledTimes(1);
     expect(props.onExportGcode).toHaveBeenCalledTimes(1);
-    expect(props.onApplyMaterialToAll).toHaveBeenCalledTimes(1);
     expect(props.onApplyDepthSettingsToAll).toHaveBeenCalledTimes(1);
   });
 
@@ -117,7 +114,7 @@ describe('ControlPanel', () => {
     fireEvent.change(screen.getByLabelText('Grid size'), { target: { value: '0' } });
     fireEvent.click(screen.getByLabelText('Snap to grid'));
     fireEvent.change(screen.getByLabelText('Active tool'), { target: { value: 'tool-2' } });
-    fireEvent.change(screen.getByLabelText('Active material'), { target: { value: 'material-2' } });
+    fireEvent.change(screen.getByLabelText('Job material'), { target: { value: 'material-2' } });
     fireEvent.change(screen.getByLabelText('Circle segments'), { target: { value: '3' } });
 
     expect(onSettingsChange).toHaveBeenCalledWith({ workWidth: 10 });
@@ -204,29 +201,21 @@ describe('ControlPanel', () => {
     expect(props.onSendAndRunOctoprint).toHaveBeenCalledTimes(1);
   });
 
-  it('disables apply-all buttons when there are no operations', () => {
+  it('disables the apply-depth button when there are no operations', () => {
     render(<ControlPanel {...buildProps({ operationCount: 0 })} />);
 
-    expect(screen.getByRole('button', { name: 'Apply material to all operations' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Apply depths to all operations' })).toBeDisabled();
   });
 
-  it('stores apply-all guidance on button tooltips instead of inline panel copy', () => {
+  it('stores apply-depth guidance on the button tooltip instead of inline panel copy', () => {
     render(<ControlPanel {...buildProps()} />);
 
-    expect(
-      screen.getByRole('button', { name: 'Apply material to all operations' })
-    ).toHaveAttribute(
-      'title',
-      'Assigns the active material to every operation so each tool uses its material-specific feeds and stepdown settings.'
-    );
     expect(
       screen.getByRole('button', { name: 'Apply depths to all operations' })
     ).toHaveAttribute(
       'title',
       'Updates all drill operations to the current drill depth and all cut operations to the current cut depth.'
     );
-    expect(screen.queryByText(/assigns the active material to every operation/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/updates all drill operations to the current drill depth/i)).not.toBeInTheDocument();
   });
 
@@ -293,7 +282,7 @@ describe('ControlPanel', () => {
     fireEvent.click(within(modal).getByRole('button', { name: 'Add Material' }));
     fireEvent.change(within(modal).getByLabelText('Name'), { target: { value: '6061' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Delete Material' }));
-    fireEvent.click(within(modal).getByRole('button', { name: 'Set Active Material' }));
+    fireEvent.click(within(modal).getByRole('button', { name: 'Set Job Material' }));
 
     expect(onAddMaterial).toHaveBeenCalledTimes(1);
     expect(onUpdateMaterial).toHaveBeenCalledWith('material-2', { name: '6061' });
@@ -316,6 +305,7 @@ describe('ControlPanel', () => {
           drillDepthPerPass: null,
           cutDepthPerPass: null,
           laserKerfDiameter: 0.12,
+          laserDepthPerPassAtFullPower: 1.25,
           laserCutSpeedMin: 300,
           laserCutSpeedMax: 900,
           laserCutPowerMin: 70,
@@ -343,6 +333,7 @@ describe('ControlPanel', () => {
     const modal = (screen.getByText('Tool Manager').closest('.modal-card') ?? document.body) as HTMLElement;
 
     expect(within(modal).getByLabelText('Kerf diameter')).toHaveValue('0.12');
+    expect(within(modal).getByLabelText('Depth at 100% / pass')).toHaveValue('1.25');
     expect(within(modal).queryByLabelText('Max speed')).not.toBeInTheDocument();
     expect(within(modal).getByLabelText('Speed min')).toHaveValue('300');
     expect(within(modal).getByLabelText('Power min (%)')).toHaveValue('70');
@@ -371,6 +362,14 @@ describe('ControlPanel', () => {
       'laser-1',
       'material-1',
       { laserKerfDiameter: 0.15 }
+    );
+    fireEvent.change(within(modal).getByLabelText('Depth at 100% / pass'), {
+      target: { value: '1.5' },
+    });
+    expect(onUpdateToolMaterialProfile).toHaveBeenCalledWith(
+      'laser-1',
+      'material-1',
+      { laserDepthPerPassAtFullPower: 1.5 }
     );
   });
 

@@ -25,7 +25,6 @@ import { CutSideEditor, DepthEditor } from './operationsPanel/controls';
 import {
   formatOperationLabel,
   getImportedMeshName,
-  getMaterialName,
   getToolName,
   updateSketchSegment,
   updateSketchStart,
@@ -72,7 +71,6 @@ export default function OperationsPanel({
   selectedOperation,
   selectedImportedMesh,
   selectedOperationIds,
-  materials,
   tools,
   onSelectOperation,
   onSelectImportedMesh,
@@ -947,6 +945,7 @@ export default function OperationsPanel({
                   {selectedOperationTool?.laserInlineMode === 'dynamic' ? 'M4 I dynamic' : 'M3 I continuous'}
                   {' '}mode · power {isImageFill ? imagePowerMin : laserPowerMin}–{isImageFill ? imagePowerMax : laserPowerMax}% maps to S0–S255
                   {' '}· material speed {laserSpeedMin}–{laserSpeedMax} mm/min
+                  {' '}· approximate preview depth {selectedLaserPreset.depthPerPassAtFullPower} mm at 100% per pass
                 </p>
                 <p>
                   Laser paths leave Z at the current focus position. Use start G-code to establish
@@ -961,40 +960,6 @@ export default function OperationsPanel({
               This operation will be skipped during G-code export.
             </p>
           ) : null}
-
-          <label className="field-row">
-            <span>Material</span>
-            <select
-              value={selectedOperation.materialId || ''}
-              onChange={(event) => {
-                const materialId = event.target.value;
-                if (!selectedOperationTool?.isLaser) {
-                  onUpdateOperation(selectedOperation.id, { materialId });
-                  return;
-                }
-                const preset = resolveLaserMaterialPreset(selectedOperationTool, materialId);
-                onUpdateOperation(selectedOperation.id, {
-                  materialId,
-                  laserPower:
-                    laserProcess === 'etch' ? preset.etchPowerMin : preset.cutPowerMax,
-                  laserSpeed:
-                    laserProcess === 'etch' ? preset.etchSpeedMax : preset.cutSpeedMin,
-                  ...(selectedOperation.type === 'image-fill'
-                    ? {
-                        laserPowerMin: preset.etchPowerMin,
-                        laserPowerMax: preset.etchPowerMax,
-                      }
-                    : {}),
-                });
-              }}
-            >
-              {materials.map((material) => (
-                <option key={material.id} value={material.id}>
-                  {material.name}
-                </option>
-              ))}
-            </select>
-          </label>
 
           {selectedOperation.type === 'image-fill' ? (
             <>
@@ -1856,7 +1821,6 @@ export default function OperationsPanel({
                         <span className="operation-type">{operation.type.toUpperCase()}</span>
                         <span>{formatOperationLabel(operation)}</span>
                         <span className="operation-tool">{getToolName(operation.toolId, tools)}</span>
-                        <span className="operation-tool">{getMaterialName(operation.materialId, materials)}</span>
                       </button>
                       <div className="operation-order-controls">
                         <button

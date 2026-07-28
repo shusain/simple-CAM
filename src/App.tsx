@@ -889,7 +889,26 @@ export default function App(): React.JSX.Element {
     const id = newId();
     setMaterials((prev) => [...prev, { id, name: `Material ${prev.length + 1}` }]);
     setSettings((prev) => ({ ...prev, activeMaterialId: id }));
-  }, []);
+    commitOperations((prev) =>
+      prev.map((operation) => ({ ...operation, materialId: id }))
+    );
+  }, [commitOperations]);
+
+  const selectJobMaterial = useCallback(
+    (materialId: string) => {
+      const material = materials.find((item) => item.id === materialId);
+      if (!material) {
+        return;
+      }
+
+      setSettings((prev) => ({ ...prev, activeMaterialId: materialId }));
+      commitOperations((prev) =>
+        prev.map((operation) => ({ ...operation, materialId }))
+      );
+      setStatus(`Job material set to ${material.name}`);
+    },
+    [commitOperations, materials]
+  );
 
   const updateMaterial = useCallback((materialId: string, updates: Partial<Material>) => {
     setMaterials((prev) =>
@@ -902,19 +921,19 @@ export default function App(): React.JSX.Element {
       if (materials.length <= 1) return;
       const fallback = materials.find((material) => material.id !== materialId);
       if (!fallback) return;
+      const nextMaterialId =
+        activeMaterialId === materialId ? fallback.id : activeMaterialId;
 
       setMaterials((prev) => prev.filter((material) => material.id !== materialId));
       setSettings((prev) => ({
         ...prev,
-        activeMaterialId: prev.activeMaterialId === materialId ? fallback.id : prev.activeMaterialId,
+        activeMaterialId: nextMaterialId,
       }));
       commitOperations((prev) =>
-        prev.map((operation) =>
-          operation.materialId === materialId ? { ...operation, materialId: fallback.id } : operation
-        )
+        prev.map((operation) => ({ ...operation, materialId: nextMaterialId }))
       );
     },
-    [commitOperations, materials]
+    [activeMaterialId, commitOperations, materials]
   );
 
   const updateToolMaterialProfile = useCallback(
@@ -941,20 +960,6 @@ export default function App(): React.JSX.Element {
     },
     []
   );
-
-  const applyMaterialToAll = useCallback(() => {
-    if (operations.length === 0) {
-      return;
-    }
-
-    commitOperations((prev) =>
-      prev.map((operation) => ({
-        ...operation,
-        materialId: activeMaterialId,
-      }))
-    );
-    setStatus(`Applied ${activeMaterial?.name || 'material'} to ${operations.length} operation(s)`);
-  }, [activeMaterial?.name, activeMaterialId, commitOperations, operations.length]);
 
   const createLaserTestPattern = useCallback(
     (options: LaserTestPatternOptions) => {
@@ -2172,9 +2177,7 @@ export default function App(): React.JSX.Element {
             activeToolId={activeToolId}
             activeMaterialId={activeMaterialId}
             onSelectTool={setActiveToolId}
-            onSelectMaterial={(materialId: string) =>
-              setSettings((prev) => ({ ...prev, activeMaterialId: materialId }))
-            }
+            onSelectMaterial={selectJobMaterial}
             onAddMaterial={addMaterial}
             onUpdateMaterial={updateMaterial}
             onDeleteMaterial={deleteMaterial}
@@ -2197,7 +2200,6 @@ export default function App(): React.JSX.Element {
             onSendAndRunOctoprint={() => handleSendToOctoprint(true)}
             operationCount={operations.length}
             onApplyDepthSettingsToAll={applyDepthSettingsToAll}
-            onApplyMaterialToAll={applyMaterialToAll}
           />
         </aside>
 
@@ -2255,7 +2257,6 @@ export default function App(): React.JSX.Element {
             selectedOperation={selectedOperation}
             selectedImportedMesh={selectedImportedMesh}
             selectedOperationIds={selectedIds}
-            materials={materials}
             tools={tools}
             onSelectOperation={handleSelectOperation}
             onSelectImportedMesh={handleSelectImportedMesh}

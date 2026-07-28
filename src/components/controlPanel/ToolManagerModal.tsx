@@ -352,6 +352,21 @@ export default function ToolManagerModal({
                           })
                         }
                       />
+                      <NumberField
+                        label="Depth at 100% / pass"
+                        value={laserMaterialPreset.depthPerPassAtFullPower}
+                        min={0.01}
+                        step={0.01}
+                        onChange={(value) =>
+                          onUpdateToolMaterialProfile(editingTool.id, editingMaterial.id, {
+                            laserDepthPerPassAtFullPower: Math.max(0.01, value || 0.01),
+                          })
+                        }
+                      />
+                      <p className="section-note">
+                        Used only to approximate result-preview depth. Calibrate this value for
+                        the selected laser and material.
+                      </p>
                       <div className="subsection-title">Cut range</div>
                       <NumberField
                         label="Speed min"

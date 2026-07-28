@@ -36,7 +36,7 @@ export default function MaterialManagerModal({
 
         <div className="tool-manager-grid">
           <div>
-            <p className="section-note">Manage the list of stock/material presets used by operations.</p>
+            <p className="section-note">Manage stock materials available to the job and tool presets.</p>
             <ul className="tool-list">
               {materials.map((material) => (
                 <li key={material.id}>
@@ -85,7 +85,7 @@ export default function MaterialManagerModal({
                   onClose();
                 }}
               >
-                Set Active Material
+                Set Job Material
               </button>
             </div>
           ) : null}

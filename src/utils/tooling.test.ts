@@ -29,6 +29,7 @@ describe('tooling', () => {
         drillDepthPerPass: '0',
         cutDepthPerPass: 2,
         laserKerfDiameter: '0.12',
+        laserDepthPerPassAtFullPower: '1.5',
         laserCutPowerMin: 0,
         laserCutPowerMax: 120,
       })
@@ -38,6 +39,7 @@ describe('tooling', () => {
       drillDepthPerPass: null,
       cutDepthPerPass: 2,
       laserKerfDiameter: 0.12,
+      laserDepthPerPassAtFullPower: 1.5,
       laserCutPowerMin: 0,
       laserCutPowerMax: 100,
     });
@@ -182,6 +184,7 @@ describe('tooling', () => {
           drillDepthPerPass: null,
           cutDepthPerPass: null,
           laserKerfDiameter: 0.12,
+          laserDepthPerPassAtFullPower: 1.25,
           laserCutSpeedMin: 300,
           laserCutSpeedMax: 900,
           laserCutPowerMin: 70,
@@ -196,6 +199,7 @@ describe('tooling', () => {
 
     expect(resolveLaserMaterialPreset(tool, 'maple')).toEqual({
       kerfDiameter: 0.12,
+      depthPerPassAtFullPower: 1.25,
       cutSpeedMin: 300,
       cutSpeedMax: 900,
       cutPowerMin: 70,

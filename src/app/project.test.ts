@@ -146,6 +146,7 @@ describe('project helpers', () => {
               drillDepthPerPass: null,
               cutDepthPerPass: null,
               laserKerfDiameter: 0.12,
+              laserDepthPerPassAtFullPower: 1.4,
               laserCutSpeedMin: 300,
               laserCutSpeedMax: 900,
               laserCutPowerMin: 70,
@@ -191,6 +192,7 @@ describe('project helpers', () => {
     });
     expect(hydrated.tools[0].materialProfiles['material-1']).toMatchObject({
       laserKerfDiameter: 0.12,
+      laserDepthPerPassAtFullPower: 1.4,
       laserCutSpeedMin: 300,
       laserCutSpeedMax: 900,
       laserCutPowerMin: 70,
@@ -209,6 +211,30 @@ describe('project helpers', () => {
       laserLineInterval: 0.12,
       laserOverscan: 3,
     });
+  });
+
+  it('uses the job material for every hydrated operation', () => {
+    const hydrated = hydrateProjectFile(
+      {
+        version: 3,
+        settings: { activeMaterialId: 'material-1' } as never,
+        materials: [
+          makeMaterial({ id: 'material-1', name: 'Birch' }),
+          makeMaterial({ id: 'material-2', name: 'Acrylic' }),
+        ],
+        tools: [makeTool({ id: 'tool-1' })],
+        activeToolId: 'tool-1',
+        operations: [
+          makeLineOperation({
+            toolId: 'tool-1',
+            materialId: 'material-2',
+          }),
+        ],
+      },
+      () => 'unused'
+    );
+
+    expect(hydrated.operations[0].materialId).toBe('material-1');
   });
 
   it('persists the current raster image-fill operation schema', () => {

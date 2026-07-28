@@ -5,6 +5,7 @@ import type {
   Tool,
 } from '../types';
 import { getMillingToolHeightAtRadius } from './millingToolGeometry';
+import { buildRasterScanRows } from './rasterImage';
 import { resolveLaserMaterialPreset } from './tooling';
 import {
   buildToolpathPreview3D,
@@ -46,6 +47,12 @@ interface BuildMaterialRemovalPreviewArgs {
 function positiveNumber(value: unknown, fallback: number): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function clampPercentage(value: unknown, fallback: number): number {
+  const numeric = Number(value);
+  const resolved = Number.isFinite(numeric) ? numeric : fallback;
+  return Math.min(100, Math.max(0, resolved));
 }
 
 function buildGridDimensions(
@@ -218,9 +225,14 @@ export function buildMaterialRemovalPreview({
     }
   }
 
-  function applyLaserKerfAtPoint(point: Point3D, kerfDiameter: number): void {
+  function applyLaserKerfAtPoint(
+    point: Point3D,
+    kerfDiameter: number,
+    removalDepth: number
+  ): void {
     const kerfRadius = Math.max(0, kerfDiameter) / 2;
-    if (kerfRadius <= 0) {
+    const targetHeight = Math.max(stockBottom, -Math.max(0, removalDepth));
+    if (kerfRadius <= 0 || targetHeight >= -0.000001) {
       return;
     }
 
@@ -251,14 +263,58 @@ export function buildMaterialRemovalPreview({
         }
 
         const index = row * grid.columns + column;
-        if (heights[index] > stockBottom + 0.000001) {
-          heights[index] = stockBottom;
+        if (heights[index] > targetHeight + 0.000001) {
+          heights[index] = targetHeight;
           surfaceModes[index] = 1;
           removedCells.add(index);
         }
       }
     }
   }
+
+  operations.forEach((operation) => {
+    if (operation.type !== 'image-fill') {
+      return;
+    }
+
+    const tool = operation.toolId ? toolMap.get(operation.toolId) : undefined;
+    if (!tool) {
+      missingToolOperationIds.add(operation.id);
+      return;
+    }
+    if (!tool.isLaser) {
+      return;
+    }
+
+    const preset = resolveLaserMaterialPreset(tool, operation.materialId);
+    const passes = Math.max(1, Math.round(Number(operation.laserPasses) || 1));
+    let rows: ReturnType<typeof buildRasterScanRows>;
+    try {
+      rows = buildRasterScanRows(operation);
+    } catch {
+      return;
+    }
+
+    simulatedOperationIds.add(operation.id);
+    rows.forEach((row) => {
+      let sampleStart = { ...row.start, z: 0 };
+      row.samples.forEach((sample) => {
+        const sampleEnd = { ...sample.end, z: 0 };
+        const removalDepth =
+          preset.depthPerPassAtFullPower *
+          (clampPercentage(sample.powerPercent, 0) / 100) *
+          passes;
+        sampleSegment(
+          sampleStart,
+          sampleEnd,
+          motionSampleSpacing,
+          (point) =>
+            applyLaserKerfAtPoint(point, preset.kerfDiameter, removalDepth)
+        );
+        sampleStart = sampleEnd;
+      });
+    });
+  });
 
   toolpath.segments.forEach((segment) => {
     if (!shouldSimulateSegment(segment) || !segment.operationId) {
@@ -276,24 +332,36 @@ export function buildMaterialRemovalPreview({
 
     simulatedOperationIds.add(operation.id);
     if (tool.isLaser) {
+      if (operation.type === 'image-fill') {
+        return;
+      }
       const laserProcess =
         operation.laserProcess ||
         (operation.type === 'text' ? 'etch' : 'cut');
-      if (laserProcess !== 'cut') {
-        simulatedOperationIds.delete(operation.id);
-        return;
-      }
-
-      const kerfDiameter = resolveLaserMaterialPreset(
-        tool,
-        operation.materialId
-      ).kerfDiameter;
+      const preset = resolveLaserMaterialPreset(tool, operation.materialId);
+      const fallbackPower =
+        laserProcess === 'etch' ? preset.etchPowerMin : preset.cutPowerMax;
+      const powerPercent = clampPercentage(
+        operation.laserPower,
+        fallbackPower
+      );
+      const passes = Math.max(
+        1,
+        Math.round(Number(operation.laserPasses) || 1)
+      );
+      const removalDepth =
+        preset.depthPerPassAtFullPower * (powerPercent / 100) * passes;
       for (let index = 1; index < segment.points.length; index += 1) {
         sampleSegment(
           segment.points[index - 1],
           segment.points[index],
           motionSampleSpacing,
-          (point) => applyLaserKerfAtPoint(point, kerfDiameter)
+          (point) =>
+            applyLaserKerfAtPoint(
+              point,
+              preset.kerfDiameter,
+              removalDepth
+            )
         );
       }
       return;

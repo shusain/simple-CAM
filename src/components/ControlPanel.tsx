@@ -47,7 +47,6 @@ export default function ControlPanel({
   onSendAndRunOctoprint,
   operationCount,
   onApplyDepthSettingsToAll,
-  onApplyMaterialToAll,
 }: ControlPanelProps): React.JSX.Element {
   const [isToolModalOpen, setIsToolModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
@@ -172,7 +171,7 @@ export default function ControlPanel({
 
         <div className="subsection-title">Material</div>
         <label className="field-row">
-          <span>Active material</span>
+          <span>Job material</span>
           <select
             value={activeMaterialId}
             onChange={(event) => onSelectMaterial(event.target.value)}
@@ -186,15 +185,6 @@ export default function ControlPanel({
         </label>
         <button type="button" onClick={() => setIsMaterialModalOpen(true)}>
           Open Material Manager
-        </button>
-        <button
-          type="button"
-          className="accent"
-          title="Assigns the active material to every operation so each tool uses its material-specific feeds and stepdown settings."
-          onClick={onApplyMaterialToAll}
-          disabled={operationCount === 0}
-        >
-          Apply material to all operations
         </button>
 
         <div className="subsection-title">Tool</div>

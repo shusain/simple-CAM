@@ -33,6 +33,8 @@ export interface ToolMaterialProfile {
   drillDepthPerPass: number | null;
   cutDepthPerPass: number | null;
   laserKerfDiameter?: number | null;
+  /** Approximate material depth removed by one pass at 100% laser power. */
+  laserDepthPerPassAtFullPower?: number | null;
   laserCutSpeedMin?: number | null;
   laserCutSpeedMax?: number | null;
   laserCutPowerMin?: number | null;
@@ -53,6 +55,7 @@ export interface ToolPreset {
 
 export interface LaserMaterialPreset {
   kerfDiameter: number;
+  depthPerPassAtFullPower: number;
   cutSpeedMin: number;
   cutSpeedMax: number;
   cutPowerMin: number;
