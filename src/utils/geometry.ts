@@ -782,6 +782,38 @@ export function getOperationBounds(operation: Operation | null | undefined): Ope
     };
   }
 
+  if (operation.type === 'image-fill') {
+    const center = {
+      x: operation.x + operation.width / 2,
+      y: operation.y + operation.height / 2,
+    };
+    const corners = [
+      { x: operation.x, y: operation.y },
+      { x: operation.x + operation.width, y: operation.y },
+      {
+        x: operation.x + operation.width,
+        y: operation.y + operation.height,
+      },
+      { x: operation.x, y: operation.y + operation.height },
+    ].map((point) =>
+      rotatePoint(point, center, Number(operation.rotation) || 0)
+    );
+    return corners.reduce<OperationBounds>(
+      (bounds, point) => ({
+        minX: Math.min(bounds.minX, point.x),
+        minY: Math.min(bounds.minY, point.y),
+        maxX: Math.max(bounds.maxX, point.x),
+        maxY: Math.max(bounds.maxY, point.y),
+      }),
+      {
+        minX: corners[0].x,
+        minY: corners[0].y,
+        maxX: corners[0].x,
+        maxY: corners[0].y,
+      }
+    );
+  }
+
   if (operation.type === 'text') {
     const points = getTextOperationPathPoints(operation).flat();
     if (points.length === 0) return null;
@@ -922,6 +954,24 @@ export function hitTestOperation(operation: Operation | null | undefined, point:
     );
   }
 
+  if (operation.type === 'image-fill') {
+    const center = {
+      x: operation.x + operation.width / 2,
+      y: operation.y + operation.height / 2,
+    };
+    const local = rotatePoint(
+      point,
+      center,
+      -(Number(operation.rotation) || 0)
+    );
+    return (
+      local.x >= operation.x - tolerance &&
+      local.x <= operation.x + operation.width + tolerance &&
+      local.y >= operation.y - tolerance &&
+      local.y <= operation.y + operation.height + tolerance
+    );
+  }
+
   return getSketchSubpaths(operation).some((path) =>
     path.some((_, index) => index > 0 && pointToSegmentDistance(point, path[index - 1], path[index]) <= tolerance)
   );
@@ -965,6 +1015,14 @@ export function moveOperation(operation: Operation | null | undefined, dx: numbe
   }
 
   if (operation.type === 'text') {
+    return {
+      ...operation,
+      x: operation.x + dx,
+      y: operation.y + dy,
+    };
+  }
+
+  if (operation.type === 'image-fill') {
     return {
       ...operation,
       x: operation.x + dx,
@@ -1041,6 +1099,23 @@ export function rotateOperation(
       x: anchor.x,
       y: anchor.y,
       rotation: (operation.rotation || 0) + angleRadians,
+    };
+  }
+
+  if (operation.type === 'image-fill') {
+    const center = rotatePoint(
+      {
+        x: operation.x + operation.width / 2,
+        y: operation.y + operation.height / 2,
+      },
+      pivot,
+      angleRadians
+    );
+    return {
+      ...operation,
+      x: center.x - operation.width / 2,
+      y: center.y - operation.height / 2,
+      rotation: (Number(operation.rotation) || 0) + angleRadians,
     };
   }
 
@@ -1180,6 +1255,27 @@ export function scaleOperation(
       y: anchor.y,
       scaleX: Math.abs(nextScaleX) <= 0.000001 ? 0.0001 : nextScaleX,
       scaleY: Math.abs(nextScaleY) <= 0.000001 ? 0.0001 : nextScaleY,
+    };
+  }
+
+  if (operation.type === 'image-fill') {
+    const center = scalePoint(
+      {
+        x: operation.x + operation.width / 2,
+        y: operation.y + operation.height / 2,
+      },
+      pivot,
+      scaleX,
+      scaleY
+    );
+    const width = Math.max(0.01, operation.width * Math.abs(scaleX));
+    const height = Math.max(0.01, operation.height * Math.abs(scaleY));
+    return {
+      ...operation,
+      x: center.x - width / 2,
+      y: center.y - height / 2,
+      width,
+      height,
     };
   }
 
@@ -1396,6 +1492,62 @@ export function sanitizeOperation(raw: unknown): Operation | null {
       tabHeight: toOptionalPositiveNumber(data.tabHeight) ?? 1,
       pocketEnabled: millingStrategy === 'standard' ? Boolean(data.pocketEnabled) : false,
       pocketStepOver: toOptionalPositiveNumber(data.pocketStepOver) ?? getDefaultPocketStepOver(),
+    };
+  }
+
+  if (data.type === 'image-fill') {
+    const x = toNumber(data.x, NaN);
+    const y = toNumber(data.y, NaN);
+    const width = toNumber(data.width, NaN);
+    const height = toNumber(data.height, NaN);
+    const pixelWidth = Math.round(toNumber(data.pixelWidth, NaN));
+    const pixelHeight = Math.round(toNumber(data.pixelHeight, NaN));
+    if (
+      ![x, y, width, height, pixelWidth, pixelHeight].every(
+        isFiniteNumber
+      ) ||
+      width <= 0 ||
+      height <= 0 ||
+      pixelWidth < 1 ||
+      pixelHeight < 1 ||
+      typeof data.grayscaleData !== 'string' ||
+      !data.grayscaleData
+    ) {
+      return null;
+    }
+
+    const minimumPower = clamp(
+      toNumber(data.laserPowerMin, 0),
+      0,
+      100
+    );
+    const maximumPower = clamp(
+      toNumber(data.laserPowerMax, 100),
+      minimumPower,
+      100
+    );
+    return {
+      id: String(data.id ?? ''),
+      type: 'image-fill',
+      sourceName:
+        typeof data.sourceName === 'string' && data.sourceName.trim()
+          ? data.sourceName.trim()
+          : 'Imported image',
+      x,
+      y,
+      width,
+      height,
+      rotation: toNumber(data.rotation, 0),
+      pixelWidth,
+      pixelHeight,
+      grayscaleData: data.grayscaleData,
+      depth: 0,
+      toolId: sanitizeToolId(data.toolId),
+      materialId: sanitizeMaterialId(data.materialId),
+      ...laserFields,
+      laserProcess: 'etch',
+      laserPowerMin: minimumPower,
+      laserPowerMax: maximumPower,
     };
   }
 

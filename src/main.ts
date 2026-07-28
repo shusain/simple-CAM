@@ -101,6 +101,11 @@ function createAppMenu(): void {
           click: () => sendMenuEvent('menu:importDrl'),
         },
         {
+          label: 'Import Raster Image',
+          accelerator: 'CmdOrCtrl+Shift+G',
+          click: () => sendMenuEvent('menu:importRasterImage'),
+        },
+        {
           label: 'Save Project',
           accelerator: 'CmdOrCtrl+S',
           click: () => sendMenuEvent('menu:save'),
@@ -333,6 +338,52 @@ ipcMain.handle('import:drl:open', async () => {
     return {
       canceled: false,
       error: error instanceof Error ? error.message : 'Unknown error while importing DRL',
+    };
+  }
+});
+
+ipcMain.handle('import:raster-image:open', async () => {
+  try {
+    const { canceled, filePaths } = await showOpenDialog({
+      title: 'Import Raster Image',
+      filters: [
+        {
+          name: 'Raster Images',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
+        },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = filePaths[0];
+    const contents = await fs.readFile(filePath);
+    const extension = path.extname(filePath).toLowerCase();
+    const mimeType =
+      extension === '.png'
+        ? 'image/png'
+        : extension === '.webp'
+          ? 'image/webp'
+          : extension === '.bmp'
+            ? 'image/bmp'
+            : 'image/jpeg';
+
+    return {
+      canceled: false,
+      filePath,
+      dataUrl: `data:${mimeType};base64,${contents.toString('base64')}`,
+    };
+  } catch (error) {
+    return {
+      canceled: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Unknown error while importing raster image',
     };
   }
 });

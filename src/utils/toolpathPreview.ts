@@ -28,6 +28,7 @@ import {
   resolveMillingPathPlan,
 } from './millingPathStrategy';
 import { resolveLaserMaterialPreset } from './tooling';
+import { buildRasterScanRows } from './rasterImage';
 import { EndType, FillRule, inflatePathsD, JoinType, unionD } from 'clipper2-ts';
 
 export type ToolpathPreviewSegmentKind = 'rapid' | 'cut' | 'tab';
@@ -629,6 +630,36 @@ export function buildToolpathPreview({ operations, settings, tools, importedMesh
           points: projectedPath,
         });
         previousEndPoint = endPoint;
+      });
+      return;
+    }
+
+    if (operation.type === 'image-fill') {
+      const tool = getOperationTool(operation, tools);
+      if (!tool?.isLaser) {
+        return;
+      }
+      buildRasterScanRows(operation, {
+        includePowerSamples: false,
+      }).forEach((row) => {
+        if (
+          previousEndPoint &&
+          !pointsEqual(previousEndPoint, row.start)
+        ) {
+          segments.push({
+            kind: 'rapid',
+            operationId: operation.id,
+            operationType: operation.type,
+            points: [previousEndPoint, row.start],
+          });
+        }
+        segments.push({
+          kind: 'cut',
+          operationId: operation.id,
+          operationType: operation.type,
+          points: [row.start, row.end],
+        });
+        previousEndPoint = row.end;
       });
       return;
     }

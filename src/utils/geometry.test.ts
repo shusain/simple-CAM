@@ -19,6 +19,7 @@ import {
 import {
   makeCircleOperation,
   makeDrillOperation,
+  makeImageFillOperation,
   makeLineOperation,
   makeRectOperation,
   makeSketchOperation,
@@ -244,6 +245,34 @@ describe('geometry', () => {
       y1: -3,
       x2: 12,
       y2: -3,
+    });
+  });
+
+  it('supports rotated image-fill bounds, hit testing, movement, and hydration', () => {
+    const image = makeImageFillOperation({
+      x: 10,
+      y: 20,
+      width: 8,
+      height: 4,
+      rotation: Math.PI / 2,
+    });
+
+    const bounds = getOperationBounds(image);
+    expect(bounds?.minX).toBeCloseTo(12);
+    expect(bounds?.minY).toBeCloseTo(18);
+    expect(bounds?.maxX).toBeCloseTo(16);
+    expect(bounds?.maxY).toBeCloseTo(26);
+    expect(hitTestOperation(image, { x: 14, y: 22 }, 0)).toBe(true);
+    expect(moveOperation(image, 3, -2)).toMatchObject({
+      x: 13,
+      y: 18,
+    });
+    expect(sanitizeOperation(image)).toMatchObject({
+      type: 'image-fill',
+      sourceName: 'gradient.png',
+      rotation: Math.PI / 2,
+      laserPowerMin: 0,
+      laserPowerMax: 100,
     });
   });
 

@@ -38,6 +38,7 @@ function buildProps(overrides: Partial<ControlPanelProps> = {}): ControlPanelPro
     onImportDxf: vi.fn(),
     onImportStl: vi.fn(),
     onImportDrl: vi.fn(),
+    onImportRasterImage: vi.fn(),
     onSaveProject: vi.fn(),
     onExportGcode: vi.fn(),
     canSendToOctoprint: false,
@@ -61,6 +62,7 @@ describe('ControlPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import DXF' }));
     fireEvent.click(screen.getByRole('button', { name: 'Import STL' }));
     fireEvent.click(screen.getByRole('button', { name: 'Import DRL / Excellon' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import raster image' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export G-code' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply material to all operations' }));
@@ -72,6 +74,7 @@ describe('ControlPanel', () => {
     expect(props.onImportDxf).toHaveBeenCalledTimes(1);
     expect(props.onImportStl).toHaveBeenCalledTimes(1);
     expect(props.onImportDrl).toHaveBeenCalledTimes(1);
+    expect(props.onImportRasterImage).toHaveBeenCalledTimes(1);
     expect(props.onSaveProject).toHaveBeenCalledTimes(1);
     expect(props.onExportGcode).toHaveBeenCalledTimes(1);
     expect(props.onApplyMaterialToAll).toHaveBeenCalledTimes(1);
@@ -89,6 +92,9 @@ describe('ControlPanel', () => {
     expect(within(projectFiles).getByRole('button', { name: 'Save project' })).toBeInTheDocument();
     expect(within(imports).getByRole('button', { name: 'Import SVG' })).toBeInTheDocument();
     expect(within(imports).getByRole('button', { name: 'Import STL' })).toBeInTheDocument();
+    expect(
+      within(imports).getByRole('button', { name: 'Import raster image' })
+    ).toBeInTheDocument();
     expect(screen.getByText('Output')).toHaveClass('subsection-title');
   });
 

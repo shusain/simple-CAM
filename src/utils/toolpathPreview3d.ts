@@ -15,6 +15,7 @@ import { getOperationPlannedPaths } from './toolpathPreview';
 import type { TabRange } from './gcode/shared';
 import { resolveLaserMaterialPreset, resolveToolPreset } from './tooling';
 import { buildLaserFillSegments } from './laserFill';
+import { buildRasterScanRows } from './rasterImage';
 import {
   applyMillingPathPlan,
   resolveMillingPathPlan,
@@ -353,6 +354,42 @@ export function buildToolpathPreview3D({
         appendSegment(segments, 'rapid', operation, operation.type, [current, { x: endPoint.x, y: endPoint.y, z: retractZ }]);
         current = { x: endPoint.x, y: endPoint.y, z: retractZ };
       });
+      return;
+    }
+
+    if (operation.type === 'image-fill') {
+      const tool = getOperationTool(operation, tools);
+      if (!tool?.isLaser) {
+        return;
+      }
+      const passes = Math.max(
+        1,
+        Math.round(Number(operation.laserPasses) || 1)
+      );
+      const rows = buildRasterScanRows(operation, {
+        includePowerSamples: false,
+      });
+      for (let passIndex = 0; passIndex < passes; passIndex += 1) {
+        rows.forEach((row) => {
+          const start = { ...row.start, z: current.z };
+          const end = { ...row.end, z: current.z };
+          appendSegment(
+            segments,
+            'rapid',
+            operation,
+            operation.type,
+            [current, start]
+          );
+          appendSegment(
+            segments,
+            'cut',
+            operation,
+            operation.type,
+            [start, end]
+          );
+          current = end;
+        });
+      }
       return;
     }
 

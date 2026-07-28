@@ -7,6 +7,7 @@ import {
   makeCircleOperation,
   makeDrillOperation,
   makeImportedMesh,
+  makeImageFillOperation,
   makeLineOperation,
   makeMaterial,
   makeRectOperation,
@@ -298,6 +299,57 @@ describe('OperationsPanel', () => {
 
     fireEvent.change(screen.getByLabelText('Laser power'), { target: { value: '45' } });
     expect(onUpdateOperation).toHaveBeenCalledWith('laser-rect', { laserPower: 45 });
+  });
+
+  it('edits grayscale image placement and raster power range', () => {
+    const operation = makeImageFillOperation({
+      id: 'image-1',
+      toolId: 'laser-1',
+      sourceName: 'portrait.png',
+      width: 40,
+      height: 30,
+      laserPowerMin: 12,
+      laserPowerMax: 72,
+    });
+    const laser = makeTool({
+      id: 'laser-1',
+      name: 'Laser',
+      isLaser: true,
+    });
+    const onUpdateOperation = vi.fn();
+
+    render(
+      <OperationsPanel
+        {...buildProps({
+          operations: [operation],
+          selectedOperation: operation,
+          selectedOperationIds: [operation.id],
+          tools: [laser],
+          onUpdateOperation,
+        })}
+      />
+    );
+
+    expect(screen.queryByLabelText('Laser process')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Minimum power')).toHaveValue('12');
+    expect(screen.getByLabelText('Maximum power')).toHaveValue('72');
+    expect(screen.getByDisplayValue(/portrait\.png/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Width')).toHaveValue('40');
+    expect(screen.getByLabelText('Height')).toHaveValue('30');
+
+    fireEvent.change(screen.getByLabelText('Maximum power'), {
+      target: { value: '80' },
+    });
+    expect(onUpdateOperation).toHaveBeenCalledWith('image-1', {
+      laserPowerMax: 80,
+    });
+
+    fireEvent.change(screen.getByLabelText('Rotation'), {
+      target: { value: '90' },
+    });
+    expect(onUpdateOperation).toHaveBeenCalledWith('image-1', {
+      rotation: Math.PI / 2,
+    });
   });
 
   it('offers drill conversion into an inside-cut circle operation', () => {

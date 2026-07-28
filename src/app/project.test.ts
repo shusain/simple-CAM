@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { buildProjectFile, hydrateProjectFile } from './project';
-import { makeDrillOperation, makeLineOperation, makeMaterial, makeSurfaceFinishOperation, makeTool } from '../test/factories';
+import {
+  makeDrillOperation,
+  makeImageFillOperation,
+  makeLineOperation,
+  makeMaterial,
+  makeSurfaceFinishOperation,
+  makeTool,
+} from '../test/factories';
 
 describe('project helpers', () => {
   it('hydrates projects with normalized tools, materials, and sanitized operations', () => {
     const project = {
-      version: 2,
+      version: 3,
       settings: { activeMaterialId: 'missing-material', safeZ: 12 },
       materials: [{ id: '', name: '  MDF  ' }, makeMaterial({ id: 'material-baltic', name: 'Baltic Birch' })],
       tools: [{ id: '', name: 'Tool Raw' }, makeTool({ id: 'tool-finisher', diameter: 1.5 })],
@@ -67,7 +74,7 @@ describe('project helpers', () => {
     };
 
     expect(buildProjectFile(data)).toEqual({
-      version: 2,
+      version: 3,
       ...data,
     });
   });
@@ -201,6 +208,40 @@ describe('project helpers', () => {
       laserPasses: 2,
       laserLineInterval: 0.12,
       laserOverscan: 3,
+    });
+  });
+
+  it('persists the current raster image-fill operation schema', () => {
+    const laser = makeTool({
+      id: 'laser-1',
+      isLaser: true,
+    });
+    const image = makeImageFillOperation({
+      toolId: laser.id,
+      sourceName: 'logo.png',
+      rotation: Math.PI / 4,
+      laserPowerMin: 8,
+      laserPowerMax: 76,
+    });
+    const project = buildProjectFile({
+      settings: { activeMaterialId: 'material-1' } as never,
+      materials: [makeMaterial()],
+      tools: [laser],
+      activeToolId: laser.id,
+      operations: [image],
+      importedMeshes: [],
+    });
+
+    const hydrated = hydrateProjectFile(project, () => 'unused');
+
+    expect(project.version).toBe(3);
+    expect(hydrated.operations[0]).toMatchObject({
+      type: 'image-fill',
+      sourceName: 'logo.png',
+      rotation: Math.PI / 4,
+      laserPowerMin: 8,
+      laserPowerMax: 76,
+      grayscaleData: image.grayscaleData,
     });
   });
 });

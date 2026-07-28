@@ -168,9 +168,14 @@ export default function OperationsPanel({
     selectedOperation?.type === 'rect' ||
     selectedOperation?.type === 'circle' ||
     selectedOperation?.type === 'sketch' ||
-    selectedOperation?.type === 'text';
+    selectedOperation?.type === 'text' ||
+    selectedOperation?.type === 'image-fill';
+  const isImageFill = selectedOperation?.type === 'image-fill';
   const laserProcess =
-    selectedOperation?.laserProcess || (selectedOperation?.type === 'text' ? 'etch' : 'cut');
+    isImageFill
+      ? 'etch'
+      : selectedOperation?.laserProcess ||
+        (selectedOperation?.type === 'text' ? 'etch' : 'cut');
   const laserPower =
     selectedOperation?.laserPower ??
     (laserProcess === 'etch'
@@ -189,6 +194,14 @@ export default function OperationsPanel({
     laserProcess === 'etch'
       ? selectedLaserPreset.etchPowerMax
       : selectedLaserPreset.cutPowerMax;
+  const imagePowerMin =
+    selectedOperation?.type === 'image-fill'
+      ? selectedOperation.laserPowerMin
+      : laserPowerMin;
+  const imagePowerMax =
+    selectedOperation?.type === 'image-fill'
+      ? selectedOperation.laserPowerMax
+      : laserPowerMax;
   const laserSpeedMin =
     laserProcess === 'etch'
       ? selectedLaserPreset.etchSpeedMin
@@ -558,7 +571,10 @@ export default function OperationsPanel({
                   selectedOperation.materialId
                 );
                 const nextProcess =
-                  selectedOperation.type === 'text' && canLaserFill ? 'etch' : 'cut';
+                  selectedOperation.type === 'image-fill' ||
+                  (selectedOperation.type === 'text' && canLaserFill)
+                    ? 'etch'
+                    : 'cut';
                 onUpdateOperation(selectedOperation.id, {
                   toolId,
                   laserProcess: nextProcess,
@@ -575,6 +591,12 @@ export default function OperationsPanel({
                     selectedOperation.laserLineInterval ??
                     Math.max(0.05, nextPreset.kerfDiameter),
                   laserOverscan: selectedOperation.laserOverscan ?? 2,
+                  ...(selectedOperation.type === 'image-fill'
+                    ? {
+                        laserPowerMin: nextPreset.etchPowerMin,
+                        laserPowerMax: nextPreset.etchPowerMax,
+                      }
+                    : {}),
                   millingStrategy: 'standard',
                   cutSide: 'along',
                   pocketEnabled: false,
@@ -582,7 +604,12 @@ export default function OperationsPanel({
                 });
               }}
             >
-              {tools.map((tool) => (
+              {tools
+                .filter(
+                  (tool) =>
+                    selectedOperation.type !== 'image-fill' || tool.isLaser
+                )
+                .map((tool) => (
                 <option key={tool.id} value={tool.id}>
                   {tool.isLaser
                     ? `${tool.name} (laser, ${resolveLaserMaterialPreset(
@@ -786,6 +813,7 @@ export default function OperationsPanel({
           {isLaserOperation && supportsLaserOutput ? (
             <>
               <div className="subsection-title">Laser process</div>
+              {!isImageFill ? (
               <label className="field-row">
                 <span>Process</span>
                 <select
@@ -814,6 +842,41 @@ export default function OperationsPanel({
                   </option>
                 </select>
               </label>
+              ) : null}
+              {isImageFill ? (
+                <>
+                  <NumericFieldRow
+                    label="Minimum power"
+                    value={imagePowerMin}
+                    min={0}
+                    max={imagePowerMax}
+                    step={1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        laserPowerMin: Math.min(
+                          imagePowerMax,
+                          Math.max(0, value)
+                        ),
+                      })
+                    }
+                  />
+                  <NumericFieldRow
+                    label="Maximum power"
+                    value={imagePowerMax}
+                    min={imagePowerMin}
+                    max={100}
+                    step={1}
+                    onChange={(value) =>
+                      onUpdateOperation(selectedOperation.id, {
+                        laserPowerMax: Math.min(
+                          100,
+                          Math.max(imagePowerMin, value)
+                        ),
+                      })
+                    }
+                  />
+                </>
+              ) : (
               <NumericFieldRow
                 label="Laser power"
                 value={laserPower}
@@ -826,6 +889,7 @@ export default function OperationsPanel({
                   })
                 }
               />
+              )}
               <NumericFieldRow
                 label="Laser speed"
                 value={laserSpeed}
@@ -881,7 +945,7 @@ export default function OperationsPanel({
               <InfoDisclosure label="About laser output">
                 <p>
                   {selectedOperationTool?.laserInlineMode === 'dynamic' ? 'M4 I dynamic' : 'M3 I continuous'}
-                  {' '}mode · power {laserPowerMin}–{laserPowerMax}% maps to S0–S255
+                  {' '}mode · power {isImageFill ? imagePowerMin : laserPowerMin}–{isImageFill ? imagePowerMax : laserPowerMax}% maps to S0–S255
                   {' '}· material speed {laserSpeedMin}–{laserSpeedMax} mm/min
                 </p>
                 <p>
@@ -915,6 +979,12 @@ export default function OperationsPanel({
                     laserProcess === 'etch' ? preset.etchPowerMin : preset.cutPowerMax,
                   laserSpeed:
                     laserProcess === 'etch' ? preset.etchSpeedMax : preset.cutSpeedMin,
+                  ...(selectedOperation.type === 'image-fill'
+                    ? {
+                        laserPowerMin: preset.etchPowerMin,
+                        laserPowerMax: preset.etchPowerMax,
+                      }
+                    : {}),
                 });
               }}
             >
@@ -925,6 +995,85 @@ export default function OperationsPanel({
               ))}
             </select>
           </label>
+
+          {selectedOperation.type === 'image-fill' ? (
+            <>
+              <div className="subsection-title">Image placement</div>
+              <label className="field-row">
+                <span>Source</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={`${selectedOperation.sourceName} (${selectedOperation.pixelWidth} × ${selectedOperation.pixelHeight}px)`}
+                />
+              </label>
+              <NumericFieldRow
+                label="X"
+                value={selectedOperation.x}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, { x: value })
+                }
+              />
+              <NumericFieldRow
+                label="Y"
+                value={selectedOperation.y}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, { y: value })
+                }
+              />
+              <NumericFieldRow
+                label="Width"
+                value={selectedOperation.width}
+                min={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    width: Math.max(0.1, value || 0.1),
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Height"
+                value={selectedOperation.height}
+                min={0.1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    height: Math.max(0.1, value || 0.1),
+                  })
+                }
+              />
+              <NumericFieldRow
+                label="Rotation"
+                value={
+                  ((Number(selectedOperation.rotation) || 0) * 180) / Math.PI
+                }
+                step={1}
+                onChange={(value) =>
+                  onUpdateOperation(selectedOperation.id, {
+                    rotation: (value * Math.PI) / 180,
+                  })
+                }
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const aspect =
+                    selectedOperation.pixelWidth /
+                    Math.max(1, selectedOperation.pixelHeight);
+                  onUpdateOperation(selectedOperation.id, {
+                    height: selectedOperation.width / aspect,
+                  });
+                }}
+              >
+                Restore image aspect ratio
+              </button>
+              <InfoDisclosure label="About image engraving">
+                Black pixels use maximum power, white pixels use minimum
+                power, and intermediate grayscale values are mapped between
+                them. Drag the image in the canvas or edit its placement and
+                size here.
+              </InfoDisclosure>
+            </>
+          ) : null}
 
           {selectedOperation.type === 'drill' ? (
             <>

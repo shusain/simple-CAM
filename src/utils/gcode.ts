@@ -21,6 +21,7 @@ import {
   resolveLaserMaterialPreset,
   resolveToolPreset,
 } from './tooling';
+import { buildRasterScanRows } from './rasterImage';
 import { appendPathWithTabs, getTabRanges } from './gcode/tabs';
 import type { TabRange } from './gcode/shared';
 import { buildIncrementDepths, getStartEndZ, num, toNegativeDepth, toPositiveStep } from './gcode/depth';
@@ -368,6 +369,105 @@ function appendLaserPathOperation(
         }
       });
     }
+  }
+
+  lines.push('');
+}
+
+function appendLaserImageFillOperation(
+  lines: string[],
+  operation: Extract<Operation, { type: 'image-fill' }>,
+  settings: MachineSettings,
+  tool: Tool
+): void {
+  const rows = buildRasterScanRows(operation);
+  const speed = getLaserSpeed(operation, tool);
+  const rapidFeed = num(
+    tool.rapidFeedRate || settings.rapidFeedRate || 2400,
+    0
+  );
+  const passes = Math.max(
+    1,
+    Math.round(Number(operation.laserPasses) || 1)
+  );
+  const overscan = Math.max(0, Number(operation.laserOverscan) || 0);
+  const startCommand =
+    tool.laserInlineMode === 'dynamic' ? 'M4 I' : 'M3 I';
+  const powerCommand = tool.laserInlineMode === 'dynamic' ? 'M4' : 'M3';
+  const clampX = (value: number) =>
+    clamp(value, 0, Math.max(0, Number(settings.workWidth) || 0));
+  const clampY = (value: number) =>
+    clamp(value, 0, Math.max(0, Number(settings.workHeight) || 0));
+
+  lines.push(`; Tool: ${tool.name}  Raster image fill`);
+  lines.push(`; Image: ${operation.sourceName}`);
+  lines.push(
+    `; Grayscale power: ${num(operation.laserPowerMin, 1)}-${num(
+      operation.laserPowerMax,
+      1
+    )}% maps to S0-S255, F${speed}`
+  );
+  lines.push(
+    `; Raster: ${num(
+      operation.laserLineInterval || 0.1
+    )}mm interval, ${num(overscan)}mm overscan, ${passes} pass(es)`
+  );
+  lines.push(`${startCommand} S0 ; enable Marlin inline mode with laser off`);
+
+  for (let passIndex = 0; passIndex < passes; passIndex += 1) {
+    if (passes > 1) {
+      lines.push(`; Laser image pass ${passIndex + 1} of ${passes}`);
+    }
+
+    rows.forEach((row) => {
+      const rowDx = row.end.x - row.start.x;
+      const rowDy = row.end.y - row.start.y;
+      const rowLength = Math.max(0.000001, Math.hypot(rowDx, rowDy));
+      const unitX = rowDx / rowLength;
+      const unitY = rowDy / rowLength;
+      const approach = {
+        x: clampX(row.start.x - unitX * overscan),
+        y: clampY(row.start.y - unitY * overscan),
+      };
+      const exit = {
+        x: clampX(row.end.x + unitX * overscan),
+        y: clampY(row.end.y + unitY * overscan),
+      };
+
+      lines.push('M5');
+      lines.push(
+        `G0 X${num(approach.x)} Y${num(approach.y)} F${rapidFeed}`
+      );
+      lines.push(
+        `G1 X${num(row.start.x)} Y${num(row.start.y)} F${speed}`
+      );
+
+      let currentPower: number | null = null;
+      let pendingEnd = row.start;
+      row.samples.forEach((sample) => {
+        if (currentPower !== sample.outputPower) {
+          if (
+            currentPower !== null &&
+            (pendingEnd.x !== row.start.x ||
+              pendingEnd.y !== row.start.y)
+          ) {
+            lines.push(
+              `G1 X${num(pendingEnd.x)} Y${num(pendingEnd.y)} F${speed}`
+            );
+          }
+          currentPower = sample.outputPower;
+          lines.push(`${powerCommand} S${sample.outputPower}`);
+        }
+        pendingEnd = sample.end;
+      });
+      if (currentPower !== null) {
+        lines.push(
+          `G1 X${num(pendingEnd.x)} Y${num(pendingEnd.y)} F${speed}`
+        );
+      }
+      lines.push('M5');
+      lines.push(`G1 X${num(exit.x)} Y${num(exit.y)} F${speed}`);
+    });
   }
 
   lines.push('');
@@ -1116,7 +1216,9 @@ export function generateMarlinGcode({ operations, settings, tools, importedMeshe
     }
 
     if (tool?.isLaser) {
-      if (isPathOperation(operation)) {
+      if (operation.type === 'image-fill') {
+        appendLaserImageFillOperation(lines, operation, settings, tool);
+      } else if (isPathOperation(operation)) {
         appendLaserPathOperation(lines, operation, settings, tool);
       } else {
         lines.push(`; Tool: ${tool.name} (laser)`);

@@ -105,6 +105,23 @@ Completed:
 - [ ] Richer import warning review UI beyond status text
 - [ ] Support for more DXF entities such as splines, blocks, or ellipses where that adds real value
 - [x] Add Excellon / DRL import for PCB drill maps, creating native drill operations with editable depths/tools
+- [x] Import PNG/JPEG/WebP/BMP raster images as grayscale laser image-fill operations
+
+### Raster image laser engraving
+
+- [x] Add a persisted `image-fill` operation with embedded grayscale luminance data
+- [x] Center imported images on stock and allow canvas dragging plus exact position, scale, aspect, and rotation controls
+- [x] Map black-to-white luminance across editable minimum/maximum laser power
+- [x] Generate alternating raster rows with configurable speed, passes, line interval, and motion overscan
+- [x] Queue Marlin `M3` / `M4` power changes in inline mode and use `M5` for every row link and overscan transition
+- [x] Show the grayscale source and raster-row toolpaths in 2D/3D previews without expanding every pixel for ordinary preview rendering
+- [ ] Hands-on test representative photographs, logos, gradients, and transparent images on the target machine
+- [ ] Add image-processing controls such as inversion, brightness/contrast, gamma, threshold, and dithering
+- [ ] Add estimated G-code size/runtime warnings for very fine intervals or large images
+- [ ] Evaluate unidirectional scanning and configurable scan angle after bidirectional output is physically validated
+
+Status:
+The first end-to-end raster engraving slice is implemented. Images are downsampled to a maximum 1024-pixel source dimension, converted to grayscale with transparency composited onto white, stored in the project, and resampled at the operation's physical line interval. Black pixels use maximum power and white pixels use minimum power. Physical machine validation remains required before relying on photographic engraving defaults.
 
 ### STL groundwork
 

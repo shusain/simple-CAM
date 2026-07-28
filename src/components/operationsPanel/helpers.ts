@@ -35,6 +35,12 @@ export function formatOperationLabel(operation: Operation): string {
     return `Text "${label.slice(0, 24)}${label.length > 24 ? '…' : ''}"`;
   }
 
+  if (operation.type === 'image-fill') {
+    return `Image "${operation.sourceName}" ${operation.width.toFixed(
+      1
+    )} × ${operation.height.toFixed(1)} mm`;
+  }
+
   if (operation.type === 'surface-rough') {
     return `Surface roughing (${operation.stepOver.toFixed(3)}mm stepover)`;
   }

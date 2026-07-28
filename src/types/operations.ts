@@ -102,6 +102,22 @@ export interface TextOperation extends BaseOperation, TabbedCutFields, PocketFie
   cutSide: CutSide;
 }
 
+export interface ImageFillOperation extends BaseOperation {
+  type: 'image-fill';
+  sourceName: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  /** Row-major grayscale luminance bytes encoded as base64. 0 is black. */
+  grayscaleData: string;
+  laserPowerMin: number;
+  laserPowerMax: number;
+}
+
 export interface SurfaceOperationBase extends BaseOperation {
   meshId: string;
   stepOver: number;
@@ -131,6 +147,7 @@ export type SurfaceOperation =
 export type Operation =
   | DrillOperation
   | PathOperation
+  | ImageFillOperation
   | SurfaceOperation;
 
 export type OperationInput =
@@ -140,6 +157,7 @@ export type OperationInput =
   | Omit<CircleOperation, 'id'>
   | Omit<SketchOperation, 'id'>
   | Omit<TextOperation, 'id'>
+  | Omit<ImageFillOperation, 'id'>
   | Omit<SurfaceRoughOperation, 'id'>
   | Omit<SurfaceFinishOperation, 'id'>;
 

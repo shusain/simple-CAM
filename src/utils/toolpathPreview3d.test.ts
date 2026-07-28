@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTool } from '../test/factories';
+import { makeCircleOperation, makeDrillOperation, makeImageFillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTool } from '../test/factories';
 import { buildToolpathPreview3D } from './toolpathPreview3d';
 
 describe('buildToolpathPreview3D', () => {
@@ -305,5 +305,24 @@ describe('buildToolpathPreview3D', () => {
           point.z !== cutSegment.points[index - 1].z
       )
     ).toBe(true);
+  });
+
+  it('includes raster image scan rows in the shared 3D laser stream', () => {
+    const laser = makeTool({ id: 'laser-1', isLaser: true });
+    const preview = buildToolpathPreview3D({
+      operations: [makeImageFillOperation({ toolId: laser.id })],
+      settings: makeSettings(),
+      tools: [laser],
+    });
+    const cut = preview.segments.find(
+      (segment) =>
+        segment.kind === 'cut' &&
+        segment.operationType === 'image-fill'
+    );
+
+    expect(cut?.points.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 0, y: 0.5 },
+      { x: 2, y: 0.5 },
+    ]);
   });
 });

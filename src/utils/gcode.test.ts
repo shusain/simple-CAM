@@ -4,6 +4,7 @@ import {
   makeCircleOperation,
   makeDrillOperation,
   makeImportedMesh,
+  makeImageFillOperation,
   makeLineOperation,
   makeSketchOperation,
   makeRectOperation,
@@ -291,6 +292,42 @@ describe('generateMarlinGcode', () => {
     expect(gcode.indexOf('G1 X5.000 Y2.500')).toBeLessThan(gcode.indexOf('M4 S77'));
     expect(gcode.indexOf('M4 S77')).toBeLessThan(gcode.indexOf('G1 X25.000 Y2.500'));
     expect(gcode).toContain('M5\nG1 X27.000 Y2.500 F6000');
+  });
+
+  it('maps raster-image brightness to synchronized inline laser power', () => {
+    const laser = makeTool({
+      id: 'laser-1',
+      name: 'Diode laser',
+      isLaser: true,
+      laserInlineMode: 'continuous',
+    });
+    const gcode = generateMarlinGcode({
+      operations: [
+        makeImageFillOperation({
+          toolId: laser.id,
+          laserSpeed: 3000,
+          laserPowerMin: 0,
+          laserPowerMax: 100,
+          laserLineInterval: 1,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [laser],
+    });
+
+    expect(gcode).toContain('; Tool: Diode laser  Raster image fill');
+    expect(gcode).toContain('; Image: gradient.png');
+    expect(gcode).toContain(
+      '; Grayscale power: 0.0-100.0% maps to S0-S255, F3000'
+    );
+    expect(gcode).toContain(
+      'M3 I S0 ; enable Marlin inline mode with laser off'
+    );
+    expect(gcode).toContain('G1 X0.000 Y0.500 F3000');
+    expect(gcode).toContain(
+      'M3 S255\nG1 X1.000 Y0.500 F3000\nM3 S0\nG1 X2.000 Y0.500 F3000'
+    );
+    expect(gcode).toContain('M5 I ; clear Marlin inline laser mode');
   });
 
   it('generates outline cuts for editable text operations', () => {

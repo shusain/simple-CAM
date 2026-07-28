@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCircleOperation, makeDrillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTextOperation, makeTool } from '../test/factories';
+import { makeCircleOperation, makeDrillOperation, makeImageFillOperation, makeImportedMesh, makeLineOperation, makeRectOperation, makeSettings, makeSketchOperation, makeSurfaceFinishOperation, makeSurfaceRoughOperation, makeTextOperation, makeTool } from '../test/factories';
 import { getDefaultPocketStepOver } from './pocketing';
 import { buildToolpathPreview, getOperationPlannedPaths, slicePathByRange } from './toolpathPreview';
 
@@ -453,5 +453,36 @@ describe('toolpathPreview', () => {
 
     expect(cut?.points).toContainEqual({ x: 2, y: 2 });
     expect(cut?.points).not.toContainEqual({ x: 2, y: -2 });
+  });
+
+  it('previews raster image fills as alternating scan rows', () => {
+    const laser = makeTool({ id: 'laser-1', isLaser: true });
+    const preview = buildToolpathPreview({
+      operations: [
+        makeImageFillOperation({
+          toolId: laser.id,
+          width: 2,
+          height: 2,
+          laserLineInterval: 1,
+        }),
+      ],
+      settings: makeSettings(),
+      tools: [laser],
+    });
+    const cuts = preview.segments.filter(
+      (segment) =>
+        segment.kind === 'cut' &&
+        segment.operationType === 'image-fill'
+    );
+
+    expect(cuts).toHaveLength(2);
+    expect(cuts[0].points).toEqual([
+      { x: 0, y: 1.5 },
+      { x: 2, y: 1.5 },
+    ]);
+    expect(cuts[1].points).toEqual([
+      { x: 2, y: 0.5 },
+      { x: 0, y: 0.5 },
+    ]);
   });
 });

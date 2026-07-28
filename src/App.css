@@ -423,7 +423,7 @@ textarea {
 }
 
 .import-actions {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .info-disclosure {
@@ -526,6 +526,15 @@ textarea {
 
 .import-stl-button:hover {
   border-color: #a78bfa;
+}
+
+.import-raster-image-button {
+  border-color: #db2777;
+  color: #f9a8d4;
+}
+
+.import-raster-image-button:hover {
+  border-color: #f472b6;
 }
 
 .save-sketch-button {

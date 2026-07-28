@@ -3,7 +3,7 @@ import { sanitizeOperation } from '../utils/geometry';
 import { normalizeMaterial, normalizeTool, resolveMaterialId } from '../utils/tooling';
 import { DEFAULT_MATERIALS, DEFAULT_SETTINGS, DEFAULT_TOOLS } from './defaults';
 
-export const CURRENT_PROJECT_VERSION = 2;
+export const CURRENT_PROJECT_VERSION = 3;
 
 export interface HydratedProjectData {
   settings: MachineSettings;

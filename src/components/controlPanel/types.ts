@@ -72,6 +72,7 @@ export interface ControlPanelProps {
   onImportDxf: () => void;
   onImportStl: () => void;
   onImportDrl: () => void;
+  onImportRasterImage: () => void;
   onSaveProject: () => void;
   onExportGcode: () => void;
   canSendToOctoprint: boolean;

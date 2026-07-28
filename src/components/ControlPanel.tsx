@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { Box, FileInput, FileOutput, FilePlus2, FolderOpen, Save, Target } from 'lucide-react';
+import {
+  Box,
+  FileInput,
+  FileOutput,
+  FilePlus2,
+  FolderOpen,
+  Image as ImageIcon,
+  Save,
+  Target,
+} from 'lucide-react';
 import NumberField from './controlPanel/NumberField';
 import MaterialManagerModal from './controlPanel/MaterialManagerModal';
 import ToolManagerModal from './controlPanel/ToolManagerModal';
@@ -30,6 +39,7 @@ export default function ControlPanel({
   onImportDxf,
   onImportStl,
   onImportDrl,
+  onImportRasterImage,
   onSaveProject,
   onExportGcode,
   canSendToOctoprint,
@@ -98,6 +108,15 @@ export default function ControlPanel({
             onClick={onImportDrl}
           >
             <Target aria-hidden="true" size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-button import-raster-image-button"
+            aria-label="Import raster image"
+            title="Import raster image for laser engraving"
+            onClick={onImportRasterImage}
+          >
+            <ImageIcon aria-hidden="true" size={18} />
           </button>
         </div>
         <div className="subsection-title">Output</div>

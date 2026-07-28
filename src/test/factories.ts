@@ -2,6 +2,7 @@ import type {
   CircleOperation,
   DrillOperation,
   ImportedMesh,
+  ImageFillOperation,
   LineOperation,
   MachineSettings,
   Material,
@@ -109,6 +110,35 @@ export function makeCircleOperation(overrides: Partial<CircleOperation> = {}): C
     tabHeight: 1,
     pocketEnabled: false,
     pocketStepOver: getDefaultPocketStepOver(DEFAULT_TOOLS[0].diameter),
+    ...overrides,
+  };
+}
+
+export function makeImageFillOperation(
+  overrides: Partial<ImageFillOperation> = {}
+): ImageFillOperation {
+  return {
+    id: 'image-fill-1',
+    type: 'image-fill',
+    sourceName: 'gradient.png',
+    x: 0,
+    y: 0,
+    width: 2,
+    height: 1,
+    rotation: 0,
+    pixelWidth: 2,
+    pixelHeight: 1,
+    grayscaleData: btoa(String.fromCharCode(0, 255)),
+    depth: 0,
+    toolId: 'laser-1',
+    materialId: DEFAULT_MATERIALS[0].id,
+    laserProcess: 'etch',
+    laserPowerMin: 0,
+    laserPowerMax: 100,
+    laserSpeed: 3000,
+    laserPasses: 1,
+    laserLineInterval: 1,
+    laserOverscan: 0,
     ...overrides,
   };
 }

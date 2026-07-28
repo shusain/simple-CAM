@@ -31,6 +31,7 @@ import { resolveLaserMaterialPreset, resolveMaterialId } from './utils/tooling';
 import { importSvgToSketchOperations } from './utils/importSvg';
 import type {
   ImportedMesh,
+  ImageFillOperation,
   LaserTestPatternOptions,
   MachineSettings,
   Material,
@@ -88,6 +89,7 @@ import { importDrlToDrillOperations } from './utils/importDrl';
 import type { ImportCutMode } from './utils/importCommon';
 import { importStlModel, offsetImportedMesh } from './utils/importStl';
 import { buildLaserTestPattern } from './utils/laserTestPattern';
+import { importRasterImageDataUrl } from './utils/rasterImage';
 import type {
   InitialState,
   MoveSelectedOperationsArgs,
@@ -118,6 +120,11 @@ type ViewportMode = '2d' | '3d';
 interface BrowserImportFile {
   filePath: string;
   contents: string;
+}
+
+interface BrowserImageImportFile {
+  filePath: string;
+  dataUrl: string;
 }
 
 function isCanvasSurfaceFocused(): boolean {
@@ -163,6 +170,59 @@ function openBrowserImportFile(accept: string): Promise<BrowserImportFile | null
           cleanup();
           reject(error instanceof Error ? error : new Error('Unable to read selected file'));
         }
+      },
+      { once: true }
+    );
+
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+function openBrowserImageImportFile(
+  accept: string
+): Promise<BrowserImageImportFile | null> {
+  if (typeof document === 'undefined') {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+
+    const cleanup = () => {
+      input.value = '';
+      input.remove();
+    };
+
+    input.addEventListener(
+      'change',
+      () => {
+        const file = input.files?.[0];
+        if (!file) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl =
+            typeof reader.result === 'string' ? reader.result : '';
+          cleanup();
+          if (!dataUrl) {
+            reject(new Error('Unable to read selected image'));
+            return;
+          }
+          resolve({ filePath: file.name, dataUrl });
+        };
+        reader.onerror = () => {
+          cleanup();
+          reject(reader.error || new Error('Unable to read selected image'));
+        };
+        reader.readAsDataURL(file);
       },
       { once: true }
     );
@@ -1449,6 +1509,101 @@ export default function App(): React.JSX.Element {
     completeImportedDrills(result.filePath, imported);
   }, [activeMaterialId, activeToolId, completeImportedDrills, electron, settings.drillDepth, tools]);
 
+  const handleImportRasterImage = useCallback(async () => {
+    const laserTool =
+      tools.find((tool) => tool.id === activeToolId && tool.isLaser) ||
+      tools.find((tool) => tool.isLaser);
+    if (!laserTool) {
+      setStatus('Raster image import requires a laser tool');
+      return;
+    }
+
+    try {
+      const result = electron?.openRasterImageImport
+        ? await electron.openRasterImageImport()
+        : await openBrowserImageImportFile(
+            '.png,.jpg,.jpeg,.webp,.bmp,image/*'
+          );
+      if (!result || ('canceled' in result && result.canceled)) {
+        return;
+      }
+      if ('error' in result && result.error) {
+        setStatus(`Raster image import failed: ${result.error}`);
+        return;
+      }
+      if (!result.dataUrl) {
+        setStatus('Raster image import failed: image data was empty');
+        return;
+      }
+
+      const sourceName =
+        fileNameFromPath(result.filePath) || 'Imported image';
+      const imported = await importRasterImageDataUrl(
+        result.dataUrl,
+        sourceName
+      );
+      const defaultScale = Math.min(
+        0.1,
+        (settings.workWidth * 0.8) / imported.pixelWidth,
+        (settings.workHeight * 0.8) / imported.pixelHeight
+      );
+      const width = Math.max(0.1, imported.pixelWidth * defaultScale);
+      const height = Math.max(0.1, imported.pixelHeight * defaultScale);
+      const preset = resolveLaserMaterialPreset(
+        laserTool,
+        activeMaterialId
+      );
+      const operation: ImageFillOperation = {
+        id: newId(),
+        type: 'image-fill',
+        sourceName: imported.sourceName,
+        x: (settings.workWidth - width) / 2,
+        y: (settings.workHeight - height) / 2,
+        width,
+        height,
+        rotation: 0,
+        pixelWidth: imported.pixelWidth,
+        pixelHeight: imported.pixelHeight,
+        grayscaleData: imported.grayscaleData,
+        depth: 0,
+        toolId: laserTool.id,
+        materialId: activeMaterialId,
+        laserProcess: 'etch',
+        laserPowerMin: preset.etchPowerMin,
+        laserPowerMax: preset.etchPowerMax,
+        laserSpeed: preset.etchSpeedMax,
+        laserPasses: 1,
+        laserLineInterval: Math.max(0.05, preset.kerfDiameter),
+        laserOverscan: 2,
+      };
+
+      commitOperations((previous) => [...previous, operation]);
+      setSelectedIds([operation.id]);
+      setSelectionAnchorId(operation.id);
+      setSelectedImportedMeshId(null);
+      setActiveToolId(laserTool.id);
+      setActiveTool('select');
+      setViewportMode('2d');
+      setStatus(
+        `Imported grayscale image ${sourceName} (${imported.pixelWidth} × ${imported.pixelHeight}px)`
+      );
+    } catch (error) {
+      setStatus(
+        `Raster image import failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
+  }, [
+    activeMaterialId,
+    activeToolId,
+    commitOperations,
+    electron,
+    settings.workHeight,
+    settings.workWidth,
+    tools,
+  ]);
+
   const runPendingImport = useCallback(
     (cutMode: ImportCutMode) => {
       if (!pendingImport) {
@@ -1677,6 +1832,7 @@ export default function App(): React.JSX.Element {
       electron.onMenuImportDxf?.(handleImportDxf),
       electron.onMenuImportStl?.(handleImportStl),
       electron.onMenuImportDrl?.(handleImportDrl),
+      electron.onMenuImportRasterImage?.(handleImportRasterImage),
       electron.onMenuSave?.(handleSave),
       electron.onMenuExportGcode?.(handleExport),
       electron.onMenuOctoprintSettings?.(openOctoprintSettings),
@@ -1688,7 +1844,7 @@ export default function App(): React.JSX.Element {
     return () => {
       unsubs.forEach((fn) => fn());
     };
-  }, [electron, handleExport, handleImportDrl, handleImportDxf, handleImportStl, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
+  }, [electron, handleExport, handleImportDrl, handleImportDxf, handleImportRasterImage, handleImportStl, handleImportSvg, handleNew, handleOpen, handleSave, openOctoprintSettings, requestZoom]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2033,6 +2189,7 @@ export default function App(): React.JSX.Element {
             onImportDxf={handleImportDxf}
             onImportStl={handleImportStl}
             onImportDrl={handleImportDrl}
+            onImportRasterImage={handleImportRasterImage}
             onSaveProject={handleSave}
             onExportGcode={handleExport}
             canSendToOctoprint={hasOctoprintSettings}

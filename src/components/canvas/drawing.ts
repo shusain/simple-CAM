@@ -1,8 +1,16 @@
-import { clamp, distance, getSketchPathPoints, getSketchSubpaths, normalizeRect } from '../../utils/geometry';
+import {
+  clamp,
+  distance,
+  getOperationBounds,
+  getSketchPathPoints,
+  getSketchSubpaths,
+  normalizeRect,
+} from '../../utils/geometry';
 import { getTextOperationPathPoints } from '../../utils/text';
 import type { ToolpathPreview } from '../../utils/toolpathPreview';
 import type { DrawDraft, ImportedMesh, Operation, Point, SelectBoxState, SketchOperation } from '../../types';
 import { getImportedMeshWorldBounds } from '../../utils/importStl';
+import { getRasterPreviewCanvas } from '../../utils/rasterImage';
 import {
   buildDraftSketchOperation,
   getSketchHandleDisplayMap,
@@ -176,6 +184,35 @@ export function drawOperation(
     ctx.beginPath();
     ctx.arc(center.x, center.y, operation.radius * transform.scale, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  if (operation.type === 'image-fill') {
+    const preview = getRasterPreviewCanvas(operation);
+    const center = worldToCanvas(
+      {
+        x: operation.x + operation.width / 2,
+        y: operation.y + operation.height / 2,
+      },
+      transform
+    );
+    const width = operation.width * transform.scale;
+    const height = operation.height * transform.scale;
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(-(Number(operation.rotation) || 0));
+    if (preview) {
+      ctx.globalAlpha = ghost ? 0.55 : 0.82;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(preview, -width / 2, -height / 2, width, height);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.fillRect(-width / 2, -height / 2, width, height);
+    }
+    ctx.strokeStyle = color;
+    ctx.setLineDash(selected ? [8, 5] : []);
+    ctx.strokeRect(-width / 2, -height / 2, width, height);
+    ctx.restore();
   }
 
   if (operation.type === 'text') {
@@ -628,6 +665,19 @@ export function drawMiniMap(
       ctx.beginPath();
       ctx.arc(center.x, center.y, operation.radius * scale, 0, Math.PI * 2);
       ctx.stroke();
+      return;
+    }
+
+    if (operation.type === 'image-fill') {
+      const bounds = getOperationBounds(operation);
+      if (!bounds) return;
+      const topLeft = toMap({ x: bounds.minX, y: bounds.maxY });
+      ctx.strokeRect(
+        topLeft.x,
+        topLeft.y,
+        (bounds.maxX - bounds.minX) * scale,
+        (bounds.maxY - bounds.minY) * scale
+      );
       return;
     }
 
